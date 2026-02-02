@@ -6,12 +6,12 @@ INSERT OR IGNORE INTO organizations (id, name, plan_type, subscription_status, s
   ('org_demo', '데모치과', 'basic', 'trial', '2026-02-01', '2026-03-01', '{"notification_time": "09:00"}');
 
 -- Users (실장/상담사)
--- password: test1234 (bcrypt hash)
+-- password: test1234 (SHA-256 hash)
 INSERT OR IGNORE INTO users (id, organization_id, name, email, password_hash, role, phone, goals, settings) VALUES
-  ('user_kim', 'org_bd_dental', '김실장', 'kim@bddental.com', '$2a$10$rQnM1kE8nK5L5Q5Q5Q5Q5OzHvHvHvHvHvHvHvHvHvHvHvHvHvHvHv', 'admin', '010-1234-5678', '{"conversion_rate": 80, "avg_score": 85, "contact_rate": 95, "re_consultation": 3}', '{"notification_enabled": true, "weekend_notification": false}'),
-  ('user_lee', 'org_bd_dental', '이상담', 'lee@bddental.com', '$2a$10$rQnM1kE8nK5L5Q5Q5Q5Q5OzHvHvHvHvHvHvHvHvHvHvHvHvHvHvHv', 'staff', '010-2345-6789', '{"conversion_rate": 75, "avg_score": 80, "contact_rate": 90, "re_consultation": 2}', '{"notification_enabled": true}'),
-  ('user_park', 'org_bd_dental', '박코디', 'park@bddental.com', '$2a$10$rQnM1kE8nK5L5Q5Q5Q5Q5OzHvHvHvHvHvHvHvHvHvHvHvHvHvHvHv', 'staff', '010-3456-7890', '{"conversion_rate": 70, "avg_score": 75, "contact_rate": 85, "re_consultation": 2}', '{}'),
-  ('user_demo', 'org_demo', '데모실장', 'demo@demo.com', '$2a$10$rQnM1kE8nK5L5Q5Q5Q5Q5OzHvHvHvHvHvHvHvHvHvHvHvHvHvHvHv', 'admin', '010-0000-0000', '{}', '{}');
+  ('user_kim', 'org_bd_dental', '김실장', 'kim@bddental.com', '937e8d5fbb48bd4949536cd65b8d35c426b80d2f830c5c308e2cdec422ae2244', 'admin', '010-1234-5678', '{"conversion_rate": 80, "avg_score": 85, "contact_rate": 95, "re_consultation": 3}', '{"notification_enabled": true, "weekend_notification": false}'),
+  ('user_lee', 'org_bd_dental', '이상담', 'lee@bddental.com', '937e8d5fbb48bd4949536cd65b8d35c426b80d2f830c5c308e2cdec422ae2244', 'staff', '010-2345-6789', '{"conversion_rate": 75, "avg_score": 80, "contact_rate": 90, "re_consultation": 2}', '{"notification_enabled": true}'),
+  ('user_park', 'org_bd_dental', '박코디', 'park@bddental.com', '937e8d5fbb48bd4949536cd65b8d35c426b80d2f830c5c308e2cdec422ae2244', 'staff', '010-3456-7890', '{"conversion_rate": 70, "avg_score": 75, "contact_rate": 85, "re_consultation": 2}', '{}'),
+  ('user_demo', 'org_demo', '데모실장', 'demo@demo.com', '937e8d5fbb48bd4949536cd65b8d35c426b80d2f830c5c308e2cdec422ae2244', 'admin', '010-0000-0000', '{}', '{}');
 
 -- Patients (환자)
 INSERT OR IGNORE INTO patients (id, organization_id, name, phone, age, gender, memo, tags, status) VALUES
