@@ -22,6 +22,70 @@ export const ConsultationDetailPage: FC<Props> = ({ id }) => {
         </div>
       </div>
 
+      {/* Link Patient Modal */}
+      <div id="linkPatientModal" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl w-full max-w-lg p-6 max-h-[90vh] overflow-y-auto">
+          <div class="flex justify-between items-center mb-4">
+            <h3 class="text-lg font-bold text-gray-900">환자 연결</h3>
+            <button onclick="closeLinkModal()" class="text-gray-400 hover:text-gray-600">
+              <i class="fas fa-times text-xl"></i>
+            </button>
+          </div>
+
+          {/* Tabs */}
+          <div class="flex gap-2 mb-4">
+            <button id="tabExisting" class="flex-1 py-2 px-4 rounded-lg font-medium transition bg-primary-600 text-white" onclick="showExistingTab()">
+              기존 환자
+            </button>
+            <button id="tabNew" class="flex-1 py-2 px-4 rounded-lg font-medium transition bg-gray-100 text-gray-700 hover:bg-gray-200" onclick="showNewTab()">
+              새 환자 등록
+            </button>
+          </div>
+
+          {/* Existing Patient List */}
+          <div id="existingPatientArea">
+            <div class="relative mb-4">
+              <input type="text" id="patientSearch" placeholder="환자 이름 또는 연락처 검색" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 outline-none pl-10" oninput="filterPatients(this.value)" />
+              <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"></i>
+            </div>
+            <div id="patientList" class="space-y-2 max-h-60 overflow-y-auto">
+              {/* Patient list will be loaded here */}
+            </div>
+          </div>
+
+          {/* New Patient Form */}
+          <div id="newPatientArea" class="hidden">
+            <form id="linkNewPatientForm" class="space-y-4" onsubmit="return createAndLinkPatient(event)">
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">이름 *</label>
+                <input type="text" name="name" required class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 outline-none" placeholder="환자 이름" />
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">연락처</label>
+                <input type="tel" name="phone" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 outline-none" placeholder="010-0000-0000" />
+              </div>
+              <div class="grid grid-cols-2 gap-4">
+                <div>
+                  <label class="block text-sm font-medium text-gray-700 mb-1">나이</label>
+                  <input type="number" name="age" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 outline-none" placeholder="나이" />
+                </div>
+                <div>
+                  <label class="block text-sm font-medium text-gray-700 mb-1">성별</label>
+                  <select name="gender" class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 outline-none">
+                    <option value="">선택</option>
+                    <option value="male">남성</option>
+                    <option value="female">여성</option>
+                  </select>
+                </div>
+              </div>
+              <button type="submit" class="w-full bg-primary-600 hover:bg-primary-700 text-white font-medium py-3 rounded-lg transition">
+                환자 등록 후 연결
+              </button>
+            </form>
+          </div>
+        </div>
+      </div>
+
       <script dangerouslySetInnerHTML={{
         __html: `
           const consultationId = '${id}';
@@ -52,7 +116,11 @@ export const ConsultationDetailPage: FC<Props> = ({ id }) => {
             }
           }
 
+          let currentConsultation = null;
+          let allPatients = [];
+
           function renderConsultation(c) {
+            currentConsultation = c;
             const container = document.getElementById('consultationDetail');
             const date = new Date(c.consultation_date);
             const dateStr = date.toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' });
@@ -71,12 +139,35 @@ export const ConsultationDetailPage: FC<Props> = ({ id }) => {
             const feedback = c.feedback || {};
             const keyQuotes = c.key_quotes || [];
 
-            let html = \`
+            // Check if patient is linked
+            const isUnlinked = !c.patient_id;
+
+            let html = '';
+
+            // Show unlinked warning banner if no patient
+            if (isUnlinked) {
+              html += \`
+                <div class="bg-yellow-50 border border-yellow-200 rounded-xl p-4 mb-4">
+                  <div class="flex items-start gap-3">
+                    <i class="fas fa-exclamation-triangle text-yellow-600 mt-1"></i>
+                    <div class="flex-1">
+                      <p class="text-yellow-800 font-medium">환자가 연결되지 않았습니다</p>
+                      <p class="text-yellow-700 text-sm mt-1">빠른 녹음 모드로 녹음된 상담입니다. 환자를 연결해주세요.</p>
+                      <button onclick="showLinkModal()" class="mt-3 bg-yellow-600 hover:bg-yellow-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition">
+                        <i class="fas fa-link mr-1"></i>환자 연결하기
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              \`;
+            }
+
+            html += \`
               <!-- Patient Info -->
               <div class="bg-white rounded-xl p-4 border border-gray-100 shadow-sm">
                 <div class="flex items-start justify-between mb-3">
                   <div>
-                    <h2 class="text-xl font-bold text-gray-900">\${c.patient_name}</h2>
+                    <h2 class="text-xl font-bold text-gray-900">\${c.patient_name || '환자 미지정'}</h2>
                     <p class="text-gray-500 text-sm">\${c.patient_age ? c.patient_age + '세 ' : ''}\${c.patient_gender === 'male' ? '남성' : c.patient_gender === 'female' ? '여성' : ''}</p>
                   </div>
                   <span class="px-3 py-1 rounded-full text-sm font-medium \${statusColors[c.status]}">\${statusText[c.status]}</span>
@@ -236,18 +327,140 @@ export const ConsultationDetailPage: FC<Props> = ({ id }) => {
             // Actions
             html += \`
               <div class="space-y-3">
-                \${c.status === 'undecided' ? \`
-                  <a href="tel:\${c.patient_phone}" class="block w-full bg-primary-600 hover:bg-primary-700 text-white font-medium py-3 px-4 rounded-xl text-center transition">
-                    <i class="fas fa-phone mr-2"></i>환자에게 연락하기
+                \${isUnlinked ? \`
+                  <button onclick="showLinkModal()" class="block w-full bg-primary-600 hover:bg-primary-700 text-white font-medium py-3 px-4 rounded-xl text-center transition">
+                    <i class="fas fa-link mr-2"></i>환자 연결하기
+                  </button>
+                \` : \`
+                  \${c.status === 'undecided' && c.patient_phone ? \`
+                    <a href="tel:\${c.patient_phone}" class="block w-full bg-primary-600 hover:bg-primary-700 text-white font-medium py-3 px-4 rounded-xl text-center transition">
+                      <i class="fas fa-phone mr-2"></i>환자에게 연락하기
+                    </a>
+                  \` : ''}
+                  <a href="/patients/\${c.patient_id}" class="block w-full bg-gray-100 hover:bg-gray-200 text-gray-800 font-medium py-3 px-4 rounded-xl text-center transition">
+                    <i class="fas fa-user mr-2"></i>환자 카드 보기
                   </a>
-                \` : ''}
-                <a href="/patients/\${c.patient_id}" class="block w-full bg-gray-100 hover:bg-gray-200 text-gray-800 font-medium py-3 px-4 rounded-xl text-center transition">
-                  <i class="fas fa-user mr-2"></i>환자 카드 보기
-                </a>
+                \`}
               </div>
             \`;
 
             container.innerHTML = html;
+          }
+
+          // Link patient modal functions
+          async function showLinkModal() {
+            // Load patients if not loaded
+            if (allPatients.length === 0) {
+              const res = await fetch('/api/patients?limit=100');
+              const data = await res.json();
+              if (data.success) {
+                allPatients = data.data;
+              }
+            }
+            document.getElementById('linkPatientModal').classList.remove('hidden');
+            renderPatientList(allPatients);
+          }
+
+          function closeLinkModal() {
+            document.getElementById('linkPatientModal').classList.add('hidden');
+          }
+
+          function renderPatientList(patients) {
+            const container = document.getElementById('patientList');
+            if (patients.length === 0) {
+              container.innerHTML = '<p class="text-gray-500 text-center py-4">검색 결과가 없습니다</p>';
+              return;
+            }
+            container.innerHTML = patients.map(p => \`
+              <button class="w-full flex items-center gap-3 p-3 bg-gray-50 hover:bg-gray-100 rounded-lg transition text-left" onclick="linkPatient('\${p.id}')">
+                <div class="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center">
+                  <i class="fas fa-user text-gray-400"></i>
+                </div>
+                <div>
+                  <p class="text-gray-900 font-medium">\${p.name}</p>
+                  <p class="text-gray-500 text-sm">\${p.phone || '연락처 없음'}</p>
+                </div>
+              </button>
+            \`).join('');
+          }
+
+          async function linkPatient(patientId) {
+            try {
+              const res = await fetch('/api/consultations/' + consultationId + '/link-patient', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ patient_id: patientId })
+              });
+              
+              const data = await res.json();
+              if (data.success) {
+                closeLinkModal();
+                loadConsultation(); // Refresh the page
+              } else {
+                alert(data.error || '환자 연결에 실패했습니다.');
+              }
+            } catch (err) {
+              alert('오류가 발생했습니다.');
+            }
+          }
+
+          function filterPatients(query) {
+            const q = query.toLowerCase();
+            const filtered = allPatients.filter(p => 
+              p.name.toLowerCase().includes(q) || 
+              (p.phone && p.phone.includes(q))
+            );
+            renderPatientList(filtered);
+          }
+
+          function showExistingTab() {
+            document.getElementById('tabExisting').classList.remove('bg-gray-100', 'text-gray-700');
+            document.getElementById('tabExisting').classList.add('bg-primary-600', 'text-white');
+            document.getElementById('tabNew').classList.remove('bg-primary-600', 'text-white');
+            document.getElementById('tabNew').classList.add('bg-gray-100', 'text-gray-700');
+            document.getElementById('existingPatientArea').classList.remove('hidden');
+            document.getElementById('newPatientArea').classList.add('hidden');
+          }
+
+          function showNewTab() {
+            document.getElementById('tabNew').classList.remove('bg-gray-100', 'text-gray-700');
+            document.getElementById('tabNew').classList.add('bg-primary-600', 'text-white');
+            document.getElementById('tabExisting').classList.remove('bg-primary-600', 'text-white');
+            document.getElementById('tabExisting').classList.add('bg-gray-100', 'text-gray-700');
+            document.getElementById('newPatientArea').classList.remove('hidden');
+            document.getElementById('existingPatientArea').classList.add('hidden');
+          }
+
+          async function createAndLinkPatient(e) {
+            e.preventDefault();
+            const form = e.target;
+            const formData = new FormData(form);
+            
+            try {
+              // Create patient
+              const patientRes = await fetch('/api/patients', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  name: formData.get('name'),
+                  phone: formData.get('phone') || undefined,
+                  age: formData.get('age') ? parseInt(formData.get('age')) : undefined,
+                  gender: formData.get('gender') || undefined
+                })
+              });
+              
+              const patientData = await patientRes.json();
+              if (!patientData.success) {
+                alert(patientData.error || '환자 등록에 실패했습니다.');
+                return false;
+              }
+              
+              // Link to consultation
+              await linkPatient(patientData.data.id);
+            } catch (err) {
+              alert('오류가 발생했습니다.');
+            }
+            return false;
           }
 
           function toggleTranscript() {

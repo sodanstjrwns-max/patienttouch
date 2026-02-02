@@ -70,11 +70,13 @@ consultations.get('/:id', async (c) => {
     const orgId = c.get('organizationId');
     const db = c.env.DB;
 
+    // Use LEFT JOIN to support consultations without patient (quick recording mode)
     const consultation = await db.prepare(`
-      SELECT c.*, p.name as patient_name, p.phone as patient_phone, p.age as patient_age,
+      SELECT c.*, 
+             p.name as patient_name, p.phone as patient_phone, p.age as patient_age,
              p.gender as patient_gender, u.name as user_name
       FROM consultations c
-      JOIN patients p ON c.patient_id = p.id
+      LEFT JOIN patients p ON c.patient_id = p.id
       JOIN users u ON c.user_id = u.id
       WHERE c.id = ? AND c.organization_id = ?
     `).bind(consultId, orgId).first();
@@ -102,6 +104,7 @@ consultations.get('/:id', async (c) => {
 });
 
 // POST /api/consultations - Create consultation (with or without recording)
+// patient_id can be null for "quick recording" mode - patient can be linked later
 consultations.post('/', async (c) => {
   try {
     const orgId = c.get('organizationId');
@@ -111,17 +114,19 @@ consultations.post('/', async (c) => {
     const body = await c.req.json();
     const { patient_id, consultation_date, duration, treatment_type, treatment_area, amount, status } = body;
 
-    if (!patient_id) {
-      return c.json({ success: false, error: '환자를 선택해주세요.' }, 400);
-    }
+    let patientName = null;
 
-    // Verify patient exists
-    const patient = await db.prepare(
-      'SELECT id, name FROM patients WHERE id = ? AND organization_id = ?'
-    ).bind(patient_id, orgId).first();
+    // patient_id is now optional - allows "record first, link patient later"
+    if (patient_id) {
+      // Verify patient exists
+      const patient = await db.prepare(
+        'SELECT id, name FROM patients WHERE id = ? AND organization_id = ?'
+      ).bind(patient_id, orgId).first();
 
-    if (!patient) {
-      return c.json({ success: false, error: '환자를 찾을 수 없습니다.' }, 404);
+      if (!patient) {
+        return c.json({ success: false, error: '환자를 찾을 수 없습니다.' }, 404);
+      }
+      patientName = patient.name;
     }
 
     const consultId = 'consult_' + generateId().slice(0, 8);
@@ -132,7 +137,7 @@ consultations.post('/', async (c) => {
         duration, treatment_type, treatment_area, amount, status
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).bind(
-      consultId, orgId, userId, patient_id,
+      consultId, orgId, userId, patient_id || null,
       consultation_date || new Date().toISOString(),
       duration || null, treatment_type || null, treatment_area || null,
       amount || null, status || 'pending'
@@ -140,7 +145,12 @@ consultations.post('/', async (c) => {
 
     return c.json({
       success: true,
-      data: { id: consultId, patient_name: patient.name }
+      data: { 
+        id: consultId, 
+        patient_name: patientName,
+        patient_id: patient_id || null,
+        is_unlinked: !patient_id  // Flag to indicate patient needs to be linked
+      }
     });
   } catch (error) {
     console.error('Create consultation error:', error);
@@ -345,6 +355,78 @@ consultations.put('/:id', async (c) => {
   } catch (error) {
     console.error('Update consultation error:', error);
     return c.json({ success: false, error: '상담 기록 수정에 실패했습니다.' }, 500);
+  }
+});
+
+// PUT /api/consultations/:id/link-patient - Link patient to consultation (for quick recording)
+consultations.put('/:id/link-patient', async (c) => {
+  try {
+    const consultId = c.req.param('id');
+    const orgId = c.get('organizationId');
+    const db = c.env.DB;
+    const { patient_id } = await c.req.json();
+
+    if (!patient_id) {
+      return c.json({ success: false, error: '환자를 선택해주세요.' }, 400);
+    }
+
+    // Verify consultation exists and has no patient linked
+    const consultation = await db.prepare(
+      'SELECT id, patient_id FROM consultations WHERE id = ? AND organization_id = ?'
+    ).bind(consultId, orgId).first();
+
+    if (!consultation) {
+      return c.json({ success: false, error: '상담 기록을 찾을 수 없습니다.' }, 404);
+    }
+
+    // Verify patient exists
+    const patient = await db.prepare(
+      'SELECT id, name FROM patients WHERE id = ? AND organization_id = ?'
+    ).bind(patient_id, orgId).first();
+
+    if (!patient) {
+      return c.json({ success: false, error: '환자를 찾을 수 없습니다.' }, 404);
+    }
+
+    // Update consultation with patient
+    await db.prepare(
+      'UPDATE consultations SET patient_id = ?, updated_at = datetime("now") WHERE id = ?'
+    ).bind(patient_id, consultId).run();
+
+    return c.json({
+      success: true,
+      data: { 
+        consultation_id: consultId,
+        patient_id: patient_id,
+        patient_name: patient.name
+      }
+    });
+  } catch (error) {
+    console.error('Link patient error:', error);
+    return c.json({ success: false, error: '환자 연결에 실패했습니다.' }, 500);
+  }
+});
+
+// GET /api/consultations/unlinked - Get consultations without patient linked
+consultations.get('/unlinked/list', async (c) => {
+  try {
+    const orgId = c.get('organizationId');
+    const userId = c.get('userId');
+    const db = c.env.DB;
+
+    const result = await db.prepare(`
+      SELECT c.*, u.name as user_name
+      FROM consultations c
+      JOIN users u ON c.user_id = u.id
+      WHERE c.organization_id = ? AND c.patient_id IS NULL
+      ORDER BY c.consultation_date DESC
+      LIMIT 50
+    `).bind(orgId).all();
+
+    return c.json({ success: true, data: result.results });
+  } catch (error) {
+    console.error('Get unlinked consultations error:', error);
+    return c.json({ success: false, error: '미연결 상담 목록을 불러오는데 실패했습니다.' }, 500);
   }
 });
 
