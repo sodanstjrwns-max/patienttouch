@@ -1,0 +1,23 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "patient-touch",
+  "compatibility_date": "2026-02-02",
+  "pages_build_output_dir": "./dist",
+  "compatibility_flags": ["nodejs_compat"],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "patient-touch-db",
+      "database_id": "local-dev-db"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "R2",
+      "bucket_name": "patient-touch-audio"
+    }
+  ],
+  "vars": {
+    "OPENAI_API_KEY": ""
+  }
+}
