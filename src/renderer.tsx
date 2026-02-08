@@ -10,6 +10,7 @@ export const renderer = jsxRenderer(({ children, title }) => {
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         <meta name="description" content="Patient Touch - AI 기반 치과 상담 CRM의 미래" />
+        <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
         <title>{title || '페이션트 터치'}</title>
         
         {/* Tailwind CSS */}
