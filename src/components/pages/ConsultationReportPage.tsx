@@ -76,6 +76,7 @@ export const ConsultationReportPage: FC<Props> = ({ id }) => {
               const authRes = await fetch('/api/auth/me');
               if (!authRes.ok) { window.location.href = '/login'; return; }
               const reportRes = await fetch('/api/reports/' + consultationId);
+              if (reportRes.status === 401) { window.location.href = '/login'; return; }
               const reportJson = await reportRes.json();
               if (reportJson.success) { reportData = reportJson.data; renderReport(reportData); }
               else { showGeneratePrompt(); }
@@ -112,6 +113,7 @@ export const ConsultationReportPage: FC<Props> = ({ id }) => {
               '</div>';
             try {
               const res = await fetch('/api/reports/' + consultationId + '/generate', { method: 'POST' });
+              if (res.status === 401) { window.location.href = '/login'; return; }
               const data = await res.json();
               if (data.success) { reportData = data.data.report; renderReport({ ...data.data.report, id: data.data.report_id }); }
               else { showError(data.error); }

@@ -31,6 +31,7 @@ export const PatientDetailPage: FC<Props> = ({ id }) => {
               if (!authRes.ok) { window.location.href = '/login'; return; }
 
               const res = await fetch('/api/patients/' + patientId);
+              if (res.status === 401) { window.location.href = '/login'; return; }
               const data = await res.json();
 
               if (data.success) { renderPatient(data.data); }
@@ -39,9 +40,18 @@ export const PatientDetailPage: FC<Props> = ({ id }) => {
                   '<div class="text-center py-16 animate-fade-in">' +
                     '<div class="w-20 h-20 mx-auto mb-5 rounded-2xl bg-surface-100 flex items-center justify-center"><i class="fas fa-user-slash text-3xl text-surface-300"></i></div>' +
                     '<h3 class="text-lg font-bold text-surface-800 mb-1">환자 정보를 찾을 수 없습니다</h3>' +
+                    '<a href="/patients" class="inline-flex items-center gap-2 mt-4 px-5 py-2.5 bg-brand-600 text-white rounded-xl text-sm font-semibold hover:bg-brand-700 transition-all active:scale-95"><i class="fas fa-list"></i>환자 목록으로</a>' +
                   '</div>';
               }
-            } catch (err) { console.error('Failed to load patient:', err); }
+            } catch (err) {
+              console.error('Failed to load patient:', err);
+              document.getElementById('patientDetail').innerHTML =
+                '<div class="text-center py-16 animate-fade-in">' +
+                  '<div class="w-20 h-20 mx-auto mb-5 rounded-2xl bg-surface-100 flex items-center justify-center"><i class="fas fa-triangle-exclamation text-3xl text-amber-400"></i></div>' +
+                  '<h3 class="text-lg font-bold text-surface-800 mb-1">데이터를 불러올 수 없습니다</h3>' +
+                  '<button onclick="loadPatient()" class="inline-flex items-center gap-2 mt-4 px-5 py-2.5 bg-brand-600 text-white rounded-xl text-sm font-semibold hover:bg-brand-700 transition-all active:scale-95"><i class="fas fa-rotate-right"></i>다시 시도</button>' +
+                '</div>';
+            }
           }
 
           function sec(title, icon, iconBg) {

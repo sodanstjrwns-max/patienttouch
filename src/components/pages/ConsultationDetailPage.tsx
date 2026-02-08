@@ -97,6 +97,7 @@ export const ConsultationDetailPage: FC<Props> = ({ id }) => {
               if (!authRes.ok) { window.location.href = '/login'; return; }
 
               const res = await fetch('/api/consultations/' + consultationId);
+              if (res.status === 401) { window.location.href = '/login'; return; }
               const data = await res.json();
 
               if (data.success) {
@@ -107,9 +108,19 @@ export const ConsultationDetailPage: FC<Props> = ({ id }) => {
                     '<div class="w-20 h-20 mx-auto mb-5 rounded-2xl bg-surface-100 flex items-center justify-center"><i class="fas fa-file-circle-xmark text-3xl text-surface-300"></i></div>' +
                     '<h3 class="text-lg font-bold text-surface-800 mb-1">상담 기록을 찾을 수 없습니다</h3>' +
                     '<p class="text-surface-500 text-sm">삭제되었거나 접근 권한이 없습니다</p>' +
+                    '<a href="/consultations" class="inline-flex items-center gap-2 mt-4 px-5 py-2.5 bg-brand-600 text-white rounded-xl text-sm font-semibold hover:bg-brand-700 transition-all active:scale-95"><i class="fas fa-list"></i>상담 목록으로</a>' +
                   '</div>';
               }
-            } catch (err) { console.error('Failed to load consultation:', err); }
+            } catch (err) {
+              console.error('Failed to load consultation:', err);
+              document.getElementById('consultationDetail').innerHTML =
+                '<div class="text-center py-16 animate-fade-in">' +
+                  '<div class="w-20 h-20 mx-auto mb-5 rounded-2xl bg-surface-100 flex items-center justify-center"><i class="fas fa-triangle-exclamation text-3xl text-amber-400"></i></div>' +
+                  '<h3 class="text-lg font-bold text-surface-800 mb-1">데이터를 불러올 수 없습니다</h3>' +
+                  '<p class="text-surface-500 text-sm mb-4">네트워크 오류가 발생했습니다</p>' +
+                  '<button onclick="loadConsultation()" class="inline-flex items-center gap-2 px-5 py-2.5 bg-brand-600 text-white rounded-xl text-sm font-semibold hover:bg-brand-700 transition-all active:scale-95"><i class="fas fa-rotate-right"></i>다시 시도</button>' +
+                '</div>';
+            }
           }
 
           function renderConsultation(c) {

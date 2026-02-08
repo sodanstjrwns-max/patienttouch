@@ -366,6 +366,23 @@ export const renderer = jsxRenderer(({ children, title }) => {
             .line-clamp-3 { overflow:hidden; display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:3; }
           `
         }} />
+        
+        {/* Global Auth Interceptor - auto redirect to login on 401 */}
+        <script dangerouslySetInnerHTML={{
+          __html: `
+            (function() {
+              var origFetch = window.fetch;
+              window.fetch = function(url, opts) {
+                return origFetch.apply(this, arguments).then(function(res) {
+                  if (res.status === 401 && typeof url === 'string' && url.startsWith('/api/') && !url.includes('/api/auth/login') && !url.includes('/api/reports/proposals/view/')) {
+                    window.location.href = '/login';
+                  }
+                  return res;
+                });
+              };
+            })();
+          `
+        }} />
       </head>
       <body class="bg-gradient-mesh min-h-screen text-surface-900 antialiased">
         {children}
