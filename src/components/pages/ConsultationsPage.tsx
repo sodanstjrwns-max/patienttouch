@@ -1,159 +1,114 @@
 import { FC } from 'hono/jsx'
-import { Layout, Header, Card } from '../shared/Layout'
+import { Layout, Header, Card, Badge, Button, SectionTitle } from '../shared/Layout'
 
 export const ConsultationsPage: FC = () => {
   return (
     <Layout activeTab="consultations">
-      <Header title="상담" rightAction={
-        <a href="/recording" class="text-primary-600 font-medium text-sm">
-          <i class="fas fa-plus mr-1"></i>새 녹음
-        </a>
-      } />
-      
-      <div class="px-4 py-4">
-        {/* Quick Record Button */}
-        <a href="/recording" class="block mb-4">
-          <div class="bg-gradient-to-r from-primary-600 to-primary-700 rounded-xl p-6 text-white text-center shadow-lg">
-            <i class="fas fa-microphone text-4xl mb-3"></i>
-            <p class="text-lg font-semibold">상담 녹음 시작</p>
-            <p class="text-primary-200 text-sm mt-1">버튼 하나로 녹음부터 분석까지</p>
-          </div>
-        </a>
+      <Header 
+        title="상담 관리" 
+        subtitle="AI 분석 기반 상담 기록"
+        rightAction={
+          <a href="/recording" class="w-10 h-10 bg-gradient-brand rounded-xl flex items-center justify-center text-white shadow-md shadow-brand-600/20 active:scale-95 transition-transform">
+            <i class="fas fa-microphone text-sm"></i>
+          </a>
+        }
+      />
 
-        {/* Filter */}
-        <div class="flex gap-2 mb-4 overflow-x-auto pb-2">
-          <button data-filter="all" class="filter-btn px-4 py-2 rounded-full text-sm font-medium bg-primary-600 text-white whitespace-nowrap">
-            전체
-          </button>
-          <button data-filter="undecided" class="filter-btn px-4 py-2 rounded-full text-sm font-medium bg-gray-100 text-gray-600 whitespace-nowrap">
-            🟡 미결정
-          </button>
-          <button data-filter="paid" class="filter-btn px-4 py-2 rounded-full text-sm font-medium bg-gray-100 text-gray-600 whitespace-nowrap">
-            🟢 결제완료
-          </button>
-          <button data-filter="lost" class="filter-btn px-4 py-2 rounded-full text-sm font-medium bg-gray-100 text-gray-600 whitespace-nowrap">
-            🔴 이탈
-          </button>
-        </div>
+      {/* Filters */}
+      <div class="px-4 py-3 flex items-center gap-2 overflow-x-auto no-scrollbar">
+        <button class="filter-btn active shrink-0 px-3.5 py-2 rounded-xl text-xs font-semibold transition-all bg-brand-600 text-white shadow-md shadow-brand-600/20" data-status="all">전체</button>
+        <button class="filter-btn shrink-0 px-3.5 py-2 rounded-xl text-xs font-semibold transition-all bg-surface-100 text-surface-600 hover:bg-surface-200" data-status="pending">대기중</button>
+        <button class="filter-btn shrink-0 px-3.5 py-2 rounded-xl text-xs font-semibold transition-all bg-surface-100 text-surface-600 hover:bg-surface-200" data-status="undecided">미결정</button>
+        <button class="filter-btn shrink-0 px-3.5 py-2 rounded-xl text-xs font-semibold transition-all bg-surface-100 text-surface-600 hover:bg-surface-200" data-status="paid">결제완료</button>
+        <button class="filter-btn shrink-0 px-3.5 py-2 rounded-xl text-xs font-semibold transition-all bg-surface-100 text-surface-600 hover:bg-surface-200" data-status="lost">이탈</button>
+      </div>
 
-        {/* Consultation List */}
-        <div id="consultationList" class="space-y-3">
-          <div class="animate-pulse space-y-3">
-            <div class="h-24 bg-gray-100 rounded-xl"></div>
-            <div class="h-24 bg-gray-100 rounded-xl"></div>
-            <div class="h-24 bg-gray-100 rounded-xl"></div>
+      <div class="px-4 pb-6">
+        <div id="consultationList" class="space-y-2">
+          <div class="space-y-2">
+            <div class="card-premium p-5"><div class="shimmer h-4 rounded-lg w-2/3 mb-3"></div><div class="shimmer h-3 rounded-lg w-full mb-2"></div><div class="shimmer h-3 rounded-lg w-4/5"></div></div>
+            <div class="card-premium p-5"><div class="shimmer h-4 rounded-lg w-2/3 mb-3"></div><div class="shimmer h-3 rounded-lg w-full mb-2"></div><div class="shimmer h-3 rounded-lg w-4/5"></div></div>
           </div>
         </div>
       </div>
 
       <script dangerouslySetInnerHTML={{
         __html: `
-          let currentFilter = 'all';
-
-          async function loadConsultations(filter = 'all') {
-            try {
-              const authRes = await fetch('/api/auth/me');
-              if (!authRes.ok) {
-                window.location.href = '/login';
-                return;
-              }
-
-              const params = new URLSearchParams({ my_only: 'true', limit: '50' });
-              if (filter !== 'all') params.set('status', filter);
-
-              const res = await fetch('/api/consultations?' + params);
-              const data = await res.json();
-
-              if (data.success) {
-                renderConsultations(data.data);
-              }
-            } catch (err) {
-              console.error('Failed to load consultations:', err);
-            }
-          }
-
-          function renderConsultations(consultations) {
-            const container = document.getElementById('consultationList');
-            
-            if (!consultations || consultations.length === 0) {
-              container.innerHTML = \`
-                <div class="text-center py-12">
-                  <i class="fas fa-clipboard-list text-4xl text-gray-300 mb-4"></i>
-                  <p class="text-gray-500">상담 기록이 없습니다</p>
-                  <a href="/recording" class="mt-4 inline-flex items-center text-primary-600 font-medium">
-                    <i class="fas fa-microphone mr-2"></i>첫 상담 녹음하기
-                  </a>
-                </div>
-              \`;
-              return;
-            }
-
-            const statusColors = {
-              paid: 'bg-green-100 text-green-800',
-              undecided: 'bg-yellow-100 text-yellow-800',
-              lost: 'bg-red-100 text-red-800',
-              pending: 'bg-gray-100 text-gray-800'
-            };
-            const statusText = { paid: '결제완료', undecided: '미결정', lost: '이탈', pending: '분석중' };
-            const statusEmoji = { paid: '🟢', undecided: '🟡', lost: '🔴', pending: '⏳' };
-
-            container.innerHTML = consultations.map(c => {
-              const date = new Date(c.consultation_date);
-              const dateStr = date.toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' });
-              const timeStr = date.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
-              const score = c.feedback?.total_score;
-              
-              return \`
-                <a href="/consultations/\${c.id}" class="block">
-                  <div class="bg-white rounded-xl p-4 border border-gray-100 shadow-sm hover:shadow-md transition">
-                    <div class="flex justify-between items-start mb-2">
-                      <div>
-                        <span class="font-semibold text-gray-900">\${c.patient_name}</span>
-                        <span class="text-gray-500 text-sm ml-2">\${c.treatment_type || '상담'}</span>
-                      </div>
-                      <span class="px-2 py-0.5 rounded-full text-xs font-medium \${statusColors[c.status] || statusColors.pending}">
-                        \${statusEmoji[c.status] || ''} \${statusText[c.status] || c.status}
-                      </span>
-                    </div>
-                    <div class="flex items-center gap-4 text-sm text-gray-500">
-                      <span><i class="far fa-calendar mr-1"></i>\${dateStr} \${timeStr}</span>
-                      \${c.duration ? '<span><i class="far fa-clock mr-1"></i>' + c.duration + '분</span>' : ''}
-                      \${c.amount ? '<span><i class="fas fa-won-sign mr-1"></i>' + (c.amount / 10000).toFixed(0) + '만원</span>' : ''}
-                    </div>
-                    \${score ? \`
-                      <div class="mt-2 flex items-center gap-2">
-                        <span class="text-xs text-gray-500">상담점수</span>
-                        <div class="flex-1 bg-gray-200 rounded-full h-1.5">
-                          <div class="bg-primary-600 h-1.5 rounded-full" style="width: \${score}%"></div>
-                        </div>
-                        <span class="text-xs font-medium text-primary-600">\${score}점</span>
-                      </div>
-                    \` : ''}
-                    \${c.decision_score && c.status === 'undecided' ? \`
-                      <div class="mt-2 text-xs text-yellow-700 bg-yellow-50 px-2 py-1 rounded inline-block">
-                        결정근접도 \${c.decision_score}/10
-                      </div>
-                    \` : ''}
-                  </div>
-                </a>
-              \`;
-            }).join('');
-          }
-
-          // Filter buttons
-          document.querySelectorAll('.filter-btn').forEach(btn => {
-            btn.addEventListener('click', () => {
-              document.querySelectorAll('.filter-btn').forEach(b => {
-                b.classList.remove('bg-primary-600', 'text-white');
-                b.classList.add('bg-gray-100', 'text-gray-600');
+          var currentFilter = 'all';
+          
+          document.querySelectorAll('.filter-btn').forEach(function(btn) {
+            btn.addEventListener('click', function() {
+              document.querySelectorAll('.filter-btn').forEach(function(b) {
+                b.className = 'filter-btn shrink-0 px-3.5 py-2 rounded-xl text-xs font-semibold transition-all bg-surface-100 text-surface-600 hover:bg-surface-200';
               });
-              btn.classList.remove('bg-gray-100', 'text-gray-600');
-              btn.classList.add('bg-primary-600', 'text-white');
-              
-              currentFilter = btn.dataset.filter;
-              loadConsultations(currentFilter);
+              this.className = 'filter-btn active shrink-0 px-3.5 py-2 rounded-xl text-xs font-semibold transition-all bg-brand-600 text-white shadow-md shadow-brand-600/20';
+              currentFilter = this.dataset.status;
+              loadConsultations();
             });
           });
+
+          async function loadConsultations() {
+            try {
+              var url = '/api/consultations?limit=50';
+              if (currentFilter !== 'all') url += '&status=' + currentFilter;
+              
+              var res = await fetch(url);
+              var data = await res.json();
+              
+              if (!data.success) {
+                if (res.status === 401) { window.location.href = '/login'; return; }
+                return;
+              }
+              
+              if (!data.data || data.data.length === 0) {
+                document.getElementById('consultationList').innerHTML = 
+                  '<div class="text-center py-16 px-6 animate-fade-in">' +
+                    '<div class="w-20 h-20 mx-auto mb-5 rounded-2xl bg-surface-100 flex items-center justify-center"><i class="fas fa-microphone-slash text-3xl text-surface-300"></i></div>' +
+                    '<h3 class="text-lg font-bold text-surface-800 mb-1">상담 기록이 없습니다</h3>' +
+                    '<p class="text-surface-500 text-sm mb-5">첫 상담을 녹음해보세요</p>' +
+                    '<a href="/recording" class="inline-flex items-center gap-2 font-semibold text-sm text-white bg-gradient-brand px-5 py-2.5 rounded-xl shadow-md shadow-brand-600/20"><i class="fas fa-microphone"></i>녹음 시작</a>' +
+                  '</div>';
+                return;
+              }
+              
+              var html = data.data.map(function(c) {
+                var st = {
+                  paid: { bg:'bg-emerald-50', text:'text-emerald-700', label:'결제완료', dot:'bg-emerald-500', border:'border-l-emerald-400' },
+                  undecided: { bg:'bg-amber-50', text:'text-amber-700', label:'미결정', dot:'bg-amber-500', border:'border-l-amber-400' },
+                  lost: { bg:'bg-rose-50', text:'text-rose-700', label:'이탈', dot:'bg-rose-500', border:'border-l-rose-400' },
+                  pending: { bg:'bg-surface-50', text:'text-surface-600', label:'대기중', dot:'bg-surface-400', border:'border-l-surface-300' }
+                }[c.status] || { bg:'bg-surface-50', text:'text-surface-600', label:c.status, dot:'bg-surface-400', border:'border-l-surface-300' };
+                
+                var date = new Date(c.consultation_date);
+                var dateStr = (date.getMonth()+1) + '/' + date.getDate() + ' ' + String(date.getHours()).padStart(2,'0') + ':' + String(date.getMinutes()).padStart(2,'0');
+                var score = c.feedback && c.feedback.total_score ? c.feedback.total_score : null;
+                
+                return '<a href="/consultations/' + c.id + '" class="card-premium p-4 flex items-center gap-3.5 block border-l-4 ' + st.border + '">' +
+                  '<div class="w-11 h-11 rounded-xl ' + st.bg + ' flex items-center justify-center shrink-0">' +
+                    '<span class="text-base font-bold ' + st.text + '">' + (c.patient_name ? c.patient_name.charAt(0) : '?') + '</span>' +
+                  '</div>' +
+                  '<div class="flex-1 min-w-0">' +
+                    '<div class="flex items-center gap-2">' +
+                      '<span class="font-bold text-sm truncate">' + (c.patient_name || '미지정') + '</span>' +
+                      '<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-semibold ring-1 ring-inset ' + st.bg + ' ' + st.text + ' ring-current/20"><span class="w-1 h-1 rounded-full ' + st.dot + '"></span>' + st.label + '</span>' +
+                    '</div>' +
+                    '<div class="flex items-center gap-1.5 mt-0.5 text-xs text-surface-500">' +
+                      '<span>' + dateStr + '</span>' +
+                      (c.treatment_type ? '<span class="text-surface-300">|</span><span>' + c.treatment_type + '</span>' : '') +
+                      (c.amount ? '<span class="text-surface-300">|</span><span class="font-semibold text-surface-600">' + (c.amount / 10000).toFixed(0) + '만</span>' : '') +
+                    '</div>' +
+                  '</div>' +
+                  '<div class="text-right shrink-0">' +
+                    (score ? '<div class="text-lg font-black ' + (score >= 80 ? 'text-emerald-600' : score >= 60 ? 'text-amber-600' : 'text-rose-600') + '">' + score + '</div><div class="text-[10px] text-surface-400">점</div>' : '<i class="fas fa-chevron-right text-surface-300 text-xs"></i>') +
+                  '</div>' +
+                '</a>';
+              }).join('');
+              
+              document.getElementById('consultationList').innerHTML = '<div class="space-y-2 stagger-children">' + html + '</div>';
+            } catch (err) {
+              console.error('Load consultations error:', err);
+            }
+          }
 
           loadConsultations();
         `

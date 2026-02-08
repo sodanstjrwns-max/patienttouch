@@ -1,261 +1,162 @@
 import { FC } from 'hono/jsx'
-import { Layout, Header, Card } from '../shared/Layout'
+import { Layout, Header, Card, Badge } from '../shared/Layout'
 
 export const PatientsPage: FC = () => {
   return (
     <Layout activeTab="patients">
-      <Header title="환자" rightAction={
-        <button id="addPatientBtn" class="text-primary-600 font-medium text-sm">
-          <i class="fas fa-plus mr-1"></i>등록
-        </button>
-      } />
-      
-      <div class="px-4 py-4">
-        {/* Search */}
-        <div class="relative mb-4">
-          <input 
-            type="text" 
-            id="searchInput"
-            placeholder="이름 또는 연락처로 검색"
-            class="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none"
-          />
-          <i class="fas fa-search absolute left-4 top-1/2 -translate-y-1/2 text-gray-400"></i>
-        </div>
+      <Header 
+        title="환자 관리" 
+        subtitle="환자 정보 및 히스토리"
+        rightAction={
+          <button id="addPatientBtn" class="w-10 h-10 bg-gradient-brand rounded-xl flex items-center justify-center text-white shadow-md shadow-brand-600/20 active:scale-95 transition-transform">
+            <i class="fas fa-plus text-sm"></i>
+          </button>
+        }
+      />
 
-        {/* Filter */}
-        <div class="flex gap-2 mb-4 overflow-x-auto pb-2">
-          <button data-filter="all" class="filter-btn px-4 py-2 rounded-full text-sm font-medium bg-primary-600 text-white whitespace-nowrap">
-            전체
-          </button>
-          <button data-filter="undecided" class="filter-btn px-4 py-2 rounded-full text-sm font-medium bg-gray-100 text-gray-600 whitespace-nowrap">
-            🟡 미결정
-          </button>
-          <button data-filter="paid" class="filter-btn px-4 py-2 rounded-full text-sm font-medium bg-gray-100 text-gray-600 whitespace-nowrap">
-            🟢 결제완료
-          </button>
+      {/* Search */}
+      <div class="px-4 py-3">
+        <div class="relative">
+          <i class="fas fa-magnifying-glass absolute left-4 top-1/2 -translate-y-1/2 text-surface-400 text-sm"></i>
+          <input id="searchInput" type="text" placeholder="이름 또는 전화번호로 검색" class="w-full pl-11 pr-4 py-3 bg-white border border-surface-200 rounded-xl text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 transition-all placeholder-surface-400" />
         </div>
+      </div>
 
-        {/* Patient List */}
-        <div id="patientList" class="space-y-3">
-          <div class="animate-pulse space-y-3">
-            <div class="h-20 bg-gray-100 rounded-xl"></div>
-            <div class="h-20 bg-gray-100 rounded-xl"></div>
-            <div class="h-20 bg-gray-100 rounded-xl"></div>
-          </div>
+      <div class="px-4 pb-6">
+        <div id="patientList" class="space-y-2">
+          <div class="card-premium p-5"><div class="shimmer h-4 rounded-lg w-2/3 mb-3"></div><div class="shimmer h-3 rounded-lg w-full"></div></div>
+          <div class="card-premium p-5"><div class="shimmer h-4 rounded-lg w-2/3 mb-3"></div><div class="shimmer h-3 rounded-lg w-full"></div></div>
         </div>
       </div>
 
       {/* Add Patient Modal */}
-      <div id="addPatientModal" class="hidden fixed inset-0 bg-black/50 z-50 flex items-end justify-center">
-        <div class="bg-white rounded-t-2xl w-full max-w-lg p-6 slide-up">
-          <div class="flex justify-between items-center mb-4">
-            <h3 class="text-lg font-semibold">새 환자 등록</h3>
-            <button onclick="closeModal()" class="text-gray-400 hover:text-gray-600">
-              <i class="fas fa-times text-xl"></i>
-            </button>
+      <div id="addPatientModal" class="fixed inset-0 z-[60] hidden">
+        <div class="absolute inset-0 bg-black/50 backdrop-blur-sm" onclick="closeModal()"></div>
+        <div class="absolute bottom-0 left-0 right-0 max-w-lg mx-auto">
+          <div class="bg-white rounded-t-3xl p-6 shadow-2xl animate-slide-up">
+            <div class="flex items-center justify-between mb-5">
+              <h2 class="text-lg font-bold">환자 등록</h2>
+              <button onclick="closeModal()" class="w-8 h-8 rounded-lg bg-surface-100 flex items-center justify-center text-surface-500 hover:bg-surface-200 transition-colors"><i class="fas fa-xmark"></i></button>
+            </div>
+            <form id="addPatientForm" class="space-y-4">
+              <div>
+                <label class="block text-xs font-semibold text-surface-600 mb-1.5">이름 *</label>
+                <input type="text" id="pName" required class="w-full px-4 py-3 border border-surface-200 rounded-xl outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 transition-all" placeholder="환자 이름" />
+              </div>
+              <div>
+                <label class="block text-xs font-semibold text-surface-600 mb-1.5">전화번호</label>
+                <input type="tel" id="pPhone" class="w-full px-4 py-3 border border-surface-200 rounded-xl outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 transition-all" placeholder="010-0000-0000" />
+              </div>
+              <div class="grid grid-cols-2 gap-3">
+                <div>
+                  <label class="block text-xs font-semibold text-surface-600 mb-1.5">나이</label>
+                  <input type="number" id="pAge" class="w-full px-4 py-3 border border-surface-200 rounded-xl outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 transition-all" placeholder="30" />
+                </div>
+                <div>
+                  <label class="block text-xs font-semibold text-surface-600 mb-1.5">성별</label>
+                  <select id="pGender" class="w-full px-4 py-3 border border-surface-200 rounded-xl outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 transition-all bg-white">
+                    <option value="">선택</option>
+                    <option value="male">남성</option>
+                    <option value="female">여성</option>
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label class="block text-xs font-semibold text-surface-600 mb-1.5">메모</label>
+                <textarea id="pMemo" rows="2" class="w-full px-4 py-3 border border-surface-200 rounded-xl outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 transition-all resize-none" placeholder="특이사항 메모"></textarea>
+              </div>
+              <button type="submit" class="w-full bg-gradient-brand text-white font-bold py-3.5 rounded-xl shadow-md shadow-brand-600/20 active:scale-[0.97] transition-all">환자 등록</button>
+            </form>
           </div>
-          <form id="addPatientForm" class="space-y-4">
-            <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1">이름 *</label>
-              <input type="text" name="name" required class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 outline-none" placeholder="환자 이름" />
-            </div>
-            <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1">연락처</label>
-              <input type="tel" name="phone" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 outline-none" placeholder="010-0000-0000" />
-            </div>
-            <div class="grid grid-cols-2 gap-3">
-              <div>
-                <label class="block text-sm font-medium text-gray-700 mb-1">나이</label>
-                <input type="number" name="age" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 outline-none" placeholder="00" />
-              </div>
-              <div>
-                <label class="block text-sm font-medium text-gray-700 mb-1">성별</label>
-                <select name="gender" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 outline-none">
-                  <option value="">선택</option>
-                  <option value="male">남성</option>
-                  <option value="female">여성</option>
-                </select>
-              </div>
-            </div>
-            <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1">메모</label>
-              <textarea name="memo" rows={2} class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 outline-none resize-none" placeholder="환자 관련 메모"></textarea>
-            </div>
-            <button type="submit" class="w-full bg-primary-600 hover:bg-primary-700 text-white font-medium py-3 rounded-lg transition">
-              등록하기
-            </button>
-          </form>
         </div>
       </div>
 
       <script dangerouslySetInnerHTML={{
         __html: `
-          let currentFilter = 'all';
-          let searchTimeout;
-
-          async function loadPatients(filter = 'all', search = '') {
-            try {
-              const authRes = await fetch('/api/auth/me');
-              if (!authRes.ok) {
-                window.location.href = '/login';
-                return;
-              }
-
-              const params = new URLSearchParams({ limit: '50' });
-              if (filter !== 'all') params.set('status', filter);
-              if (search) params.set('search', search);
-
-              const res = await fetch('/api/patients?' + params);
-              const data = await res.json();
-
-              if (data.success) {
-                renderPatients(data.data);
-              }
-            } catch (err) {
-              console.error('Failed to load patients:', err);
-            }
-          }
-
-          function renderPatients(patients) {
-            const container = document.getElementById('patientList');
-            
-            if (!patients || patients.length === 0) {
-              container.innerHTML = \`
-                <div class="text-center py-12">
-                  <i class="fas fa-users text-4xl text-gray-300 mb-4"></i>
-                  <p class="text-gray-500">환자 정보가 없습니다</p>
-                  <button onclick="openModal()" class="mt-4 text-primary-600 font-medium">
-                    <i class="fas fa-plus mr-2"></i>첫 환자 등록하기
-                  </button>
-                </div>
-              \`;
-              return;
-            }
-
-            const statusColors = {
-              paid: 'text-green-600',
-              undecided: 'text-yellow-600',
-              lost: 'text-red-600'
-            };
-            const statusEmoji = { paid: '🟢', undecided: '🟡', lost: '🔴' };
-
-            container.innerHTML = patients.map(p => {
-              const lastDate = p.last_consultation ? new Date(p.last_consultation).toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' }) : null;
-              const tags = p.tags || [];
-              
-              return \`
-                <a href="/patients/\${p.id}" class="block">
-                  <div class="bg-white rounded-xl p-4 border border-gray-100 shadow-sm hover:shadow-md transition">
-                    <div class="flex justify-between items-start">
-                      <div class="flex items-center gap-3">
-                        <div class="w-12 h-12 bg-primary-100 rounded-full flex items-center justify-center">
-                          <i class="fas fa-user text-primary-600"></i>
-                        </div>
-                        <div>
-                          <div class="flex items-center gap-2">
-                            <span class="font-semibold text-gray-900">\${p.name}</span>
-                            \${p.age ? '<span class="text-gray-500 text-sm">' + p.age + '세</span>' : ''}
-                            \${p.gender === 'male' ? '<span class="text-blue-500 text-xs">♂</span>' : p.gender === 'female' ? '<span class="text-pink-500 text-xs">♀</span>' : ''}
-                          </div>
-                          \${p.phone ? '<p class="text-gray-500 text-sm">' + p.phone + '</p>' : ''}
-                        </div>
-                      </div>
-                      <div class="text-right">
-                        \${p.last_consultation_status ? \`
-                          <span class="\${statusColors[p.last_consultation_status] || 'text-gray-500'} text-sm">
-                            \${statusEmoji[p.last_consultation_status] || ''} \${p.last_consultation_status === 'paid' ? '결제완료' : p.last_consultation_status === 'undecided' ? '미결정' : p.last_consultation_status}
-                          </span>
-                        \` : ''}
-                        \${p.last_decision_score && p.last_consultation_status === 'undecided' ? \`
-                          <p class="text-xs text-gray-500 mt-1">결정도 \${p.last_decision_score}/10</p>
-                        \` : ''}
-                      </div>
-                    </div>
-                    <div class="flex items-center justify-between mt-3 text-sm">
-                      <div class="flex gap-2">
-                        \${tags.slice(0, 3).map(t => '<span class="px-2 py-0.5 bg-gray-100 text-gray-600 rounded-full text-xs">' + t + '</span>').join('')}
-                      </div>
-                      <span class="text-gray-400 text-xs">
-                        \${p.consultation_count ? p.consultation_count + '회 상담' : ''}
-                        \${lastDate ? ' · ' + lastDate : ''}
-                      </span>
-                    </div>
-                  </div>
-                </a>
-              \`;
-            }).join('');
-          }
-
-          function openModal() {
+          var allPatients = [];
+          
+          document.getElementById('addPatientBtn').addEventListener('click', function() {
             document.getElementById('addPatientModal').classList.remove('hidden');
-          }
-
-          function closeModal() {
+          });
+          
+          window.closeModal = function() {
             document.getElementById('addPatientModal').classList.add('hidden');
-            document.getElementById('addPatientForm').reset();
-          }
+          };
 
-          // Modal backdrop click
-          document.getElementById('addPatientModal').addEventListener('click', (e) => {
-            if (e.target.id === 'addPatientModal') closeModal();
+          document.getElementById('searchInput').addEventListener('input', function(e) {
+            var q = e.target.value.toLowerCase();
+            renderPatients(allPatients.filter(function(p) {
+              return p.name.toLowerCase().includes(q) || (p.phone && p.phone.includes(q));
+            }));
           });
 
-          // Add patient button
-          document.getElementById('addPatientBtn').addEventListener('click', openModal);
-
-          // Add patient form
-          document.getElementById('addPatientForm').addEventListener('submit', async (e) => {
+          document.getElementById('addPatientForm').addEventListener('submit', async function(e) {
             e.preventDefault();
-            const formData = new FormData(e.target);
-            const data = {
-              name: formData.get('name'),
-              phone: formData.get('phone') || undefined,
-              age: formData.get('age') ? parseInt(formData.get('age')) : undefined,
-              gender: formData.get('gender') || undefined,
-              memo: formData.get('memo') || undefined
-            };
-
             try {
-              const res = await fetch('/api/patients', {
+              var res = await fetch('/api/patients', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(data)
+                body: JSON.stringify({
+                  name: document.getElementById('pName').value,
+                  phone: document.getElementById('pPhone').value || undefined,
+                  age: document.getElementById('pAge').value ? parseInt(document.getElementById('pAge').value) : undefined,
+                  gender: document.getElementById('pGender').value || undefined,
+                  memo: document.getElementById('pMemo').value || undefined
+                })
               });
-              const result = await res.json();
-              
-              if (result.success) {
+              var data = await res.json();
+              if (data.success) {
                 closeModal();
-                loadPatients(currentFilter, document.getElementById('searchInput').value);
+                loadPatients();
+                document.getElementById('addPatientForm').reset();
               } else {
-                alert(result.error || '환자 등록에 실패했습니다.');
+                alert(data.error || '등록 실패');
               }
-            } catch (err) {
-              alert('오류가 발생했습니다.');
+            } catch (err) { alert('오류가 발생했습니다.'); }
+          });
+
+          function renderPatients(patients) {
+            if (!patients || patients.length === 0) {
+              document.getElementById('patientList').innerHTML = '<div class="text-center py-16 px-6"><div class="w-20 h-20 mx-auto mb-5 rounded-2xl bg-surface-100 flex items-center justify-center"><i class="fas fa-user-group text-3xl text-surface-300"></i></div><h3 class="text-lg font-bold text-surface-800 mb-1">환자가 없습니다</h3><p class="text-surface-500 text-sm">첫 환자를 등록해보세요</p></div>';
+              return;
             }
-          });
+            var colors = ['bg-brand-100 text-brand-700', 'bg-emerald-100 text-emerald-700', 'bg-amber-100 text-amber-700', 'bg-rose-100 text-rose-700', 'bg-sky-100 text-sky-700', 'bg-purple-100 text-purple-700'];
+            var html = patients.map(function(p) {
+              var ci = p.name.charCodeAt(0) % colors.length;
+              var tags = [];
+              try { tags = JSON.parse(p.tags || '[]'); } catch(e){}
+              return '<a href="/patients/' + p.id + '" class="card-premium p-4 flex items-center gap-3.5 block">' +
+                '<div class="w-11 h-11 rounded-xl flex items-center justify-center shrink-0 ' + colors[ci] + '">' +
+                  '<span class="text-base font-bold">' + p.name.charAt(0) + '</span>' +
+                '</div>' +
+                '<div class="flex-1 min-w-0">' +
+                  '<div class="flex items-center gap-2">' +
+                    '<span class="font-bold text-sm">' + p.name + '</span>' +
+                    (p.age ? '<span class="text-xs text-surface-400">' + p.age + '세</span>' : '') +
+                    (p.gender ? '<span class="text-xs text-surface-400">' + (p.gender === 'male' ? '남' : '여') + '</span>' : '') +
+                  '</div>' +
+                  '<div class="flex items-center gap-1.5 mt-0.5">' +
+                    (p.phone ? '<span class="text-xs text-surface-500">' + p.phone + '</span>' : '') +
+                    (tags.length > 0 ? tags.slice(0,2).map(function(t){ return '<span class="text-[10px] px-1.5 py-0.5 rounded-md bg-brand-50 text-brand-600 font-medium">' + t + '</span>'; }).join('') : '') +
+                  '</div>' +
+                '</div>' +
+                '<i class="fas fa-chevron-right text-surface-300 text-xs"></i>' +
+              '</a>';
+            }).join('');
+            document.getElementById('patientList').innerHTML = '<div class="space-y-2">' + html + '</div>';
+          }
 
-          // Filter buttons
-          document.querySelectorAll('.filter-btn').forEach(btn => {
-            btn.addEventListener('click', () => {
-              document.querySelectorAll('.filter-btn').forEach(b => {
-                b.classList.remove('bg-primary-600', 'text-white');
-                b.classList.add('bg-gray-100', 'text-gray-600');
-              });
-              btn.classList.remove('bg-gray-100', 'text-gray-600');
-              btn.classList.add('bg-primary-600', 'text-white');
-              
-              currentFilter = btn.dataset.filter;
-              loadPatients(currentFilter, document.getElementById('searchInput').value);
-            });
-          });
-
-          // Search
-          document.getElementById('searchInput').addEventListener('input', (e) => {
-            clearTimeout(searchTimeout);
-            searchTimeout = setTimeout(() => {
-              loadPatients(currentFilter, e.target.value);
-            }, 300);
-          });
+          async function loadPatients() {
+            try {
+              var res = await fetch('/api/patients');
+              if (res.status === 401) { window.location.href = '/login'; return; }
+              var data = await res.json();
+              if (data.success) {
+                allPatients = data.data;
+                renderPatients(allPatients);
+              }
+            } catch (err) { console.error(err); }
+          }
 
           loadPatients();
         `
