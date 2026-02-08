@@ -3,6 +3,7 @@ import { Hono } from 'hono';
 import { generateId, safeParseJSON } from '../lib/utils';
 import { authMiddleware } from '../lib/auth';
 import { analyzeAudio, analyzeConsultation } from '../lib/ai';
+import { runFullAnalysisPipeline } from '../lib/ai-presenter';
 import type { Env, Consultation } from '../types';
 
 const consultations = new Hono<{ Bindings: Env }>();
@@ -206,13 +207,35 @@ consultations.post('/:id/upload-audio', async (c) => {
     }
 
     try {
-      const analysis = await analyzeAudio(audioData, apiKey);
+      // Get patient info for full analysis
+      let patientInfo = { name: '미지정', age: undefined, gender: undefined };
+      
+      const consultWithPatient = await db.prepare(`
+        SELECT c.*, p.name as patient_name, p.age as patient_age, p.gender as patient_gender
+        FROM consultations c
+        LEFT JOIN patients p ON c.patient_id = p.id
+        WHERE c.id = ?
+      `).bind(consultId).first();
+      
+      if (consultWithPatient?.patient_name) {
+        patientInfo = {
+          name: consultWithPatient.patient_name as string,
+          age: consultWithPatient.patient_age as number,
+          gender: consultWithPatient.patient_gender as string
+        };
+      }
+
+      // Run full AI analysis pipeline (includes report generation)
+      const fullAnalysis = await runFullAnalysisPipeline(audioData, patientInfo, apiKey);
 
       // Update consultation with analysis
       await db.prepare(`
         UPDATE consultations SET
           audio_url = ?,
           transcript = ?,
+          transcript_diarized = ?,
+          ner_extracted = ?,
+          spin_analysis = ?,
           summary = ?,
           treatment_type = COALESCE(treatment_type, ?),
           treatment_area = COALESCE(treatment_area, ?),
@@ -223,24 +246,70 @@ consultations.post('/:id/upload-audio', async (c) => {
           feedback = ?,
           decision_score = ?,
           ai_analysis_status = 'completed',
+          recording_status = 'completed',
           updated_at = datetime('now')
         WHERE id = ?
       `).bind(
         audioKey,
-        analysis.transcript,
-        analysis.summary,
-        analysis.treatment_type,
-        analysis.treatment_area,
-        analysis.amount,
-        JSON.stringify(analysis.patient_psychology),
-        JSON.stringify(analysis.emotion_flow),
-        JSON.stringify(analysis.key_quotes),
-        JSON.stringify(analysis.feedback),
-        analysis.decision_score,
+        fullAnalysis.transcript,
+        JSON.stringify(fullAnalysis.diarizedSegments),
+        JSON.stringify(fullAnalysis.nerData),
+        JSON.stringify(fullAnalysis.spinAnalysis),
+        fullAnalysis.report.consultation_summary,
+        fullAnalysis.nerData.treatment_type || null,
+        fullAnalysis.nerData.treatment_area || null,
+        fullAnalysis.nerData.amount || null,
+        JSON.stringify(fullAnalysis.report.decision_factors),
+        JSON.stringify({
+          overall_tone: fullAnalysis.report.overall_sentiment,
+          decision_score: fullAnalysis.report.decision_score,
+          timeline: fullAnalysis.report.emotion_timeline,
+          summary: fullAnalysis.report.emotion_summary
+        }),
+        JSON.stringify(fullAnalysis.report.patient_concerns?.map(c => c.concern) || []),
+        JSON.stringify(fullAnalysis.report.coaching_feedback),
+        fullAnalysis.report.decision_score,
         consultId
       ).run();
 
-      return c.json({ success: true, data: analysis });
+      // Auto-create consultation report
+      const reportId = 'report_' + generateId().slice(0, 8);
+      await db.prepare(`
+        INSERT INTO consultation_reports (
+          id, organization_id, consultation_id,
+          consultation_summary, treatment_options, discussed_amount, payment_options,
+          patient_concerns, emotion_timeline, emotion_summary, overall_sentiment,
+          decision_factors, decision_score, decision_prediction,
+          next_actions, recommended_followup_date, followup_message,
+          coaching_feedback, coaching_score, generation_model
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'gpt-4o')
+      `).bind(
+        reportId, orgId, consultId,
+        fullAnalysis.report.consultation_summary,
+        JSON.stringify(fullAnalysis.report.treatment_options),
+        fullAnalysis.report.discussed_amount,
+        JSON.stringify(fullAnalysis.report.payment_options),
+        JSON.stringify(fullAnalysis.report.patient_concerns),
+        JSON.stringify(fullAnalysis.report.emotion_timeline),
+        fullAnalysis.report.emotion_summary,
+        fullAnalysis.report.overall_sentiment,
+        JSON.stringify(fullAnalysis.report.decision_factors),
+        fullAnalysis.report.decision_score,
+        fullAnalysis.report.decision_prediction,
+        JSON.stringify(fullAnalysis.report.next_actions),
+        fullAnalysis.report.recommended_followup_date,
+        fullAnalysis.report.followup_message,
+        JSON.stringify(fullAnalysis.report.coaching_feedback),
+        fullAnalysis.report.coaching_feedback.total_score
+      ).run();
+
+      return c.json({ 
+        success: true, 
+        data: {
+          ...fullAnalysis,
+          report_id: reportId
+        }
+      });
     } catch (aiError) {
       console.error('AI analysis error:', aiError);
       await db.prepare(

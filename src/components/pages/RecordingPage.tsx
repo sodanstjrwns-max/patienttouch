@@ -55,19 +55,19 @@ export const RecordingPage: FC<Props> = ({ patientId }) => {
         </div>
 
         {/* Recording UI */}
-        <div class="text-center py-8">
+        <div class="text-center py-4">
           {/* Recording Status */}
-          <div id="recordingStatus" class="mb-8">
+          <div id="recordingStatus" class="mb-6">
             <div id="idleState">
-              <div class="w-32 h-32 mx-auto bg-gray-800 rounded-full flex items-center justify-center border-4 border-gray-700">
-                <i class="fas fa-microphone text-5xl text-gray-400"></i>
+              <div class="w-28 h-28 mx-auto bg-gray-800 rounded-full flex items-center justify-center border-4 border-gray-700">
+                <i class="fas fa-microphone text-4xl text-gray-400"></i>
               </div>
               <p id="idleMessage" class="text-gray-400 mt-4">환자를 선택하고 녹음을 시작하세요</p>
             </div>
             
             <div id="recordingState" class="hidden">
-              <div class="w-32 h-32 mx-auto bg-red-600 rounded-full flex items-center justify-center recording-pulse">
-                <i class="fas fa-microphone text-5xl text-white"></i>
+              <div class="w-28 h-28 mx-auto bg-red-600 rounded-full flex items-center justify-center recording-pulse">
+                <i class="fas fa-microphone text-4xl text-white"></i>
               </div>
               <p id="recordingTime" class="text-white text-3xl font-mono mt-4">00:00</p>
               <p class="text-red-400 text-sm mt-2">
@@ -76,8 +76,8 @@ export const RecordingPage: FC<Props> = ({ patientId }) => {
             </div>
             
             <div id="processingState" class="hidden">
-              <div class="w-32 h-32 mx-auto bg-primary-600 rounded-full flex items-center justify-center">
-                <i class="fas fa-spinner fa-spin text-5xl text-white"></i>
+              <div class="w-28 h-28 mx-auto bg-primary-600 rounded-full flex items-center justify-center">
+                <i class="fas fa-spinner fa-spin text-4xl text-white"></i>
               </div>
               <p class="text-white mt-4">AI 분석 중...</p>
               <p class="text-gray-400 text-sm mt-2">약 1-2분 소요</p>
@@ -89,6 +89,55 @@ export const RecordingPage: FC<Props> = ({ patientId }) => {
             <i id="recordIcon" class="fas fa-microphone text-3xl text-white"></i>
           </button>
           <p id="recordBtnText" class="text-gray-400 text-sm mt-3">녹음 시작</p>
+        </div>
+
+        {/* Real-time STT Transcript (shown during recording) */}
+        <div id="sttContainer" class="hidden mt-6">
+          {/* AI Hint Banner */}
+          <div id="aiHintBanner" class="hidden mb-4 bg-gradient-to-r from-primary-600 to-purple-600 rounded-xl p-4 shadow-lg animate-fadeIn">
+            <div class="flex items-start gap-3">
+              <div class="flex-shrink-0 w-8 h-8 bg-white/20 rounded-full flex items-center justify-center">
+                <i class="fas fa-lightbulb text-yellow-300"></i>
+              </div>
+              <div class="flex-1">
+                <p id="aiHintType" class="text-white/80 text-xs font-medium uppercase tracking-wide mb-1">💡 AI 힌트</p>
+                <p id="aiHintMessage" class="text-white font-medium"></p>
+              </div>
+              <button onclick="dismissHint()" class="text-white/60 hover:text-white">
+                <i class="fas fa-times"></i>
+              </button>
+            </div>
+          </div>
+
+          {/* Live Transcript */}
+          <div class="bg-gray-800 rounded-xl p-4">
+            <div class="flex items-center justify-between mb-3">
+              <h4 class="text-white font-medium text-sm">
+                <i class="fas fa-closed-captioning text-primary-400 mr-2"></i>실시간 자막
+              </h4>
+              <div id="sttStatus" class="flex items-center gap-2 text-xs">
+                <span class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+                <span class="text-gray-400">연결됨</span>
+              </div>
+            </div>
+            <div id="transcriptDisplay" class="h-40 overflow-y-auto space-y-2 text-sm">
+              <p class="text-gray-500 italic">음성이 인식되면 여기에 표시됩니다...</p>
+            </div>
+          </div>
+
+          {/* Emotion Indicator */}
+          <div id="emotionIndicator" class="mt-4 bg-gray-800 rounded-xl p-4">
+            <div class="flex items-center justify-between">
+              <span class="text-gray-400 text-sm">환자 감정</span>
+              <div class="flex items-center gap-2">
+                <span id="emotionEmoji" class="text-2xl">😐</span>
+                <div id="emotionBar" class="w-24 h-2 bg-gray-700 rounded-full overflow-hidden">
+                  <div id="emotionFill" class="h-full bg-yellow-500 rounded-full transition-all duration-500" style="width: 50%"></div>
+                </div>
+                <span id="emotionScore" class="text-gray-400 text-sm">0</span>
+              </div>
+            </div>
+          </div>
         </div>
 
         {/* Recording Notice */}
@@ -224,6 +273,21 @@ export const RecordingPage: FC<Props> = ({ patientId }) => {
             from { transform: translateY(100%); }
             to { transform: translateY(0); }
           }
+          .animate-fadeIn {
+            animation: fadeIn 0.3s ease-out;
+          }
+          @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+          }
+          .transcript-consultant {
+            background: linear-gradient(90deg, rgba(99, 102, 241, 0.2), transparent);
+            border-left: 3px solid #6366f1;
+          }
+          .transcript-patient {
+            background: linear-gradient(90deg, rgba(16, 185, 129, 0.2), transparent);
+            border-left: 3px solid #10b981;
+          }
         `}
       </style>
 
@@ -238,6 +302,12 @@ export const RecordingPage: FC<Props> = ({ patientId }) => {
           let consultationId = null;
           let isQuickMode = false;
           let allPatients = [];
+          
+          // Real-time STT state
+          let sttProcessor = null;
+          let transcriptSegments = [];
+          let currentEmotion = 0;
+          let hintTimeout = null;
 
           async function init() {
             const authRes = await fetch('/api/auth/me');
@@ -317,6 +387,186 @@ export const RecordingPage: FC<Props> = ({ patientId }) => {
             }
           });
 
+          // Real-time STT Processing
+          class RealtimeSTT {
+            constructor(consultationId) {
+              this.consultationId = consultationId;
+              this.audioContext = null;
+              this.processor = null;
+              this.buffer = [];
+              this.processingInterval = null;
+            }
+
+            async start(stream) {
+              this.audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+              const source = this.audioContext.createMediaStreamSource(stream);
+              
+              // Create script processor for audio chunks
+              this.processor = this.audioContext.createScriptProcessor(4096, 1, 1);
+              source.connect(this.processor);
+              this.processor.connect(this.audioContext.destination);
+              
+              this.processor.onaudioprocess = (e) => {
+                const input = e.inputBuffer.getChannelData(0);
+                // Store audio samples
+                this.buffer.push(...input);
+              };
+
+              // Process audio every 5 seconds
+              this.processingInterval = setInterval(() => this.processBuffer(), 5000);
+            }
+
+            async processBuffer() {
+              if (this.buffer.length < 16000) return; // Need at least 1 second
+              
+              const audioData = new Float32Array(this.buffer);
+              this.buffer = [];
+              
+              try {
+                // Convert to WAV blob for API
+                const wavBlob = this.float32ToWav(audioData);
+                
+                // Send to STT endpoint (simulated for now - will use actual API in production)
+                await this.sendToSTT(wavBlob);
+              } catch (err) {
+                console.error('STT processing error:', err);
+              }
+            }
+
+            float32ToWav(samples) {
+              const buffer = new ArrayBuffer(44 + samples.length * 2);
+              const view = new DataView(buffer);
+              
+              // WAV header
+              const writeString = (offset, str) => {
+                for (let i = 0; i < str.length; i++) {
+                  view.setUint8(offset + i, str.charCodeAt(i));
+                }
+              };
+              
+              writeString(0, 'RIFF');
+              view.setUint32(4, 36 + samples.length * 2, true);
+              writeString(8, 'WAVE');
+              writeString(12, 'fmt ');
+              view.setUint32(16, 16, true);
+              view.setUint16(20, 1, true); // PCM
+              view.setUint16(22, 1, true); // mono
+              view.setUint32(24, 16000, true); // sample rate
+              view.setUint32(28, 32000, true); // byte rate
+              view.setUint16(32, 2, true); // block align
+              view.setUint16(34, 16, true); // bits per sample
+              writeString(36, 'data');
+              view.setUint32(40, samples.length * 2, true);
+              
+              // Convert samples
+              for (let i = 0; i < samples.length; i++) {
+                const s = Math.max(-1, Math.min(1, samples[i]));
+                view.setInt16(44 + i * 2, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+              }
+              
+              return new Blob([buffer], { type: 'audio/wav' });
+            }
+
+            async sendToSTT(wavBlob) {
+              // Simulate STT response (in production, this would call actual STT API)
+              const elapsed = Math.floor((Date.now() - recordingStartTime) / 1000);
+              
+              // Demo transcripts based on time
+              const demoTranscripts = [
+                { time: 5, speaker: 'consultant', text: '안녕하세요, 오늘 어떤 부분이 불편해서 오셨어요?' },
+                { time: 10, speaker: 'patient', text: '아... 이가 좀 시리고요, 예전에 뽑은 부분이 신경 쓰여요.' },
+                { time: 15, speaker: 'consultant', text: '네, 언제부터 시리셨어요? 찬 음식 먹을 때요?' },
+                { time: 20, speaker: 'patient', text: '한 2-3주 됐어요. 아이스크림 먹으면 특히 심해요.' },
+                { time: 25, speaker: 'consultant', text: '네, 검사해보니 잇몸이 조금 내려가서 시린 것 같아요. 치료 방법은 크게 두 가지가 있는데요...' },
+                { time: 35, speaker: 'patient', text: '그 치료 비용이 얼마나 되나요? 보험 적용은 되나요?', emotion: -0.2, hint: { type: '가격 언급', message: '환자가 가격을 묻고 있습니다. 가치 먼저 설명하고, 분납 옵션을 안내해보세요.' }},
+                { time: 45, speaker: 'consultant', text: '레진 치료는 3만원 정도고요, 크라운은 40-50만원 정도예요.' },
+                { time: 55, speaker: 'patient', text: '음... 생각보다 비싸네요. 좀 고민해봐야 할 것 같아요.', emotion: -0.4, hint: { type: '망설임 감지', message: '환자가 망설이고 있습니다. 치료를 미룰 경우 발생할 수 있는 문제점을 부드럽게 설명해보세요.' }},
+              ];
+
+              // Find matching transcript
+              const match = demoTranscripts.find(t => {
+                const diff = Math.abs(elapsed - t.time);
+                return diff < 3 && !transcriptSegments.some(s => s.time === t.time);
+              });
+
+              if (match) {
+                transcriptSegments.push(match);
+                this.addTranscriptToUI(match);
+                
+                if (match.emotion !== undefined) {
+                  this.updateEmotion(match.emotion);
+                }
+                
+                if (match.hint) {
+                  this.showHint(match.hint);
+                }
+              }
+            }
+
+            addTranscriptToUI(segment) {
+              const container = document.getElementById('transcriptDisplay');
+              const isFirst = container.querySelector('.text-gray-500.italic');
+              if (isFirst) container.innerHTML = '';
+              
+              const speakerLabel = segment.speaker === 'consultant' ? '상담사' : '환자';
+              const speakerClass = segment.speaker === 'consultant' ? 'transcript-consultant' : 'transcript-patient';
+              const textColor = segment.speaker === 'consultant' ? 'text-primary-300' : 'text-green-300';
+              
+              const div = document.createElement('div');
+              div.className = \`p-2 rounded-lg \${speakerClass} animate-fadeIn\`;
+              div.innerHTML = \`
+                <span class="\${textColor} text-xs font-medium">\${speakerLabel}</span>
+                <p class="text-white text-sm mt-1">\${segment.text}</p>
+              \`;
+              container.appendChild(div);
+              container.scrollTop = container.scrollHeight;
+            }
+
+            updateEmotion(score) {
+              currentEmotion = Math.max(-1, Math.min(1, currentEmotion + score));
+              const normalized = (currentEmotion + 1) / 2 * 100; // 0-100
+              
+              document.getElementById('emotionFill').style.width = normalized + '%';
+              document.getElementById('emotionScore').textContent = Math.round(currentEmotion * 10);
+              
+              // Update emoji
+              let emoji = '😐';
+              let color = 'bg-yellow-500';
+              if (currentEmotion > 0.3) { emoji = '😊'; color = 'bg-green-500'; }
+              else if (currentEmotion > 0.6) { emoji = '😄'; color = 'bg-green-400'; }
+              else if (currentEmotion < -0.3) { emoji = '😟'; color = 'bg-orange-500'; }
+              else if (currentEmotion < -0.6) { emoji = '😰'; color = 'bg-red-500'; }
+              
+              document.getElementById('emotionEmoji').textContent = emoji;
+              document.getElementById('emotionFill').className = \`h-full \${color} rounded-full transition-all duration-500\`;
+            }
+
+            showHint(hint) {
+              const banner = document.getElementById('aiHintBanner');
+              document.getElementById('aiHintType').innerHTML = \`💡 \${hint.type}\`;
+              document.getElementById('aiHintMessage').textContent = hint.message;
+              banner.classList.remove('hidden');
+              
+              // Auto-hide after 10 seconds
+              if (hintTimeout) clearTimeout(hintTimeout);
+              hintTimeout = setTimeout(() => {
+                banner.classList.add('hidden');
+              }, 10000);
+            }
+
+            stop() {
+              if (this.processingInterval) clearInterval(this.processingInterval);
+              if (this.processor) this.processor.disconnect();
+              if (this.audioContext) this.audioContext.close();
+            }
+          }
+
+          function dismissHint() {
+            document.getElementById('aiHintBanner').classList.add('hidden');
+            if (hintTimeout) clearTimeout(hintTimeout);
+          }
+          window.dismissHint = dismissHint;
+
           async function startRecording() {
             try {
               // Create consultation (with or without patient)
@@ -340,6 +590,8 @@ export const RecordingPage: FC<Props> = ({ patientId }) => {
               
               mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
               audioChunks = [];
+              transcriptSegments = [];
+              currentEmotion = 0;
               
               mediaRecorder.ondataavailable = (e) => {
                 if (e.data.size > 0) {
@@ -349,21 +601,30 @@ export const RecordingPage: FC<Props> = ({ patientId }) => {
               
               mediaRecorder.onstop = async () => {
                 stream.getTracks().forEach(track => track.stop());
+                if (sttProcessor) sttProcessor.stop();
                 await processRecording();
               };
               
               mediaRecorder.start(1000);
               recordingStartTime = Date.now();
               
+              // Start real-time STT
+              sttProcessor = new RealtimeSTT(consultationId);
+              await sttProcessor.start(stream);
+              
               // Update UI
               document.getElementById('idleState').classList.add('hidden');
               document.getElementById('recordingState').classList.remove('hidden');
+              document.getElementById('sttContainer').classList.remove('hidden');
               document.getElementById('recordIcon').classList.remove('fa-microphone');
               document.getElementById('recordIcon').classList.add('fa-stop');
               document.getElementById('recordBtnText').textContent = '녹음 종료';
               document.getElementById('patientSelect').disabled = true;
               document.getElementById('modePatient').disabled = true;
               document.getElementById('modeQuick').disabled = true;
+              
+              // Reset transcript display
+              document.getElementById('transcriptDisplay').innerHTML = '<p class="text-gray-500 italic">음성이 인식되면 여기에 표시됩니다...</p>';
               
               timerInterval = setInterval(updateTimer, 1000);
             } catch (err) {
@@ -378,6 +639,7 @@ export const RecordingPage: FC<Props> = ({ patientId }) => {
               clearInterval(timerInterval);
               
               document.getElementById('recordingState').classList.add('hidden');
+              document.getElementById('sttContainer').classList.add('hidden');
               document.getElementById('processingState').classList.remove('hidden');
               document.getElementById('recordBtn').disabled = true;
             }
@@ -411,8 +673,8 @@ export const RecordingPage: FC<Props> = ({ patientId }) => {
                 document.getElementById('processingState').classList.add('hidden');
                 showLinkPatientModal();
               } else {
-                // Normal flow - redirect to consultation detail
-                window.location.href = '/consultations/' + consultationId;
+                // Normal flow - redirect to consultation report
+                window.location.href = '/consultations/' + consultationId + '/report';
               }
             } catch (err) {
               console.error('Failed to upload recording:', err);
@@ -498,7 +760,7 @@ export const RecordingPage: FC<Props> = ({ patientId }) => {
               
               const data = await res.json();
               if (data.success) {
-                window.location.href = '/consultations/' + consultationId;
+                window.location.href = '/consultations/' + consultationId + '/report';
               } else {
                 alert(data.error || '환자 연결에 실패했습니다.');
               }
@@ -541,7 +803,7 @@ export const RecordingPage: FC<Props> = ({ patientId }) => {
 
           // Skip linking (view consultation without patient)
           document.getElementById('skipLinkBtn').addEventListener('click', () => {
-            window.location.href = '/consultations/' + consultationId;
+            window.location.href = '/consultations/' + consultationId + '/report';
           });
 
           // Original new patient modal (before recording)

@@ -231,9 +231,184 @@ export interface AIAnalysisResult {
   decision_score: number;
 }
 
+// ============================================
+// Presenter Types (Report & Proposal)
+// ============================================
+
+export interface ConsultationReport {
+  id: string;
+  organization_id: string;
+  consultation_id: string;
+  patient_summary?: string;
+  consultation_summary: string;
+  treatment_options: TreatmentOption[];
+  discussed_amount?: number;
+  payment_options: PaymentOptions;
+  patient_concerns: PatientConcern[];
+  emotion_timeline: EmotionTimelineEntry[];
+  emotion_summary?: string;
+  overall_sentiment: 'very_positive' | 'positive' | 'neutral' | 'negative' | 'very_negative';
+  decision_factors: DecisionFactors;
+  decision_score: number;
+  decision_prediction?: string;
+  next_actions: NextAction[];
+  recommended_followup_date?: string;
+  followup_message?: string;
+  coaching_feedback: CoachingFeedback;
+  coaching_score: number;
+  generated_at: string;
+  generation_model?: string;
+  is_edited: boolean;
+  edited_at?: string;
+}
+
+export interface TreatmentOption {
+  name: string;
+  price: number;
+  duration?: string;
+  pros: string[];
+  cons: string[];
+  recommendation_level: 'high' | 'medium' | 'low';
+}
+
+export interface PaymentOptions {
+  full_payment?: number;
+  installment_options: InstallmentOption[];
+}
+
+export interface InstallmentOption {
+  months: number;
+  monthly_amount: number;
+  interest_rate?: number;
+}
+
+export interface PatientConcern {
+  concern: string;
+  addressed: boolean;
+  resolution?: string;
+}
+
+export interface EmotionTimelineEntry {
+  timestamp: number;
+  score: number;
+  note?: string;
+  highlight?: boolean;
+  speaker: 'consultant' | 'patient';
+}
+
+export interface DecisionFactors {
+  main_concern?: string;
+  decision_maker?: string;
+  budget_range?: string;
+  timeline?: string;
+}
+
+export interface NextAction {
+  action: string;
+  due_date?: string;
+  priority: 'high' | 'medium' | 'low';
+}
+
+export interface CoachingFeedback {
+  scores: {
+    rapport: number;
+    spin: number;
+    objection_handling: number;
+    pricing_framing: number;
+    closing: number;
+    structure: number;
+  };
+  total_score: number;
+  strengths: string[];
+  improvements: CoachingImprovement[];
+  patient_code_evaluation?: string;
+}
+
+export interface CoachingImprovement {
+  issue: string;
+  suggestion: string;
+  example?: string;
+  timestamp?: number;
+}
+
+export interface TreatmentProposal {
+  id: string;
+  organization_id: string;
+  consultation_id: string;
+  report_id: string;
+  patient_id: string;
+  title: string;
+  greeting_message?: string;
+  selected_options: ProposalOption[];
+  recommended_option?: string;
+  total_amount: number;
+  discount_amount: number;
+  final_amount: number;
+  installment_options: InstallmentOption[];
+  default_installment_months: number;
+  hospital_name?: string;
+  hospital_logo_url?: string;
+  hospital_phone?: string;
+  public_token: string;
+  public_url?: string;
+  expires_at?: string;
+  sent_via?: 'kakao' | 'sms' | 'email' | 'link';
+  sent_at?: string;
+  viewed_at?: string;
+  view_count: number;
+  cta_clicked: boolean;
+  status: 'draft' | 'sent' | 'viewed' | 'expired' | 'converted';
+}
+
+export interface ProposalOption {
+  name: string;
+  price: number;
+  duration?: string;
+  benefits: string[];
+  recommended: boolean;
+}
+
+export interface DiarizedSegment {
+  speaker: 'consultant' | 'patient' | 'unknown';
+  text: string;
+  start: number;
+  end: number;
+  emotion?: number;
+  confidence?: number;
+}
+
+export interface RealtimeHint {
+  type: 'pricing' | 'objection' | 'closing' | 'rapport' | 'spin' | 'warning';
+  message: string;
+  trigger_text?: string;
+  timestamp: number;
+}
+
+export interface ConsultantStats {
+  id: string;
+  organization_id: string;
+  user_id: string;
+  period_type: 'daily' | 'weekly' | 'monthly';
+  period_start: string;
+  period_end: string;
+  total_consultations: number;
+  total_duration_minutes: number;
+  converted_count: number;
+  pending_count: number;
+  lost_count: number;
+  conversion_rate: number;
+  total_amount: number;
+  avg_amount: number;
+  avg_coaching_score: number;
+  proposals_sent: number;
+  proposals_viewed: number;
+  proposals_converted: number;
+}
+
 // Bindings for Cloudflare
 export interface Env {
   DB: D1Database;
   R2: R2Bucket;
   OPENAI_API_KEY: string;
+  DEEPGRAM_API_KEY?: string;
 }

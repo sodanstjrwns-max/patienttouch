@@ -318,4 +318,263 @@ dashboard.get('/team', async (c) => {
   }
 });
 
+// ============================================
+// Admin Dashboard Endpoints
+// ============================================
+
+// GET /api/dashboard/admin-summary - Admin overview
+dashboard.get('/admin-summary', async (c) => {
+  try {
+    const orgId = c.get('organizationId');
+    const db = c.env.DB;
+    const { period = 'weekly' } = c.req.query();
+
+    let daysBack = 7;
+    if (period === 'daily') daysBack = 1;
+    if (period === 'monthly') daysBack = 30;
+
+    const dateCondition = `datetime('now', '-${daysBack} days')`;
+    const prevDateCondition = `datetime('now', '-${daysBack * 2} days')`;
+
+    // Current period stats
+    const currentStats = await db.prepare(`
+      SELECT 
+        COUNT(*) as total_consultations,
+        SUM(CASE WHEN status = 'paid' THEN 1 ELSE 0 END) as paid_consultations,
+        AVG(COALESCE(r.coaching_score, 0)) as avg_coaching_score
+      FROM consultations c
+      LEFT JOIN consultation_reports r ON c.id = r.consultation_id
+      WHERE c.organization_id = ? AND c.consultation_date >= ${dateCondition}
+    `).bind(orgId).first();
+
+    // Previous period stats (for trend)
+    const prevStats = await db.prepare(`
+      SELECT 
+        COUNT(*) as total_consultations,
+        SUM(CASE WHEN status = 'paid' THEN 1 ELSE 0 END) as paid_consultations,
+        AVG(COALESCE(r.coaching_score, 0)) as avg_coaching_score
+      FROM consultations c
+      LEFT JOIN consultation_reports r ON c.id = r.consultation_id
+      WHERE c.organization_id = ? 
+        AND c.consultation_date >= ${prevDateCondition}
+        AND c.consultation_date < ${dateCondition}
+    `).bind(orgId).first();
+
+    // Proposal stats
+    const proposalStats = await db.prepare(`
+      SELECT 
+        COUNT(*) as total_sent,
+        SUM(CASE WHEN status IN ('viewed', 'converted') THEN 1 ELSE 0 END) as viewed,
+        SUM(CASE WHEN status = 'converted' THEN 1 ELSE 0 END) as converted
+      FROM treatment_proposals
+      WHERE organization_id = ? AND sent_at >= ${dateCondition}
+    `).bind(orgId).first();
+
+    const prevProposalStats = await db.prepare(`
+      SELECT COUNT(*) as total_sent,
+             SUM(CASE WHEN status IN ('viewed', 'converted') THEN 1 ELSE 0 END) as viewed
+      FROM treatment_proposals
+      WHERE organization_id = ? 
+        AND sent_at >= ${prevDateCondition} AND sent_at < ${dateCondition}
+    `).bind(orgId).first();
+
+    // Calculate metrics
+    const totalConsults = (currentStats?.total_consultations as number) || 0;
+    const paidConsults = (currentStats?.paid_consultations as number) || 0;
+    const conversionRate = totalConsults > 0 ? (paidConsults / totalConsults) * 100 : 0;
+
+    const prevTotalConsults = (prevStats?.total_consultations as number) || 0;
+    const prevPaidConsults = (prevStats?.paid_consultations as number) || 0;
+    const prevConversionRate = prevTotalConsults > 0 ? (prevPaidConsults / prevTotalConsults) * 100 : 0;
+
+    const totalProposals = (proposalStats?.total_sent as number) || 0;
+    const viewedProposals = (proposalStats?.viewed as number) || 0;
+    const proposalViewRate = totalProposals > 0 ? (viewedProposals / totalProposals) * 100 : 0;
+
+    const prevTotalProposals = (prevProposalStats?.total_sent as number) || 0;
+    const prevViewedProposals = (prevProposalStats?.viewed as number) || 0;
+    const prevProposalViewRate = prevTotalProposals > 0 ? (prevViewedProposals / prevTotalProposals) * 100 : 0;
+
+    return c.json({
+      success: true,
+      data: {
+        total_consultations: totalConsults,
+        conversion_rate: conversionRate,
+        avg_coaching_score: (currentStats?.avg_coaching_score as number) || 0,
+        proposal_view_rate: proposalViewRate,
+        // Trends (percentage change)
+        consultation_trend: prevTotalConsults > 0 
+          ? ((totalConsults - prevTotalConsults) / prevTotalConsults) * 100 : 0,
+        conversion_trend: prevConversionRate > 0 
+          ? conversionRate - prevConversionRate : 0,
+        coaching_trend: (prevStats?.avg_coaching_score as number) > 0 
+          ? ((currentStats?.avg_coaching_score as number) || 0) - ((prevStats?.avg_coaching_score as number) || 0) : 0,
+        proposal_trend: prevProposalViewRate > 0 
+          ? proposalViewRate - prevProposalViewRate : 0
+      }
+    });
+  } catch (error) {
+    console.error('Admin summary error:', error);
+    return c.json({ success: false, error: '대시보드 요약을 불러오는데 실패했습니다.' }, 500);
+  }
+});
+
+// GET /api/dashboard/staff-performance - Staff performance list
+dashboard.get('/staff-performance', async (c) => {
+  try {
+    const orgId = c.get('organizationId');
+    const db = c.env.DB;
+    const { period = 'weekly' } = c.req.query();
+
+    let daysBack = 7;
+    if (period === 'daily') daysBack = 1;
+    if (period === 'monthly') daysBack = 30;
+
+    const result = await db.prepare(`
+      SELECT 
+        u.id, u.name,
+        COUNT(c.id) as total_consultations,
+        SUM(CASE WHEN c.status = 'paid' THEN 1 ELSE 0 END) as paid_consultations,
+        AVG(COALESCE(r.coaching_score, 0)) as avg_coaching_score,
+        SUM(CASE WHEN c.status = 'paid' THEN c.amount ELSE 0 END) as total_amount
+      FROM users u
+      LEFT JOIN consultations c ON c.user_id = u.id 
+        AND c.consultation_date >= datetime('now', '-${daysBack} days')
+      LEFT JOIN consultation_reports r ON c.id = r.consultation_id
+      WHERE u.organization_id = ?
+      GROUP BY u.id, u.name
+      ORDER BY paid_consultations DESC
+    `).bind(orgId).all();
+
+    return c.json({
+      success: true,
+      data: result.results.map(r => ({
+        id: r.id,
+        name: r.name,
+        total_consultations: r.total_consultations || 0,
+        paid_consultations: r.paid_consultations || 0,
+        conversion_rate: (r.total_consultations as number) > 0
+          ? ((r.paid_consultations as number) / (r.total_consultations as number)) * 100
+          : 0,
+        avg_coaching_score: r.avg_coaching_score || 0,
+        total_amount: r.total_amount || 0
+      }))
+    });
+  } catch (error) {
+    console.error('Staff performance error:', error);
+    return c.json({ success: false, error: '상담사 성과를 불러오는데 실패했습니다.' }, 500);
+  }
+});
+
+// GET /api/dashboard/coaching-breakdown - Coaching area averages
+dashboard.get('/coaching-breakdown', async (c) => {
+  try {
+    const orgId = c.get('organizationId');
+    const db = c.env.DB;
+    const { period = 'weekly' } = c.req.query();
+
+    let daysBack = 7;
+    if (period === 'daily') daysBack = 1;
+    if (period === 'monthly') daysBack = 30;
+
+    const result = await db.prepare(`
+      SELECT 
+        AVG(CAST(json_extract(r.coaching_feedback, '$.scores.rapport') AS REAL)) as rapport,
+        AVG(CAST(json_extract(r.coaching_feedback, '$.scores.spin') AS REAL)) as spin,
+        AVG(CAST(json_extract(r.coaching_feedback, '$.scores.objection_handling') AS REAL)) as objection,
+        AVG(CAST(json_extract(r.coaching_feedback, '$.scores.pricing_framing') AS REAL)) as pricing,
+        AVG(CAST(json_extract(r.coaching_feedback, '$.scores.closing') AS REAL)) as closing,
+        AVG(CAST(json_extract(r.coaching_feedback, '$.scores.structure') AS REAL)) as structure
+      FROM consultation_reports r
+      JOIN consultations c ON r.consultation_id = c.id
+      WHERE r.organization_id = ? 
+        AND c.consultation_date >= datetime('now', '-${daysBack} days')
+    `).bind(orgId).first();
+
+    return c.json({
+      success: true,
+      data: {
+        rapport: result?.rapport || 0,
+        spin: result?.spin || 0,
+        objection: result?.objection || 0,
+        pricing: result?.pricing || 0,
+        closing: result?.closing || 0,
+        structure: result?.structure || 0
+      }
+    });
+  } catch (error) {
+    console.error('Coaching breakdown error:', error);
+    return c.json({ success: false, error: '코칭 분석을 불러오는데 실패했습니다.' }, 500);
+  }
+});
+
+// GET /api/dashboard/low-score-consultations - Consultations needing coaching
+dashboard.get('/low-score-consultations', async (c) => {
+  try {
+    const orgId = c.get('organizationId');
+    const db = c.env.DB;
+    const { threshold = '70', limit = '10' } = c.req.query();
+
+    const result = await db.prepare(`
+      SELECT 
+        c.id, c.consultation_date, c.patient_id,
+        p.name as patient_name,
+        u.name as user_name,
+        r.coaching_score,
+        json_extract(r.coaching_feedback, '$.improvements[0].issue') as improvement_needed
+      FROM consultations c
+      JOIN consultation_reports r ON c.id = r.consultation_id
+      LEFT JOIN patients p ON c.patient_id = p.id
+      JOIN users u ON c.user_id = u.id
+      WHERE c.organization_id = ? 
+        AND r.coaching_score < ?
+      ORDER BY c.consultation_date DESC
+      LIMIT ?
+    `).bind(orgId, parseInt(threshold), parseInt(limit)).all();
+
+    return c.json({
+      success: true,
+      data: result.results
+    });
+  } catch (error) {
+    console.error('Low score consultations error:', error);
+    return c.json({ success: false, error: '코칭 필요 상담을 불러오는데 실패했습니다.' }, 500);
+  }
+});
+
+// GET /api/dashboard/proposal-analytics - Proposal statistics
+dashboard.get('/proposal-analytics', async (c) => {
+  try {
+    const orgId = c.get('organizationId');
+    const db = c.env.DB;
+    const { period = 'weekly' } = c.req.query();
+
+    let daysBack = 7;
+    if (period === 'daily') daysBack = 1;
+    if (period === 'monthly') daysBack = 30;
+
+    const result = await db.prepare(`
+      SELECT 
+        COUNT(CASE WHEN status IN ('sent', 'viewed', 'converted') THEN 1 END) as sent,
+        COUNT(CASE WHEN status IN ('viewed', 'converted') THEN 1 END) as viewed,
+        COUNT(CASE WHEN status = 'converted' THEN 1 END) as converted
+      FROM treatment_proposals
+      WHERE organization_id = ?
+        AND created_at >= datetime('now', '-${daysBack} days')
+    `).bind(orgId).first();
+
+    return c.json({
+      success: true,
+      data: {
+        sent: result?.sent || 0,
+        viewed: result?.viewed || 0,
+        converted: result?.converted || 0
+      }
+    });
+  } catch (error) {
+    console.error('Proposal analytics error:', error);
+    return c.json({ success: false, error: '제안서 통계를 불러오는데 실패했습니다.' }, 500);
+  }
+});
+
 export default dashboard;
