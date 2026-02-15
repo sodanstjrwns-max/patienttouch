@@ -100,3 +100,96 @@ INSERT OR IGNORE INTO contact_tasks (id, organization_id, consultation_id, user_
 INSERT OR IGNORE INTO contact_logs (id, organization_id, patient_id, user_id, task_id, contact_type, contact_result, outcome, content) VALUES
   ('log_1', 'org_bd_dental', 'patient_1', 'user_kim', null, 'message', 'success', null, '상담 감사 문자 발송'),
   ('log_2', 'org_bd_dental', 'patient_3', 'user_lee', null, 'call', 'success', 'booked', '수술 후 경과 체크. 불편 없다고 함. 다음 주 내원 예약.');
+
+-- ============================================
+-- Retention Module Seed Data
+-- ============================================
+
+-- patients.last_visit_date 업데이트
+UPDATE patients SET last_visit_date = '2026-01-30' WHERE id = 'patient_1'; -- 김민수: 임플란트 상담
+UPDATE patients SET last_visit_date = '2026-01-28' WHERE id = 'patient_2'; -- 박영희: 교정 상담
+UPDATE patients SET last_visit_date = '2026-01-15' WHERE id = 'patient_3'; -- 최수진: 임플란트 완료
+UPDATE patients SET last_visit_date = '2026-02-02' WHERE id = 'patient_4'; -- 이정호: 스케일링 완료
+UPDATE patients SET last_visit_date = '2025-08-10' WHERE id = 'patient_5'; -- 한미영: 6개월 경과
+UPDATE patients SET last_visit_date = '2025-02-20' WHERE id = 'patient_6'; -- 정대철: 12개월 경과 (이탈 위험)
+UPDATE patients SET last_visit_date = '2026-01-31' WHERE id = 'patient_7'; -- 송미라: 라미네이트 상담
+
+-- Patient Treatments (치료 이력)
+INSERT OR IGNORE INTO patient_treatments (id, organization_id, patient_id, treatment_type, treatment_name, status, total_amount, paid_amount, started_at, completed_at, next_appointment, source_consultation_id, notes) VALUES
+  -- 김민수: 임플란트 1차 완료, 2차 미예약 (치료 미완료 - 가장 긴급)
+  ('treat_1a', 'org_bd_dental', 'patient_1', 'implant', '임플란트 #36 식립 (1차)', 'completed', 3000000, 3000000, '2026-01-20', '2026-01-20', null, null, '1차 식립 완료. 경과 양호.'),
+  ('treat_1b', 'org_bd_dental', 'patient_1', 'implant', '임플란트 #36 보철 (2차)', 'scheduled', 3000000, 0, null, null, null, 'consult_1', '2차 보철 미예약 상태. 와이프와 상의 중.'),
+  ('treat_1c', 'org_bd_dental', 'patient_1', 'implant', '임플란트 #46 식립 (1차)', 'in_progress', 3000000, 1500000, '2026-01-30', null, null, 'consult_1', '1차 진행 중'),
+
+  -- 박영희: 교정 상담 완료, 미결정
+  ('treat_2', 'org_bd_dental', 'patient_2', 'ortho', '투명교정 (전체)', 'consulted', 5000000, 0, null, null, null, 'consult_2', '발치 걱정. 더 알아보겠다고 함.'),
+
+  -- 최수진: 임플란트 3개 완료 (정기검진 리콜 대상)
+  ('treat_3a', 'org_bd_dental', 'patient_3', 'implant', '임플란트 #16 식립+보철', 'completed', 3000000, 3000000, '2025-12-01', '2026-01-15', null, 'consult_3', null),
+  ('treat_3b', 'org_bd_dental', 'patient_3', 'implant', '임플란트 #17 식립+보철', 'completed', 3000000, 3000000, '2025-12-01', '2026-01-15', null, 'consult_3', null),
+  ('treat_3c', 'org_bd_dental', 'patient_3', 'implant', '임플란트 #26 식립+보철', 'completed', 3000000, 3000000, '2025-12-01', '2026-01-15', null, 'consult_3', null),
+
+  -- 이정호: 스케일링 완료
+  ('treat_4', 'org_bd_dental', 'patient_4', 'scaling', '정기 스케일링', 'completed', 50000, 50000, '2026-02-02', '2026-02-02', null, 'consult_4', null),
+
+  -- 한미영: 신경치료 중단 (치료 미완료)
+  ('treat_5a', 'org_bd_dental', 'patient_5', 'endo', '신경치료 #25 (1/3회차)', 'completed', 100000, 100000, '2025-07-20', '2025-07-20', null, null, '1회차 완료'),
+  ('treat_5b', 'org_bd_dental', 'patient_5', 'endo', '신경치료 #25 (2/3회차)', 'completed', 100000, 100000, '2025-08-03', '2025-08-03', null, null, '2회차 완료'),
+  ('treat_5c', 'org_bd_dental', 'patient_5', 'endo', '신경치료 #25 (3/3회차)', 'scheduled', 100000, 0, null, null, null, null, '3회차 미예약. 시간이 안 맞는다고 함.'),
+  ('treat_5d', 'org_bd_dental', 'patient_5', 'prosthetic', '크라운 #25', 'scheduled', 400000, 0, null, null, null, null, '신경치료 완료 후 크라운 예정'),
+
+  -- 정대철: 12개월 이상 미내원 (이탈 위험)
+  ('treat_6', 'org_bd_dental', 'patient_6', 'scaling', '정기 스케일링', 'completed', 50000, 50000, '2025-02-20', '2025-02-20', null, null, '당뇨 관리 중. 정기 검진 필요.'),
+
+  -- 송미라: 라미네이트 상담만 (미전환)
+  ('treat_7', 'org_bd_dental', 'patient_7', 'laminate', '라미네이트 상악 전치 6개', 'consulted', 4800000, 0, null, null, null, 'consult_5', '남편과 상의 후 결정. 가격 고민.');
+
+-- Patient Retention Status (AI 자동 분류)
+INSERT OR IGNORE INTO patient_retention_status (id, organization_id, patient_id, status, risk_score, last_visit_date, days_since_visit, remaining_treatment_value, recommended_contact_date, recommended_contact_script, recommended_contact_type, priority_score) VALUES
+  -- 김민수: 치료 미완료 긴급 (임플란트 2차 미예약, 16일 경과)
+  ('ret_1', 'org_bd_dental', 'patient_1', 'unscheduled_urgent', 72, '2026-01-30', 16, 4500000,
+   '2026-02-15',
+   '안녕하세요 김민수님, 서울BD치과 김실장입니다. 지난번 임플란트 1차 수술 이후 경과는 어떠세요? 2차 보철 진행하시면 좋을 시기가 되어서 연락드렸어요. 편하신 시간에 예약 잡아드릴까요?',
+   'phone', 92.5),
+
+  -- 박영희: 상담 미전환 (교정 상담 후 30일 이상 경과)
+  ('ret_2', 'org_bd_dental', 'patient_2', 'consulted_unconverted', 45, '2026-01-28', 18, 5000000,
+   '2026-02-17',
+   '안녕하세요 박영희님, 서울BD치과 김실장입니다. 지난번 교정 상담 이후 고민은 좀 해결되셨나요? 발치 없이 가능한 옵션도 다시 한번 설명드릴 수 있어요.',
+   'phone', 68.0),
+
+  -- 최수진: 정기검진 리콜 (마지막 내원 1개월)
+  ('ret_3', 'org_bd_dental', 'patient_3', 'completed', 10, '2026-01-15', 31, 0,
+   null, null, null, 10.0),
+
+  -- 이정호: 정상 (최근 내원)
+  ('ret_4', 'org_bd_dental', 'patient_4', 'active', 5, '2026-02-02', 13, 0,
+   null, null, null, 5.0),
+
+  -- 한미영: 치료 미완료 긴급 (신경치료 3회차 중단, 6개월 경과)
+  ('ret_5', 'org_bd_dental', 'patient_5', 'unscheduled_urgent', 85, '2025-08-10', 189, 500000,
+   '2026-02-15',
+   '안녕하세요 한미영님, 서울BD치과입니다. 지난번 신경치료 마지막 회차가 남아있는데, 마무리하시면 좋을 것 같아서 연락드렸어요. 저녁 시간대 예약도 가능합니다.',
+   'phone', 95.0),
+
+  -- 정대철: 이탈 위험 (12개월 이상 미내원)
+  ('ret_6', 'org_bd_dental', 'patient_6', 'at_risk', 90, '2025-02-20', 361, 0,
+   '2026-02-15',
+   '안녕하세요 정대철님, 서울BD치과 김실장입니다. 오랜만에 안부 여쭤보려고요. 요즘 치아 상태는 괜찮으신가요? 당뇨 관리도 잘 되고 계신지... 정기검진 한번 받아보시면 좋겠어요.',
+   'text', 78.0),
+
+  -- 송미라: 상담 미전환 (라미네이트, 가격 고민)
+  ('ret_7', 'org_bd_dental', 'patient_7', 'consulted_unconverted', 55, '2026-01-31', 15, 4800000,
+   '2026-02-16',
+   '안녕하세요 송미라님, 서울BD치과 박코디입니다. 라미네이트 상담 이후 고민은 좀 해결되셨나요? 이번 달 프로모션 안내 드릴게 있어서 연락드렸어요.',
+   'text', 72.0);
+
+-- Retention Contacts (리텐션 연락 기록 샘플)
+INSERT OR IGNORE INTO retention_contacts (id, organization_id, patient_id, staff_id, treatment_id, contact_type, result, notes, next_contact_date, contacted_at) VALUES
+  -- 한미영: 2회 연락 시도
+  ('rcon_1', 'org_bd_dental', 'patient_5', 'user_kim', 'treat_5c', 'phone', 'no_answer', '부재중', '2026-01-20', '2026-01-15'),
+  ('rcon_2', 'org_bd_dental', 'patient_5', 'user_kim', 'treat_5c', 'text', 'message_sent', '신경치료 마무리 안내 문자 발송. 읽음, 미회신.', '2026-02-01', '2026-01-20'),
+  ('rcon_3', 'org_bd_dental', 'patient_5', 'user_kim', 'treat_5c', 'phone', 'connected', '통화 성공. "다음달에 할게요"라고 함. 3월 첫째 주 재연락 예정.', '2026-03-03', '2026-02-01'),
+
+  -- 정대철: 1회 연락
+  ('rcon_4', 'org_bd_dental', 'patient_6', 'user_kim', null, 'text', 'message_sent', '안부 문자 + 정기검진 안내. 읽음 확인.', '2026-02-20', '2026-02-10');

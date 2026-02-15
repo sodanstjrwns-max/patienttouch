@@ -405,6 +405,80 @@ export interface ConsultantStats {
   proposals_converted: number;
 }
 
+// ============================================
+// Retention Module Types
+// ============================================
+
+export type TreatmentType = 'implant' | 'ortho' | 'prosthetic' | 'endo' | 'extraction' | 'scaling' | 'whitening' | 'laminate' | 'general';
+export type TreatmentStatus = 'consulted' | 'scheduled' | 'in_progress' | 'completed' | 'abandoned';
+export type RetentionStatus = 'in_treatment' | 'unscheduled_urgent' | 'unscheduled_warning' | 'recall_6m' | 'recall_12m' | 'at_risk' | 'consulted_unconverted' | 'active' | 'completed';
+export type RetentionContactResult = 'connected' | 'no_answer' | 'message_sent' | 'callback_promised' | 'appointment_booked' | 'refused';
+
+export interface PatientTreatment {
+  id: string;
+  organization_id: string;
+  patient_id: string;
+  treatment_type: TreatmentType;
+  treatment_name?: string;
+  status: TreatmentStatus;
+  total_amount: number;
+  paid_amount: number;
+  remaining_amount: number;
+  started_at?: string;
+  completed_at?: string;
+  next_appointment?: string;
+  source_consultation_id?: string;
+  notes?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PatientRetentionStatus {
+  id: string;
+  organization_id: string;
+  patient_id: string;
+  status: RetentionStatus;
+  risk_score: number;
+  last_visit_date?: string;
+  days_since_visit: number;
+  remaining_treatment_value: number;
+  recommended_contact_date?: string;
+  recommended_contact_script?: string;
+  recommended_contact_type?: 'phone' | 'text' | 'kakao';
+  priority_score: number;
+  updated_at: string;
+  // Joined fields
+  patient_name?: string;
+  patient_phone?: string;
+  patient_age?: number;
+  patient_gender?: string;
+  treatments?: PatientTreatment[];
+}
+
+export interface RetentionContact {
+  id: string;
+  organization_id: string;
+  patient_id: string;
+  staff_id: string;
+  treatment_id?: string;
+  contact_type: 'phone' | 'text' | 'kakao';
+  result: RetentionContactResult;
+  notes?: string;
+  next_contact_date?: string;
+  contacted_at: string;
+  // Joined
+  staff_name?: string;
+}
+
+export interface RetentionDashboard {
+  incomplete_count: number;
+  recall_count: number;
+  contact_completion_rate: number;
+  estimated_lost_revenue: number;
+  today_contacts: PatientRetentionStatus[];
+  status_distribution: Record<string, number>;
+}
+
 // Bindings for Cloudflare
 export interface Env {
   DB: D1Database;

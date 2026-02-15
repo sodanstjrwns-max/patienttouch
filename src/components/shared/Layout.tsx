@@ -6,7 +6,7 @@ import { FC } from 'hono/jsx'
 
 interface LayoutProps {
   children: any
-  activeTab?: 'home' | 'consultations' | 'patients' | 'report'
+  activeTab?: 'home' | 'consultations' | 'patients' | 'retention' | 'report'
   hideNav?: boolean
 }
 
@@ -15,6 +15,7 @@ export const Layout: FC<LayoutProps> = ({ children, activeTab, hideNav }) => {
     { id: 'home', href: '/', icon: 'fas fa-house', label: '홈' },
     { id: 'consultations', href: '/consultations', icon: 'fas fa-waveform-lines', label: '상담' },
     { id: 'patients', href: '/patients', icon: 'fas fa-user-group', label: '환자' },
+    { id: 'retention', href: '/retention', icon: 'fas fa-heart-pulse', label: '리텐션' },
     { id: 'report', href: '/report', icon: 'fas fa-chart-mixed', label: '리포트' },
   ]
 
@@ -34,7 +35,7 @@ export const Layout: FC<LayoutProps> = ({ children, activeTab, hideNav }) => {
                   return (
                     <a 
                       href={tab.href}
-                      class={`relative flex flex-col items-center py-2.5 px-5 rounded-xl transition-all duration-300 group ${
+                      class={`relative flex flex-col items-center py-2.5 px-3 rounded-xl transition-all duration-300 group ${
                         isActive 
                           ? 'text-brand-600' 
                           : 'text-surface-400 hover:text-surface-600'

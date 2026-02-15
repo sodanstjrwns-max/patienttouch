@@ -80,6 +80,22 @@ export const HomePage: FC = () => {
           </div>
         </div>
 
+        {/* Retention Tasks */}
+        <div>
+          <SectionTitle 
+            title="리텐션 연락"
+            icon="fas fa-heart-pulse"
+            action={
+              <a href="/retention" class="text-xs font-semibold text-brand-600 flex items-center gap-1 hover:text-brand-700 transition-colors">
+                전체 <i class="fas fa-chevron-right text-[8px]"></i>
+              </a>
+            }
+          />
+          <div id="retentionSection" class="space-y-2">
+            <div class="card-premium p-4"><div class="shimmer h-12 rounded-lg w-full"></div></div>
+          </div>
+        </div>
+
         {/* Recent Consultations */}
         <div>
           <SectionTitle 
@@ -299,6 +315,39 @@ export const HomePage: FC = () => {
                     '</button>' +
                   '</div>';
               }
+              // Load retention summary
+              try {
+                var retRes = await fetch('/api/retention/home-summary');
+                var retData = await retRes.json();
+                if (retData.success && retData.data.contacts.length > 0) {
+                  var retStatusMap = {
+                    unscheduled_urgent: { label: '미예약', bg: 'bg-rose-50', text: 'text-rose-700', ring: 'ring-rose-200' },
+                    unscheduled_warning: { label: '미예약', bg: 'bg-amber-50', text: 'text-amber-700', ring: 'ring-amber-200' },
+                    at_risk: { label: '이탈위험', bg: 'bg-red-50', text: 'text-red-700', ring: 'ring-red-200' },
+                    recall_6m: { label: '리콜', bg: 'bg-sky-50', text: 'text-sky-700', ring: 'ring-sky-200' },
+                    recall_12m: { label: '리콜', bg: 'bg-sky-50', text: 'text-sky-700', ring: 'ring-sky-200' },
+                    consulted_unconverted: { label: '미전환', bg: 'bg-amber-50', text: 'text-amber-700', ring: 'ring-amber-200' }
+                  };
+                  var retHtml = retData.data.contacts.map(function(c) {
+                    var st = retStatusMap[c.status] || { label: c.status, bg: 'bg-surface-50', text: 'text-surface-600', ring: 'ring-surface-200' };
+                    return '<a href="/retention" class="card-premium p-3.5 flex items-center gap-3 group border-l-4 border-l-purple-400">' +
+                      '<div class="w-9 h-9 rounded-lg bg-purple-50 flex items-center justify-center font-bold text-xs text-purple-700 shrink-0">' + c.patient_name.charAt(0) + '</div>' +
+                      '<div class="flex-1 min-w-0">' +
+                        '<div class="flex items-center gap-1.5">' +
+                          '<span class="font-bold text-sm text-surface-900">' + c.patient_name + '</span>' +
+                          '<span class="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-semibold ring-1 ring-inset ' + st.bg + ' ' + st.text + ' ' + st.ring + '">' + st.label + '</span>' +
+                        '</div>' +
+                        '<p class="text-[11px] text-surface-500 mt-0.5">' + c.days_since_visit + '일 경과' + (c.remaining_treatment_value > 0 ? ' · 잔여 ' + Math.round(c.remaining_treatment_value / 10000) + '만원' : '') + '</p>' +
+                      '</div>' +
+                      '<i class="fas fa-chevron-right text-surface-300 text-xs group-hover:text-brand-500 transition-colors"></i>' +
+                    '</a>';
+                  }).join('');
+                  document.getElementById('retentionSection').innerHTML = retHtml;
+                } else {
+                  document.getElementById('retentionSection').innerHTML =
+                    '<div class="card-premium p-4 text-center"><p class="text-surface-500 text-xs"><i class="fas fa-check-circle text-emerald-500 mr-1"></i>리텐션 연락 대상 없음</p></div>';
+                }
+              } catch (retErr) { console.error('Retention load error:', retErr); }
             } catch (err) {
               console.error('Failed to load home page:', err);
             }

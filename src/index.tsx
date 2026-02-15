@@ -10,6 +10,7 @@ import consultationRoutes from './routes/consultations'
 import taskRoutes from './routes/tasks'
 import dashboardRoutes from './routes/dashboard'
 import reportRoutes from './routes/reports'
+import retentionRoutes from './routes/retention'
 
 // Import pages
 import { LoginPage } from './components/pages/LoginPage'
@@ -25,6 +26,7 @@ import { RecordingPage } from './components/pages/RecordingPage'
 import { SettingsPage } from './components/pages/SettingsPage'
 import { AdminDashboardPage } from './components/pages/AdminDashboardPage'
 import { ProposalPage } from './components/pages/ProposalPage'
+import { RetentionPage } from './components/pages/RetentionPage'
 
 import type { Env } from './types'
 
@@ -42,6 +44,7 @@ app.route('/api/consultations', consultationRoutes)
 app.route('/api/tasks', taskRoutes)
 app.route('/api/dashboard', dashboardRoutes)
 app.route('/api/reports', reportRoutes)
+app.route('/api/retention', retentionRoutes)
 
 // Page Routes
 app.get('/login', (c) => c.render(<LoginPage />, { title: '로그인 - 페이션트 터치' }))
@@ -56,6 +59,7 @@ app.get('/report', (c) => c.render(<ReportPage />, { title: '리포트 - 페이�
 app.get('/recording', (c) => c.render(<RecordingPage />, { title: '상담 녹음 - 페이션트 터치' }))
 app.get('/recording/:patientId', (c) => c.render(<RecordingPage patientId={c.req.param('patientId')} />, { title: '상담 녹음 - 페이션트 터치' }))
 app.get('/settings', (c) => c.render(<SettingsPage />, { title: '설정 - 페이션트 터치' }))
+app.get('/retention', (c) => c.render(<RetentionPage />, { title: '리텐션 - 페이션트 터치' }))
 app.get('/admin', (c) => c.render(<AdminDashboardPage />, { title: '원장 대시보드 - 페이션트 터치' }))
 
 // Public Pages (no auth)
