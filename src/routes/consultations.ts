@@ -116,18 +116,31 @@ consultations.post('/', async (c) => {
     const { patient_id, consultation_date, duration, treatment_type, treatment_area, amount, status } = body;
 
     let patientName = null;
+    let actualPatientId = patient_id || null;
 
     // patient_id is now optional - allows "record first, link patient later"
-    if (patient_id) {
+    if (actualPatientId) {
       // Verify patient exists
       const patient = await db.prepare(
         'SELECT id, name FROM patients WHERE id = ? AND organization_id = ?'
-      ).bind(patient_id, orgId).first();
+      ).bind(actualPatientId, orgId).first();
 
       if (!patient) {
         return c.json({ success: false, error: '환자를 찾을 수 없습니다.' }, 404);
       }
       patientName = patient.name;
+    } else {
+      // Auto-create temporary patient for quick recording mode
+      actualPatientId = 'patient_' + generateId().slice(0, 8);
+      const now = new Date();
+      const tempName = `녹음_${(now.getMonth()+1).toString().padStart(2,'0')}${now.getDate().toString().padStart(2,'0')}_${now.getHours().toString().padStart(2,'0')}${now.getMinutes().toString().padStart(2,'0')}`;
+      
+      await db.prepare(`
+        INSERT INTO patients (id, organization_id, name, tags, status)
+        VALUES (?, ?, ?, '["미지정"]', 'active')
+      `).bind(actualPatientId, orgId, tempName).run();
+      
+      patientName = tempName;
     }
 
     const consultId = 'consult_' + generateId().slice(0, 8);
@@ -138,7 +151,7 @@ consultations.post('/', async (c) => {
         duration, treatment_type, treatment_area, amount, status
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).bind(
-      consultId, orgId, userId, patient_id || null,
+      consultId, orgId, userId, actualPatientId,
       consultation_date || new Date().toISOString(),
       duration || null, treatment_type || null, treatment_area || null,
       amount || null, status || 'pending'
@@ -149,7 +162,7 @@ consultations.post('/', async (c) => {
       data: { 
         id: consultId, 
         patient_name: patientName,
-        patient_id: patient_id || null,
+        patient_id: actualPatientId,
         is_unlinked: !patient_id  // Flag to indicate patient needs to be linked
       }
     });
