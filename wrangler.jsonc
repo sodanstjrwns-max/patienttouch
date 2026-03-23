@@ -8,7 +8,7 @@
     {
       "binding": "DB",
       "database_name": "patient-touch-db",
-      "database_id": "local-dev-db"
+      "database_id": "b3918de1-1d51-426d-ab33-0062e18a0de2"
     }
   ],
   "r2_buckets": [
