@@ -110,14 +110,21 @@ export const ConsultationReportPage: FC<Props> = ({ id }) => {
                   '<div class="w-2 h-2 rounded-full bg-brand-400 animate-wave" style="animation-delay:0.2s"></div>' +
                   '<div class="w-2 h-2 rounded-full bg-brand-400 animate-wave" style="animation-delay:0.4s"></div>' +
                 '</div>' +
+                '<p id="analysisStep" class="text-xs text-surface-400 mt-4">음성 전사 준비 중...</p>' +
               '</div>';
             try {
-              const res = await fetch('/api/reports/' + consultationId + '/generate', { method: 'POST' });
+              var controller = new AbortController();
+              var timeoutId = setTimeout(function() { controller.abort(); }, 90000);
+              const res = await fetch('/api/reports/' + consultationId + '/generate', { method: 'POST', signal: controller.signal });
+              clearTimeout(timeoutId);
               if (res.status === 401) { window.location.href = '/login'; return; }
               const data = await res.json();
               if (data.success) { reportData = data.data.report; renderReport({ ...data.data.report, id: data.data.report_id }); }
               else { showError(data.error); }
-            } catch (err) { showError('레포트 생성 중 오류가 발생했습니다.'); }
+            } catch (err) {
+              if (err.name === 'AbortError') { showError('분석 시간이 초과되었습니다. 다시 시도해주세요.'); }
+              else { showError('네트워크 오류: ' + (err.message || '연결에 실패했습니다.')); }
+            }
           }
 
           function showError(message) {
@@ -125,8 +132,12 @@ export const ConsultationReportPage: FC<Props> = ({ id }) => {
             document.getElementById('reportContent').innerHTML =
               '<div class="text-center py-16 animate-fade-in">' +
                 '<div class="w-20 h-20 mx-auto mb-5 rounded-2xl bg-rose-50 flex items-center justify-center"><i class="fas fa-triangle-exclamation text-3xl text-rose-400"></i></div>' +
-                '<p class="text-surface-500 text-sm">' + message + '</p>' +
-                '<button onclick="loadReport()" class="mt-4 text-brand-600 font-semibold text-sm hover:text-brand-700 transition-colors">다시 시도</button>' +
+                '<h3 class="text-lg font-bold text-surface-900 mb-2">레포트 생성에 실패했습니다.</h3>' +
+                '<p class="text-surface-500 text-sm mb-6 px-8">' + message + '</p>' +
+                '<div class="flex flex-col gap-3 items-center">' +
+                  '<button onclick="generateReport()" class="inline-flex items-center gap-2 bg-gradient-brand text-white font-semibold py-3 px-8 rounded-xl transition-all active:scale-[0.98] shadow-lg shadow-brand-600/30"><i class="fas fa-arrows-rotate"></i>다시 시도</button>' +
+                  '<button onclick="window.location.href=\\'/consultations\\'" class="text-surface-400 text-sm hover:text-surface-600 transition-colors">상담 목록으로</button>' +
+                '</div>' +
               '</div>';
           }
 

@@ -210,13 +210,13 @@ consultations.post('/:id/upload-audio', async (c) => {
       httpMetadata: { contentType: audioFile.type }
     });
 
-    // Analyze with OpenAI
     const apiKey = c.env.OPENAI_API_KEY;
     if (!apiKey) {
+      console.error('OPENAI_API_KEY not found. Env keys:', Object.keys(c.env));
       await db.prepare(
         'UPDATE consultations SET ai_analysis_status = ?, audio_url = ? WHERE id = ?'
       ).bind('failed', audioKey, consultId).run();
-      return c.json({ success: false, error: 'OpenAI API 키가 설정되지 않았습니다.' }, 500);
+      return c.json({ success: false, error: 'OpenAI API 키가 설정되지 않았습니다. (env: ' + Object.keys(c.env).join(',') + ')' }, 500);
     }
 
     try {
@@ -323,12 +323,12 @@ consultations.post('/:id/upload-audio', async (c) => {
           report_id: reportId
         }
       });
-    } catch (aiError) {
-      console.error('AI analysis error:', aiError);
+    } catch (aiError: any) {
+      console.error('AI analysis error:', aiError?.message || aiError);
       await db.prepare(
         'UPDATE consultations SET ai_analysis_status = ?, audio_url = ? WHERE id = ?'
       ).bind('failed', audioKey, consultId).run();
-      return c.json({ success: false, error: 'AI 분석에 실패했습니다.' }, 500);
+      return c.json({ success: false, error: 'AI 분석에 실패했습니다: ' + (aiError?.message || '알 수 없는 오류') }, 500);
     }
   } catch (error) {
     console.error('Upload audio error:', error);

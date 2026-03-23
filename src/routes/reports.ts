@@ -73,7 +73,8 @@ reports.post('/:consultationId/generate', async (c) => {
     const apiKey = c.env.OPENAI_API_KEY;
 
     if (!apiKey) {
-      return c.json({ success: false, error: 'OpenAI API 키가 설정되지 않았습니다.' }, 500);
+      console.error('OPENAI_API_KEY not found in env. Available env keys:', Object.keys(c.env));
+      return c.json({ success: false, error: 'OpenAI API 키가 설정되지 않았습니다. (env keys: ' + Object.keys(c.env).join(',') + ')' }, 500);
     }
 
     // Get consultation with patient info
@@ -222,9 +223,9 @@ reports.post('/:consultationId/generate', async (c) => {
         report: analysis.report
       }
     });
-  } catch (error) {
-    console.error('Generate report error:', error);
-    return c.json({ success: false, error: '레포트 생성에 실패했습니다.' }, 500);
+  } catch (error: any) {
+    console.error('Generate report error:', error?.message || error);
+    return c.json({ success: false, error: '레포트 생성에 실패했습니다: ' + (error?.message || String(error)) }, 500);
   }
 });
 
