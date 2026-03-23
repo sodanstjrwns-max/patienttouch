@@ -125,6 +125,13 @@ auth.post('/login', async (c) => {
 // Google OAuth Login
 // ============================================
 
+// Helper to get base URL from request
+function getBaseUrl(c: any): string {
+  const url = new URL(c.req.url);
+  // Use the origin (protocol + host) from the actual request
+  return url.origin;
+}
+
 // GET /api/auth/google - Redirect to Google OAuth
 auth.get('/google', (c) => {
   const clientId = c.env.GOOGLE_CLIENT_ID;
@@ -132,7 +139,8 @@ auth.get('/google', (c) => {
     return c.json({ success: false, error: 'Google OAuth is not configured' }, 500);
   }
 
-  const redirectUri = new URL('/api/auth/google/callback', c.req.url).toString();
+  const baseUrl = getBaseUrl(c);
+  const redirectUri = `${baseUrl}/api/auth/google/callback`;
   
   const params = new URLSearchParams({
     client_id: clientId,
@@ -158,25 +166,33 @@ auth.get('/google/callback', async (c) => {
 
     const clientId = c.env.GOOGLE_CLIENT_ID;
     const clientSecret = c.env.GOOGLE_CLIENT_SECRET;
-    const redirectUri = new URL('/api/auth/google/callback', c.req.url).toString();
+    const baseUrl = getBaseUrl(c);
+    const redirectUri = `${baseUrl}/api/auth/google/callback`;
+
+    if (!clientSecret) {
+      console.error('GOOGLE_CLIENT_SECRET is not set');
+      return c.redirect('/login?error=google_token_failed');
+    }
 
     // Exchange code for tokens
+    const tokenBody = new URLSearchParams({
+      code,
+      client_id: clientId,
+      client_secret: clientSecret,
+      redirect_uri: redirectUri,
+      grant_type: 'authorization_code',
+    });
+
     const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
-        code,
-        client_id: clientId,
-        client_secret: clientSecret,
-        redirect_uri: redirectUri,
-        grant_type: 'authorization_code',
-      }),
+      body: tokenBody,
     });
 
-    const tokenData = await tokenRes.json() as { access_token?: string; error?: string };
+    const tokenData = await tokenRes.json() as { access_token?: string; error?: string; error_description?: string };
     if (!tokenData.access_token) {
-      console.error('Google token error:', tokenData);
-      return c.redirect('/login?error=google_token_failed');
+      console.error('Google token error:', JSON.stringify(tokenData));
+      return c.redirect(`/login?error=google_token_failed`);
     }
 
     // Get user info from Google
@@ -212,11 +228,10 @@ auth.get('/google/callback', async (c) => {
 
       await db.prepare(`
         INSERT INTO organizations (id, name, plan_type, subscription_status, subscription_start_date, subscription_end_date)
-        VALUES (?, ?, 'trial', 'trial', datetime('now'), datetime('now', '+30 days'))
+        VALUES (?, ?, 'basic', 'active', datetime('now'), datetime('now', '+30 days'))
       `).bind(orgId, orgName).run();
 
       const userId = 'user_' + generateId().slice(0, 8);
-      // Google users get a random password hash (they won't use password login)
       const randomHash = await hashPassword(generateId());
 
       await db.prepare(`
@@ -248,8 +263,8 @@ auth.get('/google/callback', async (c) => {
 
     // Redirect to home page
     return c.redirect('/');
-  } catch (error) {
-    console.error('Google OAuth error:', error);
+  } catch (error: any) {
+    console.error('Google OAuth callback error:', error?.message || error);
     return c.redirect('/login?error=google_failed');
   }
 });
