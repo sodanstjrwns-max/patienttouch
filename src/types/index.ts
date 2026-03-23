@@ -485,4 +485,6 @@ export interface Env {
   R2: R2Bucket;
   OPENAI_API_KEY: string;
   DEEPGRAM_API_KEY?: string;
+  GOOGLE_CLIENT_ID: string;
+  GOOGLE_CLIENT_SECRET: string;
 }

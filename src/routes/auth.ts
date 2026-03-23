@@ -121,6 +121,139 @@ auth.post('/login', async (c) => {
   }
 });
 
+// ============================================
+// Google OAuth Login
+// ============================================
+
+// GET /api/auth/google - Redirect to Google OAuth
+auth.get('/google', (c) => {
+  const clientId = c.env.GOOGLE_CLIENT_ID;
+  if (!clientId) {
+    return c.json({ success: false, error: 'Google OAuth is not configured' }, 500);
+  }
+
+  const redirectUri = new URL('/api/auth/google/callback', c.req.url).toString();
+  
+  const params = new URLSearchParams({
+    client_id: clientId,
+    redirect_uri: redirectUri,
+    response_type: 'code',
+    scope: 'openid email profile',
+    access_type: 'offline',
+    prompt: 'select_account',
+  });
+
+  return c.redirect(`https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`);
+});
+
+// GET /api/auth/google/callback - Google OAuth callback
+auth.get('/google/callback', async (c) => {
+  try {
+    const code = c.req.query('code');
+    const error = c.req.query('error');
+
+    if (error || !code) {
+      return c.redirect('/login?error=google_denied');
+    }
+
+    const clientId = c.env.GOOGLE_CLIENT_ID;
+    const clientSecret = c.env.GOOGLE_CLIENT_SECRET;
+    const redirectUri = new URL('/api/auth/google/callback', c.req.url).toString();
+
+    // Exchange code for tokens
+    const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        code,
+        client_id: clientId,
+        client_secret: clientSecret,
+        redirect_uri: redirectUri,
+        grant_type: 'authorization_code',
+      }),
+    });
+
+    const tokenData = await tokenRes.json() as { access_token?: string; error?: string };
+    if (!tokenData.access_token) {
+      console.error('Google token error:', tokenData);
+      return c.redirect('/login?error=google_token_failed');
+    }
+
+    // Get user info from Google
+    const userInfoRes = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+      headers: { Authorization: `Bearer ${tokenData.access_token}` },
+    });
+
+    const googleUser = await userInfoRes.json() as {
+      id: string;
+      email: string;
+      name: string;
+      picture?: string;
+    };
+
+    if (!googleUser.email) {
+      return c.redirect('/login?error=google_no_email');
+    }
+
+    const db = c.env.DB;
+
+    // Check if user already exists
+    let user = await db.prepare(`
+      SELECT u.*, o.name as organization_name 
+      FROM users u 
+      JOIN organizations o ON u.organization_id = o.id 
+      WHERE u.email = ?
+    `).bind(googleUser.email).first<any>();
+
+    if (!user) {
+      // Auto-register: create organization + user
+      const orgId = 'org_' + generateId().slice(0, 8);
+      const orgName = googleUser.name ? `${googleUser.name}의 병원` : '새 병원';
+
+      await db.prepare(`
+        INSERT INTO organizations (id, name, plan_type, subscription_status, subscription_start_date, subscription_end_date)
+        VALUES (?, ?, 'trial', 'trial', datetime('now'), datetime('now', '+30 days'))
+      `).bind(orgId, orgName).run();
+
+      const userId = 'user_' + generateId().slice(0, 8);
+      // Google users get a random password hash (they won't use password login)
+      const randomHash = await hashPassword(generateId());
+
+      await db.prepare(`
+        INSERT INTO users (id, organization_id, name, email, password_hash, role, google_id)
+        VALUES (?, ?, ?, ?, ?, 'admin', ?)
+      `).bind(userId, orgId, googleUser.name || googleUser.email.split('@')[0], googleUser.email, randomHash, googleUser.id).run();
+
+      user = {
+        id: userId,
+        organization_id: orgId,
+        email: googleUser.email,
+        role: 'admin',
+        name: googleUser.name || googleUser.email.split('@')[0],
+        organization_name: orgName,
+      };
+    } else {
+      // Update google_id if not set, and update last login
+      await db.prepare('UPDATE users SET google_id = ?, last_login_at = datetime("now") WHERE id = ?')
+        .bind(googleUser.id, user.id).run();
+    }
+
+    // Set auth cookie
+    await setAuthCookie(c, {
+      id: user.id,
+      organization_id: user.organization_id,
+      email: user.email,
+      role: user.role,
+    });
+
+    // Redirect to home page
+    return c.redirect('/');
+  } catch (error) {
+    console.error('Google OAuth error:', error);
+    return c.redirect('/login?error=google_failed');
+  }
+});
+
 // POST /api/auth/logout - Logout
 auth.post('/logout', (c) => {
   clearAuthCookie(c);
