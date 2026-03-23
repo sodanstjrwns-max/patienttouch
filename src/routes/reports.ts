@@ -113,6 +113,19 @@ reports.post('/:consultationId/generate', async (c) => {
       apiKey
     );
 
+    // Safely convert any value to string for D1 TEXT columns
+    const toStr = (v: any): string => {
+      if (v === null || v === undefined) return '';
+      if (typeof v === 'string') return v;
+      if (Array.isArray(v)) return v.join('\n');
+      if (typeof v === 'object') return JSON.stringify(v);
+      return String(v);
+    };
+    const toJsonStr = (v: any): string => {
+      if (typeof v === 'string') return v;
+      return JSON.stringify(v ?? null);
+    };
+
     // Create or update report
     const existingReport = await db.prepare(
       'SELECT id FROM consultation_reports WHERE consultation_id = ?'
@@ -144,22 +157,22 @@ reports.post('/:consultationId/generate', async (c) => {
           updated_at = datetime('now')
         WHERE id = ?
       `).bind(
-        analysis.report.consultation_summary,
-        JSON.stringify(analysis.report.treatment_options),
-        analysis.report.discussed_amount,
-        JSON.stringify(analysis.report.payment_options),
-        JSON.stringify(analysis.report.patient_concerns),
-        JSON.stringify(analysis.report.emotion_timeline),
-        analysis.report.emotion_summary,
-        analysis.report.overall_sentiment,
-        JSON.stringify(analysis.report.decision_factors),
-        analysis.report.decision_score,
-        analysis.report.decision_prediction,
-        JSON.stringify(analysis.report.next_actions),
-        analysis.report.recommended_followup_date,
-        analysis.report.followup_message,
-        JSON.stringify(analysis.report.coaching_feedback),
-        analysis.report.coaching_feedback.total_score,
+        toStr(analysis.report.consultation_summary),
+        toJsonStr(analysis.report.treatment_options),
+        analysis.report.discussed_amount || null,
+        toJsonStr(analysis.report.payment_options),
+        toJsonStr(analysis.report.patient_concerns),
+        toJsonStr(analysis.report.emotion_timeline),
+        toStr(analysis.report.emotion_summary),
+        toStr(analysis.report.overall_sentiment),
+        toJsonStr(analysis.report.decision_factors),
+        analysis.report.decision_score || 5,
+        toStr(analysis.report.decision_prediction),
+        toJsonStr(analysis.report.next_actions),
+        toStr(analysis.report.recommended_followup_date),
+        toStr(analysis.report.followup_message),
+        toJsonStr(analysis.report.coaching_feedback),
+        analysis.report.coaching_feedback?.total_score || 0,
         reportId
       ).run();
     } else {
@@ -175,22 +188,22 @@ reports.post('/:consultationId/generate', async (c) => {
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'gpt-4o')
       `).bind(
         reportId, orgId, consultationId,
-        analysis.report.consultation_summary,
-        JSON.stringify(analysis.report.treatment_options),
-        analysis.report.discussed_amount,
-        JSON.stringify(analysis.report.payment_options),
-        JSON.stringify(analysis.report.patient_concerns),
-        JSON.stringify(analysis.report.emotion_timeline),
-        analysis.report.emotion_summary,
-        analysis.report.overall_sentiment,
-        JSON.stringify(analysis.report.decision_factors),
-        analysis.report.decision_score,
-        analysis.report.decision_prediction,
-        JSON.stringify(analysis.report.next_actions),
-        analysis.report.recommended_followup_date,
-        analysis.report.followup_message,
-        JSON.stringify(analysis.report.coaching_feedback),
-        analysis.report.coaching_feedback.total_score
+        toStr(analysis.report.consultation_summary),
+        toJsonStr(analysis.report.treatment_options),
+        analysis.report.discussed_amount || null,
+        toJsonStr(analysis.report.payment_options),
+        toJsonStr(analysis.report.patient_concerns),
+        toJsonStr(analysis.report.emotion_timeline),
+        toStr(analysis.report.emotion_summary),
+        toStr(analysis.report.overall_sentiment),
+        toJsonStr(analysis.report.decision_factors),
+        analysis.report.decision_score || 5,
+        toStr(analysis.report.decision_prediction),
+        toJsonStr(analysis.report.next_actions),
+        toStr(analysis.report.recommended_followup_date),
+        toStr(analysis.report.followup_message),
+        toJsonStr(analysis.report.coaching_feedback),
+        analysis.report.coaching_feedback?.total_score || 0
       ).run();
     }
 
@@ -207,12 +220,12 @@ reports.post('/:consultationId/generate', async (c) => {
         updated_at = datetime('now')
       WHERE id = ?
     `).bind(
-      analysis.transcript,
-      JSON.stringify(analysis.diarizedSegments),
-      JSON.stringify(analysis.nerData),
-      JSON.stringify(analysis.spinAnalysis),
-      analysis.report.consultation_summary,
-      analysis.report.decision_score,
+      toStr(analysis.transcript),
+      toJsonStr(analysis.diarizedSegments),
+      toJsonStr(analysis.nerData),
+      toJsonStr(analysis.spinAnalysis),
+      toStr(analysis.report.consultation_summary),
+      analysis.report.decision_score || 5,
       consultationId
     ).run();
 

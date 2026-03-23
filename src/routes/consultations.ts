@@ -241,6 +241,19 @@ consultations.post('/:id/upload-audio', async (c) => {
       // Run full AI analysis pipeline (includes report generation)
       const fullAnalysis = await runFullAnalysisPipeline(audioData, patientInfo, apiKey);
 
+      // Safely convert any value to string for D1 TEXT columns
+      const toStr = (v: any): string => {
+        if (v === null || v === undefined) return '';
+        if (typeof v === 'string') return v;
+        if (Array.isArray(v)) return v.join('\n');
+        if (typeof v === 'object') return JSON.stringify(v);
+        return String(v);
+      };
+      const toJsonStr = (v: any): string => {
+        if (typeof v === 'string') return v;
+        return JSON.stringify(v ?? null);
+      };
+
       // Update consultation with analysis
       await db.prepare(`
         UPDATE consultations SET
@@ -264,24 +277,24 @@ consultations.post('/:id/upload-audio', async (c) => {
         WHERE id = ?
       `).bind(
         audioKey,
-        fullAnalysis.transcript,
-        JSON.stringify(fullAnalysis.diarizedSegments),
-        JSON.stringify(fullAnalysis.nerData),
-        JSON.stringify(fullAnalysis.spinAnalysis),
-        fullAnalysis.report.consultation_summary,
+        toStr(fullAnalysis.transcript),
+        toJsonStr(fullAnalysis.diarizedSegments),
+        toJsonStr(fullAnalysis.nerData),
+        toJsonStr(fullAnalysis.spinAnalysis),
+        toStr(fullAnalysis.report.consultation_summary),
         fullAnalysis.nerData.treatment_type || null,
         fullAnalysis.nerData.treatment_area || null,
         fullAnalysis.nerData.amount || null,
-        JSON.stringify(fullAnalysis.report.decision_factors),
-        JSON.stringify({
+        toJsonStr(fullAnalysis.report.decision_factors),
+        toJsonStr({
           overall_tone: fullAnalysis.report.overall_sentiment,
           decision_score: fullAnalysis.report.decision_score,
           timeline: fullAnalysis.report.emotion_timeline,
           summary: fullAnalysis.report.emotion_summary
         }),
-        JSON.stringify(fullAnalysis.report.patient_concerns?.map(c => c.concern) || []),
-        JSON.stringify(fullAnalysis.report.coaching_feedback),
-        fullAnalysis.report.decision_score,
+        toJsonStr(fullAnalysis.report.patient_concerns?.map((c: any) => c.concern) || []),
+        toJsonStr(fullAnalysis.report.coaching_feedback),
+        fullAnalysis.report.decision_score || 5,
         consultId
       ).run();
 
@@ -298,22 +311,22 @@ consultations.post('/:id/upload-audio', async (c) => {
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'gpt-4o')
       `).bind(
         reportId, orgId, consultId,
-        fullAnalysis.report.consultation_summary,
-        JSON.stringify(fullAnalysis.report.treatment_options),
-        fullAnalysis.report.discussed_amount,
-        JSON.stringify(fullAnalysis.report.payment_options),
-        JSON.stringify(fullAnalysis.report.patient_concerns),
-        JSON.stringify(fullAnalysis.report.emotion_timeline),
-        fullAnalysis.report.emotion_summary,
-        fullAnalysis.report.overall_sentiment,
-        JSON.stringify(fullAnalysis.report.decision_factors),
-        fullAnalysis.report.decision_score,
-        fullAnalysis.report.decision_prediction,
-        JSON.stringify(fullAnalysis.report.next_actions),
-        fullAnalysis.report.recommended_followup_date,
-        fullAnalysis.report.followup_message,
-        JSON.stringify(fullAnalysis.report.coaching_feedback),
-        fullAnalysis.report.coaching_feedback.total_score
+        toStr(fullAnalysis.report.consultation_summary),
+        toJsonStr(fullAnalysis.report.treatment_options),
+        fullAnalysis.report.discussed_amount || null,
+        toJsonStr(fullAnalysis.report.payment_options),
+        toJsonStr(fullAnalysis.report.patient_concerns),
+        toJsonStr(fullAnalysis.report.emotion_timeline),
+        toStr(fullAnalysis.report.emotion_summary),
+        toStr(fullAnalysis.report.overall_sentiment),
+        toJsonStr(fullAnalysis.report.decision_factors),
+        fullAnalysis.report.decision_score || 5,
+        toStr(fullAnalysis.report.decision_prediction),
+        toJsonStr(fullAnalysis.report.next_actions),
+        toStr(fullAnalysis.report.recommended_followup_date),
+        toStr(fullAnalysis.report.followup_message),
+        toJsonStr(fullAnalysis.report.coaching_feedback),
+        fullAnalysis.report.coaching_feedback?.total_score || 0
       ).run();
 
       return c.json({ 
