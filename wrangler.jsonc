@@ -18,7 +18,6 @@
     }
   ],
   "vars": {
-    "OPENAI_API_KEY": "",
     "GOOGLE_CLIENT_ID": "324228075950-01gun79ntvi30vop51ahlb0uljpu5rv0.apps.googleusercontent.com"
   }
 }
