@@ -107,6 +107,55 @@ export const PatientDetailPage: FC<Props> = ({ id }) => {
         </div>
       </div>
 
+      {/* 환자 수정 모달 */}
+      <div id="editPatientModal" class="hidden fixed inset-0 bg-surface-900/60 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center">
+        <div class="bg-white rounded-t-3xl sm:rounded-3xl w-full sm:max-w-lg p-6 animate-slide-up max-h-[85vh] overflow-y-auto">
+          <div class="flex justify-between items-center mb-5">
+            <h3 class="text-lg font-bold text-surface-900">
+              <i class="fas fa-pen-to-square text-brand-500 mr-2"></i>환자 정보 수정
+            </h3>
+            <button onclick="closeEditModal()" class="w-9 h-9 flex items-center justify-center rounded-xl bg-surface-100 hover:bg-surface-200 text-surface-500 transition-all active:scale-95">
+              <i class="fas fa-xmark"></i>
+            </button>
+          </div>
+          <div class="space-y-4">
+            <div>
+              <label class="block text-sm font-semibold text-surface-700 mb-1.5">이름 *</label>
+              <input type="text" id="editName" class="w-full px-4 py-3 bg-surface-50 border border-surface-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-400 transition-all" placeholder="환자 이름" />
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="block text-sm font-semibold text-surface-700 mb-1.5">나이</label>
+                <input type="number" id="editAge" class="w-full px-4 py-3 bg-surface-50 border border-surface-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-400 transition-all" placeholder="나이" />
+              </div>
+              <div>
+                <label class="block text-sm font-semibold text-surface-700 mb-1.5">성별</label>
+                <select id="editGender" class="w-full px-4 py-3 bg-surface-50 border border-surface-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-400 transition-all">
+                  <option value="">미지정</option>
+                  <option value="male">남성</option>
+                  <option value="female">여성</option>
+                </select>
+              </div>
+            </div>
+            <div>
+              <label class="block text-sm font-semibold text-surface-700 mb-1.5">전화번호</label>
+              <input type="tel" id="editPhone" class="w-full px-4 py-3 bg-surface-50 border border-surface-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-400 transition-all" placeholder="010-0000-0000" />
+            </div>
+            <div>
+              <label class="block text-sm font-semibold text-surface-700 mb-1.5">태그 <span class="font-normal text-surface-400">(쉼표로 구분)</span></label>
+              <input type="text" id="editTags" class="w-full px-4 py-3 bg-surface-50 border border-surface-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-400 transition-all" placeholder="임플란트, VIP, 소개환자" />
+            </div>
+            <div>
+              <label class="block text-sm font-semibold text-surface-700 mb-1.5">메모</label>
+              <textarea id="editMemo" rows={3} class="w-full px-4 py-3 bg-surface-50 border border-surface-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-400 transition-all resize-none" placeholder="환자 관련 메모"></textarea>
+            </div>
+            <button onclick="savePatientEdit()" id="saveEditBtn" class="w-full bg-gradient-brand text-white font-semibold py-3.5 rounded-xl transition-all active:scale-[0.98] shadow-lg shadow-brand-600/20">
+              <i class="fas fa-check mr-2"></i>저장
+            </button>
+          </div>
+        </div>
+      </div>
+
       {/* 연락 기록 모달 */}
       <div id="retContactModal" class="hidden fixed inset-0 bg-surface-900/60 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center">
         <div class="bg-white rounded-t-3xl sm:rounded-3xl w-full sm:max-w-lg p-6 animate-slide-up">
@@ -158,6 +207,7 @@ export const PatientDetailPage: FC<Props> = ({ id }) => {
           var currentTab = 'info';
           var retentionData = null;
           var retContactType = 'phone';
+          var currentPatient = null;
 
           var statusMap = {
             unscheduled_urgent: { label: '미예약 긴급', icon: 'fa-exclamation-triangle', bg: 'bg-rose-50', text: 'text-rose-700', ring: 'ring-rose-200', color: 'rose' },
@@ -206,7 +256,7 @@ export const PatientDetailPage: FC<Props> = ({ id }) => {
               if (res.status === 401) { window.location.href = '/login'; return; }
               var data = await res.json();
 
-              if (data.success) { renderPatient(data.data); }
+              if (data.success) { currentPatient = data.data; renderPatient(data.data); }
               else {
                 document.getElementById('patientDetail').innerHTML =
                   '<div class="text-center py-16 animate-fade-in">' +
@@ -584,6 +634,52 @@ export const PatientDetailPage: FC<Props> = ({ id }) => {
               } else { alert(data.error || '저장에 실패했습니다.'); }
             } catch (err) { alert('오류가 발생했습니다.'); }
           }
+
+          // ============================================
+          // 환자 정보 수정
+          // ============================================
+          function openEditModal() {
+            if (!currentPatient) return;
+            var p = currentPatient;
+            document.getElementById('editName').value = p.name || '';
+            document.getElementById('editAge').value = p.age || '';
+            document.getElementById('editGender').value = p.gender || '';
+            document.getElementById('editPhone').value = p.phone || '';
+            document.getElementById('editTags').value = (p.tags || []).join(', ');
+            document.getElementById('editMemo').value = p.memo || '';
+            document.getElementById('editPatientModal').classList.remove('hidden');
+          }
+          function closeEditModal() { document.getElementById('editPatientModal').classList.add('hidden'); }
+
+          async function savePatientEdit() {
+            var btn = document.getElementById('saveEditBtn');
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>저장 중...';
+            try {
+              var tagsStr = document.getElementById('editTags').value;
+              var tags = tagsStr ? tagsStr.split(',').map(function(t) { return t.trim(); }).filter(Boolean) : [];
+              var res = await fetch('/api/patients/' + patientId, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  name: document.getElementById('editName').value,
+                  age: parseInt(document.getElementById('editAge').value) || null,
+                  gender: document.getElementById('editGender').value || null,
+                  phone: document.getElementById('editPhone').value || null,
+                  tags: tags,
+                  memo: document.getElementById('editMemo').value || null
+                })
+              });
+              var data = await res.json();
+              if (data.success) {
+                closeEditModal();
+                loadPatient();
+              } else { alert(data.error || '저장에 실패했습니다.'); }
+            } catch (err) { alert('오류가 발생했습니다.'); }
+            finally { btn.disabled = false; btn.innerHTML = '<i class="fas fa-check mr-2"></i>저장'; }
+          }
+
+          document.getElementById('editBtn').addEventListener('click', openEditModal);
 
           loadPatient();
         `
