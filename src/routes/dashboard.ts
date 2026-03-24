@@ -142,22 +142,24 @@ dashboard.get('/summary', async (c) => {
         AND recommended_date <= ?
     `).bind(orgId, userId, today).first();
 
-    // ====== TODAY STATS (NEW) ======
+    // ====== TODAY STATS ======
     const todayConsults = await db.prepare(`
       SELECT 
         COUNT(*) as total,
         SUM(CASE WHEN status = 'paid' THEN 1 ELSE 0 END) as paid,
         SUM(CASE WHEN status = 'undecided' THEN 1 ELSE 0 END) as undecided,
-        SUM(CASE WHEN status = 'paid' THEN amount ELSE 0 END) as today_revenue
+        SUM(CASE WHEN status = 'paid' THEN amount ELSE 0 END) as today_decided,
+        SUM(COALESCE(amount, 0)) as today_consulted
       FROM consultations 
       WHERE organization_id = ? AND user_id = ?
         AND date(consultation_date) = date('now')
     `).bind(orgId, userId).first();
 
-    // ====== WEEK REVENUE & TARGET (NEW) ======
+    // ====== WEEK DECIDED & TARGET ======
     const weekRevenue = await db.prepare(`
       SELECT 
-        SUM(CASE WHEN status = 'paid' THEN amount ELSE 0 END) as week_revenue,
+        SUM(CASE WHEN status = 'paid' THEN amount ELSE 0 END) as week_decided,
+        SUM(COALESCE(amount, 0)) as week_consulted,
         COUNT(*) as total_consultations,
         SUM(CASE WHEN status = 'paid' THEN 1 ELSE 0 END) as paid_consultations,
         AVG(CASE WHEN ai_analysis_status = 'completed' THEN 
@@ -168,9 +170,9 @@ dashboard.get('/summary', async (c) => {
         AND consultation_date >= datetime('now', '-7 days')
     `).bind(orgId, userId).first();
 
-    // ====== PREVIOUS WEEK REVENUE (for comparison) ======
+    // ====== PREVIOUS WEEK (for comparison) ======
     const prevWeekRevenue = await db.prepare(`
-      SELECT SUM(CASE WHEN status = 'paid' THEN amount ELSE 0 END) as prev_week_revenue
+      SELECT SUM(CASE WHEN status = 'paid' THEN amount ELSE 0 END) as prev_week_decided
       FROM consultations 
       WHERE organization_id = ? AND user_id = ?
         AND consultation_date >= datetime('now', '-14 days')
@@ -183,7 +185,8 @@ dashboard.get('/summary', async (c) => {
         date(consultation_date) as date,
         COUNT(*) as total,
         SUM(CASE WHEN status = 'paid' THEN 1 ELSE 0 END) as paid,
-        SUM(CASE WHEN status = 'paid' THEN amount ELSE 0 END) as revenue
+        SUM(CASE WHEN status = 'paid' THEN amount ELSE 0 END) as decided,
+        SUM(COALESCE(amount, 0)) as consulted
       FROM consultations
       WHERE organization_id = ? AND user_id = ?
         AND consultation_date >= datetime('now', '-7 days')
@@ -226,15 +229,16 @@ dashboard.get('/summary', async (c) => {
       LIMIT 5
     `).bind(orgId, userId).all();
 
-    // ====== MONTHLY REVENUE TARGET ======
+    // ====== MONTHLY TARGET ======
     const goals = safeParseJSON(user?.goals as string, {});
     const monthlyTarget = (goals as any).monthly_revenue_target || 200000000; // default 2억
     const weeklyTarget = Math.round(monthlyTarget / 4);
 
-    const currentWeekRevenue = (weekRevenue?.week_revenue as number) || 0;
-    const previousWeekRevenue = (prevWeekRevenue?.prev_week_revenue as number) || 0;
-    const revenueTrend = previousWeekRevenue > 0 
-      ? Math.round(((currentWeekRevenue - previousWeekRevenue) / previousWeekRevenue) * 100) 
+    const currentWeekDecided = (weekRevenue?.week_decided as number) || 0;
+    const currentWeekConsulted = (weekRevenue?.week_consulted as number) || 0;
+    const previousWeekDecided = (prevWeekRevenue?.prev_week_decided as number) || 0;
+    const decidedTrend = previousWeekDecided > 0 
+      ? Math.round(((currentWeekDecided - previousWeekDecided) / previousWeekDecided) * 100) 
       : 0;
 
     const totalConsultations = (weekRevenue?.total_consultations as number) || 0;
@@ -248,12 +252,13 @@ dashboard.get('/summary', async (c) => {
           organization_name: user?.organization_name,
           goals
         },
-        // NEW: today snapshot
+        // today snapshot
         today: {
           total_consultations: (todayConsults?.total as number) || 0,
           paid: (todayConsults?.paid as number) || 0,
           undecided: (todayConsults?.undecided as number) || 0,
-          revenue: (todayConsults?.today_revenue as number) || 0,
+          decided: (todayConsults?.today_decided as number) || 0,
+          consulted: (todayConsults?.today_consulted as number) || 0,
         },
         today_tasks: {
           total: todayTasks?.total || 0,
@@ -273,9 +278,10 @@ dashboard.get('/summary', async (c) => {
           contact_rate: (weekTaskStats?.total_tasks as number) > 0
             ? Math.round(((weekTaskStats?.completed_tasks as number) / (weekTaskStats?.total_tasks as number)) * 100)
             : 0,
-          revenue: currentWeekRevenue,
-          revenue_target: weeklyTarget,
-          revenue_trend: revenueTrend,
+          decided: currentWeekDecided,
+          consulted: currentWeekConsulted,
+          decided_target: weeklyTarget,
+          decided_trend: decidedTrend,
         },
         // NEW: sparkline data (7 days)
         sparkline: dailySparkline.results,

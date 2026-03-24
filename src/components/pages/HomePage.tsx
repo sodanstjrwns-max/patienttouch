@@ -34,7 +34,7 @@ export const HomePage: FC = () => {
 
           {/* === TODAY REVENUE BIG NUMBER === */}
           <div id="todayRevenueHero" class="mb-5">
-            <p class="text-surface-400 text-xs font-semibold mb-1 tracking-wider uppercase">TODAY'S REVENUE</p>
+            <p class="text-surface-400 text-xs font-semibold mb-1 tracking-wider uppercase">TODAY'S DECISION</p>
             <div class="flex items-end gap-2">
               <span id="heroRevenue" class="text-4xl font-black text-white tabular-nums" style="letter-spacing: -0.03em;">-</span>
               <span class="text-lg font-bold text-surface-400 mb-1">만원</span>
@@ -65,7 +65,7 @@ export const HomePage: FC = () => {
 
       <div class="px-4 -mt-1 space-y-5 stagger-children">
 
-        {/* ====== WEEK REVENUE PROGRESS RING + TODAY SUMMARY ====== */}
+        {/* ====== WEEK DECISION PROGRESS RING + TODAY SUMMARY ====== */}
         <div class="grid grid-cols-5 gap-3">
           {/* Progress Ring - 3 cols */}
           <div id="weekRevenueRing" class="col-span-3 card-premium p-4 flex flex-col items-center justify-center">
@@ -323,8 +323,8 @@ export const HomePage: FC = () => {
                 var d = summaryData.data;
                 var goals = d.user.goals || {};
 
-                // ========= HERO REVENUE =========
-                animateNumber(document.getElementById('heroRevenue'), d.today.revenue, 1200);
+                // ========= HERO DECIDED =========
+                animateNumber(document.getElementById('heroRevenue'), d.today.decided, 1200);
                 
                 var todayTotal = d.today.total_consultations || 0;
                 var todayPaid = d.today.paid || 0;
@@ -332,7 +332,7 @@ export const HomePage: FC = () => {
                 document.getElementById('heroSubStats').innerHTML =
                   '<span class="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-400">' +
                     '<span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>' +
-                    '결제 ' + todayPaid + '건' +
+                    '결정 ' + todayPaid + '건' +
                   '</span>' +
                   '<span class="inline-flex items-center gap-1.5 text-xs font-semibold text-amber-400">' +
                     '<span class="w-1.5 h-1.5 rounded-full bg-amber-400"></span>' +
@@ -340,10 +340,10 @@ export const HomePage: FC = () => {
                   '</span>' +
                   '<span class="text-xs text-surface-500">총 ' + todayTotal + '건</span>';
 
-                // ========= WEEK REVENUE PROGRESS RING =========
+                // ========= WEEK DECIDED PROGRESS RING =========
                 var ws = d.week_stats;
-                var weekPct = ws.revenue_target > 0 ? Math.round((ws.revenue / ws.revenue_target) * 100) : 0;
-                renderProgressRing(weekPct, ws.revenue, ws.revenue_target);
+                var weekPct = ws.decided_target > 0 ? Math.round((ws.decided / ws.decided_target) * 100) : 0;
+                renderProgressRing(weekPct, ws.decided, ws.decided_target);
 
                 // ========= TODAY MINI STAT CARDS =========
                 document.getElementById('todayMiniStats').innerHTML =
@@ -374,24 +374,24 @@ export const HomePage: FC = () => {
 
                 // ========= KPI CARDS WITH SPARKLINES =========
                 var sparkData = d.sparkline || [];
-                var revenueArr = sparkData.map(function(s){ return s.revenue || 0; });
+                var revenueArr = sparkData.map(function(s){ return s.decided || 0; });
                 var countArr = sparkData.map(function(s){ return s.total || 0; });
                 var paidArr = sparkData.map(function(s){ return s.paid || 0; });
 
-                var trendHtml = ws.revenue_trend > 0 
-                  ? '<span class="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded-md"><i class="fas fa-arrow-up text-[8px] mr-0.5"></i>+' + ws.revenue_trend + '%</span>'
-                  : ws.revenue_trend < 0
-                    ? '<span class="text-[10px] font-bold text-rose-600 bg-rose-50 px-1.5 py-0.5 rounded-md"><i class="fas fa-arrow-down text-[8px] mr-0.5"></i>' + ws.revenue_trend + '%</span>'
+                var trendHtml = ws.decided_trend > 0 
+                  ? '<span class="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded-md"><i class="fas fa-arrow-up text-[8px] mr-0.5"></i>+' + ws.decided_trend + '%</span>'
+                  : ws.decided_trend < 0
+                    ? '<span class="text-[10px] font-bold text-rose-600 bg-rose-50 px-1.5 py-0.5 rounded-md"><i class="fas fa-arrow-down text-[8px] mr-0.5"></i>' + ws.decided_trend + '%</span>'
                     : '';
 
                 document.getElementById('kpiSection').innerHTML =
                   // Revenue card
                   '<div class="card-premium p-4 group">' +
                     '<div class="flex items-start justify-between mb-2">' +
-                      '<div class="flex items-center gap-2"><div class="w-8 h-8 rounded-lg bg-brand-50 flex items-center justify-center text-brand-600"><i class="fas fa-won-sign text-sm"></i></div><span class="text-[11px] font-semibold text-surface-500">금주 수금</span></div>' +
+                      '<div class="flex items-center gap-2"><div class="w-8 h-8 rounded-lg bg-brand-50 flex items-center justify-center text-brand-600"><i class="fas fa-won-sign text-sm"></i></div><span class="text-[11px] font-semibold text-surface-500">금주 결정</span></div>' +
                       trendHtml +
                     '</div>' +
-                    '<div class="text-xl font-extrabold tracking-tight">' + formatMoney(ws.revenue) + '<span class="text-xs font-medium text-surface-400 ml-0.5">만원</span></div>' +
+                    '<div class="text-xl font-extrabold tracking-tight">' + formatMoney(ws.decided) + '<span class="text-xs font-medium text-surface-400 ml-0.5">만원</span></div>' +
                     '<canvas id="sparkRevenue" class="w-full mt-2" style="height:32px;"></canvas>' +
                   '</div>' +
                   // Consultation count card
@@ -399,7 +399,7 @@ export const HomePage: FC = () => {
                     '<div class="flex items-center gap-2 mb-2"><div class="w-8 h-8 rounded-lg bg-sky-50 flex items-center justify-center text-sky-600"><i class="fas fa-stethoscope text-sm"></i></div><span class="text-[11px] font-semibold text-surface-500">금주 상담</span></div>' +
                     '<div class="text-xl font-extrabold tracking-tight">' + ws.total_consultations + '<span class="text-xs font-medium text-surface-400 ml-0.5">건</span></div>' +
                     '<div class="flex items-center gap-1.5 mt-1.5">' +
-                      '<span class="text-[10px] font-semibold px-1.5 py-0.5 rounded-md bg-emerald-50 text-emerald-700">' + ws.paid_consultations + ' 결제</span>' +
+                      '<span class="text-[10px] font-semibold px-1.5 py-0.5 rounded-md bg-emerald-50 text-emerald-700">' + ws.paid_consultations + ' 결정</span>' +
                       '<span class="text-[10px] font-semibold px-1.5 py-0.5 rounded-md bg-surface-100 text-surface-600">' + (ws.total_consultations - ws.paid_consultations) + ' 미결정</span>' +
                     '</div>' +
                     '<canvas id="sparkConsults" class="w-full mt-2" style="height:32px;"></canvas>' +
@@ -449,7 +449,7 @@ export const HomePage: FC = () => {
                 if (rc && rc.length > 0) {
                   document.getElementById('recentConsultations').innerHTML = '<div class="space-y-2">' + rc.map(function(c) {
                     var statusConfig = {
-                      paid: { bg: 'bg-emerald-50', text: 'text-emerald-700', ring: 'ring-emerald-200/50', label: '결제', dot: 'bg-emerald-500' },
+                      paid: { bg: 'bg-emerald-50', text: 'text-emerald-700', ring: 'ring-emerald-200/50', label: '결정', dot: 'bg-emerald-500' },
                       undecided: { bg: 'bg-amber-50', text: 'text-amber-700', ring: 'ring-amber-200/50', label: '미결정', dot: 'bg-amber-500' },
                       lost: { bg: 'bg-rose-50', text: 'text-rose-700', ring: 'ring-rose-200/50', label: '이탈', dot: 'bg-rose-500' },
                       pending: { bg: 'bg-surface-50', text: 'text-surface-600', ring: 'ring-surface-200/50', label: '대기', dot: 'bg-surface-400' }
