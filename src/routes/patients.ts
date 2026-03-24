@@ -132,7 +132,7 @@ patients.get('/:id', async (c) => {
 patients.post('/', async (c) => {
   try {
     const orgId = c.get('organizationId');
-    const { name, phone, age, gender, memo, tags } = await c.req.json();
+    const { name, phone, age, gender, memo, tags, referral_source, region } = await c.req.json();
     const db = c.env.DB;
 
     if (!name) {
@@ -142,16 +142,16 @@ patients.post('/', async (c) => {
     const patientId = 'patient_' + generateId().slice(0, 8);
 
     await db.prepare(`
-      INSERT INTO patients (id, organization_id, name, phone, age, gender, memo, tags)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO patients (id, organization_id, name, phone, age, gender, memo, tags, referral_source, region)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).bind(
       patientId, orgId, name, phone || null, age || null, gender || null, 
-      memo || null, JSON.stringify(tags || [])
+      memo || null, JSON.stringify(tags || []), referral_source || null, region || null
     ).run();
 
     return c.json({
       success: true,
-      data: { id: patientId, name, phone, age, gender, memo, tags: tags || [] }
+      data: { id: patientId, name, phone, age, gender, memo, tags: tags || [], referral_source, region }
     });
   } catch (error) {
     console.error('Create patient error:', error);
@@ -164,7 +164,7 @@ patients.put('/:id', async (c) => {
   try {
     const patientId = c.req.param('id');
     const orgId = c.get('organizationId');
-    const { name, phone, age, gender, memo, tags, status } = await c.req.json();
+    const { name, phone, age, gender, memo, tags, status, referral_source, region } = await c.req.json();
     const db = c.env.DB;
 
     // Verify ownership
@@ -185,11 +185,14 @@ patients.put('/:id', async (c) => {
         memo = COALESCE(?, memo),
         tags = COALESCE(?, tags),
         status = COALESCE(?, status),
+        referral_source = COALESCE(?, referral_source),
+        region = COALESCE(?, region),
         updated_at = datetime('now')
       WHERE id = ? AND organization_id = ?
     `).bind(
       name, phone, age, gender, memo, 
       tags ? JSON.stringify(tags) : null, status,
+      referral_source, region,
       patientId, orgId
     ).run();
 

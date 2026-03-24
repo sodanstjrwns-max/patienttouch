@@ -142,6 +142,26 @@ export const PatientDetailPage: FC<Props> = ({ id }) => {
               <input type="tel" id="editPhone" class="w-full px-4 py-3 bg-surface-50 border border-surface-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-400 transition-all" placeholder="010-0000-0000" />
             </div>
             <div>
+              <label class="block text-sm font-semibold text-surface-700 mb-1.5">내원 경로</label>
+              <select id="editReferral" class="w-full px-4 py-3 bg-surface-50 border border-surface-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-400 transition-all">
+                <option value="">선택</option>
+                <option value="온라인광고">온라인 광고</option>
+                <option value="네이버검색">네이버 검색</option>
+                <option value="인스타그램">인스타그램</option>
+                <option value="유튜브">유튜브</option>
+                <option value="지인소개">지인 소개</option>
+                <option value="간판">간판/도보</option>
+                <option value="블로그">블로그</option>
+                <option value="카페/커뮤니티">카페/커뮤니티</option>
+                <option value="재내원">재내원</option>
+                <option value="기타">기타</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-sm font-semibold text-surface-700 mb-1.5">지역</label>
+              <input type="text" id="editRegion" class="w-full px-4 py-3 bg-surface-50 border border-surface-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-400 transition-all" placeholder="예: 강남구, 서초구" />
+            </div>
+            <div>
               <label class="block text-sm font-semibold text-surface-700 mb-1.5">태그 <span class="font-normal text-surface-400">(쉼표로 구분)</span></label>
               <input type="text" id="editTags" class="w-full px-4 py-3 bg-surface-50 border border-surface-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-400 transition-all" placeholder="임플란트, VIP, 소개환자" />
             </div>
@@ -311,7 +331,11 @@ export const PatientDetailPage: FC<Props> = ({ id }) => {
                     (p.age ? '<span class="text-surface-400 text-sm">' + p.age + '세 ' + (p.gender === 'male' ? '남' : p.gender === 'female' ? '여' : '') + '</span>' : '') +
                   '</div>' +
                   (p.phone ? '<a href="tel:' + p.phone + '" class="inline-flex items-center gap-1.5 text-brand-600 font-semibold text-sm hover:text-brand-700 transition-colors"><i class="fas fa-phone text-xs"></i>' + p.phone + '</a>' : '') +
-                  (tags.length > 0 ? '<div class="flex flex-wrap gap-1 mt-2">' + tags.map(function(t) { return '<span class="px-2 py-0.5 bg-surface-100 text-surface-600 rounded-lg text-[10px] font-semibold">' + t + '</span>'; }).join('') + '</div>' : '') +
+                  '<div class="flex flex-wrap gap-1 mt-2">' +
+                    (p.referral_source ? '<span class="px-2 py-0.5 bg-sky-50 text-sky-700 rounded-lg text-[10px] font-semibold"><i class="fas fa-route mr-0.5"></i>' + p.referral_source + '</span>' : '') +
+                    (p.region ? '<span class="px-2 py-0.5 bg-emerald-50 text-emerald-700 rounded-lg text-[10px] font-semibold"><i class="fas fa-map-marker-alt mr-0.5"></i>' + p.region + '</span>' : '') +
+                    tags.map(function(t) { return '<span class="px-2 py-0.5 bg-surface-100 text-surface-600 rounded-lg text-[10px] font-semibold">' + t + '</span>'; }).join('') +
+                  '</div>' +
                 '</div>' +
               '</div>' +
               (p.memo ? '<p class="mt-3 text-sm text-surface-600 bg-surface-50 p-3 rounded-xl leading-relaxed">' + p.memo + '</p>' : '') +
@@ -645,6 +669,8 @@ export const PatientDetailPage: FC<Props> = ({ id }) => {
             document.getElementById('editAge').value = p.age || '';
             document.getElementById('editGender').value = p.gender || '';
             document.getElementById('editPhone').value = p.phone || '';
+            document.getElementById('editReferral').value = p.referral_source || '';
+            document.getElementById('editRegion').value = p.region || '';
             document.getElementById('editTags').value = (p.tags || []).join(', ');
             document.getElementById('editMemo').value = p.memo || '';
             document.getElementById('editPatientModal').classList.remove('hidden');
@@ -666,6 +692,8 @@ export const PatientDetailPage: FC<Props> = ({ id }) => {
                   age: parseInt(document.getElementById('editAge').value) || null,
                   gender: document.getElementById('editGender').value || null,
                   phone: document.getElementById('editPhone').value || null,
+                  referral_source: document.getElementById('editReferral').value || null,
+                  region: document.getElementById('editRegion').value || null,
                   tags: tags,
                   memo: document.getElementById('editMemo').value || null
                 })

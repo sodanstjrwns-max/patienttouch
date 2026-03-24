@@ -62,6 +62,26 @@ export const PatientsPage: FC = () => {
                 </div>
               </div>
               <div>
+                <label class="block text-xs font-semibold text-surface-600 mb-1.5">내원 경로</label>
+                <select id="pReferral" class="w-full px-4 py-3 border border-surface-200 rounded-xl outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 transition-all bg-white">
+                  <option value="">선택</option>
+                  <option value="온라인광고">온라인 광고</option>
+                  <option value="네이버검색">네이버 검색</option>
+                  <option value="인스타그램">인스타그램</option>
+                  <option value="유튜브">유튜브</option>
+                  <option value="지인소개">지인 소개</option>
+                  <option value="간판">간판/도보</option>
+                  <option value="블로그">블로그</option>
+                  <option value="카페/커뮤니티">카페/커뮤니티</option>
+                  <option value="재내원">재내원</option>
+                  <option value="기타">기타</option>
+                </select>
+              </div>
+              <div>
+                <label class="block text-xs font-semibold text-surface-600 mb-1.5">지역</label>
+                <input type="text" id="pRegion" class="w-full px-4 py-3 border border-surface-200 rounded-xl outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 transition-all" placeholder="예: 강남구, 서초구" />
+              </div>
+              <div>
                 <label class="block text-xs font-semibold text-surface-600 mb-1.5">메모</label>
                 <textarea id="pMemo" rows="2" class="w-full px-4 py-3 border border-surface-200 rounded-xl outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 transition-all resize-none" placeholder="특이사항 메모"></textarea>
               </div>
@@ -101,6 +121,8 @@ export const PatientsPage: FC = () => {
                   phone: document.getElementById('pPhone').value || undefined,
                   age: document.getElementById('pAge').value ? parseInt(document.getElementById('pAge').value) : undefined,
                   gender: document.getElementById('pGender').value || undefined,
+                  referral_source: document.getElementById('pReferral').value || undefined,
+                  region: document.getElementById('pRegion').value || undefined,
                   memo: document.getElementById('pMemo').value || undefined
                 })
               });
@@ -137,6 +159,8 @@ export const PatientsPage: FC = () => {
                   '</div>' +
                   '<div class="flex items-center gap-1.5 mt-0.5">' +
                     (p.phone ? '<span class="text-xs text-surface-500">' + p.phone + '</span>' : '') +
+                    (p.referral_source ? '<span class="text-[10px] px-1.5 py-0.5 rounded-md bg-sky-50 text-sky-600 font-medium">' + p.referral_source + '</span>' : '') +
+                    (p.region ? '<span class="text-[10px] px-1.5 py-0.5 rounded-md bg-emerald-50 text-emerald-600 font-medium">' + p.region + '</span>' : '') +
                     (tags.length > 0 ? tags.slice(0,2).map(function(t){ return '<span class="text-[10px] px-1.5 py-0.5 rounded-md bg-brand-50 text-brand-600 font-medium">' + t + '</span>'; }).join('') : '') +
                   '</div>' +
                 '</div>' +
