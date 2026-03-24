@@ -577,4 +577,153 @@ dashboard.get('/proposal-analytics', async (c) => {
   }
 });
 
+// GET /api/dashboard/today-contacts - 오늘 연락해야 할 환자 통합 리스트
+dashboard.get('/today-contacts', async (c) => {
+  try {
+    const orgId = c.get('organizationId');
+    const userId = c.get('userId');
+    const db = c.env.DB;
+
+    const today = new Date().toISOString().split('T')[0];
+    const contacts: any[] = [];
+
+    // 1. contact_tasks: 오늘 이전까지 pending인 클로징/안부 태스크
+    const pendingTasks = await db.prepare(`
+      SELECT t.id as task_id, t.task_type, t.recommended_date, t.recommended_message, t.points,
+             p.id as patient_id, p.name as patient_name, p.phone as patient_phone, p.referral_source, p.region,
+             c.treatment_type, c.amount, c.decision_score, c.consultation_date
+      FROM contact_tasks t
+      JOIN patients p ON t.patient_id = p.id
+      LEFT JOIN consultations c ON t.consultation_id = c.id
+      WHERE t.organization_id = ? AND t.user_id = ?
+        AND t.status = 'pending'
+        AND t.recommended_date <= ?
+      ORDER BY t.task_type = 'closing' DESC, t.recommended_date ASC
+    `).bind(orgId, userId, today).all();
+
+    for (const t of pendingTasks.results) {
+      const daysPassed = Math.floor((Date.now() - new Date(t.recommended_date as string).getTime()) / 86400000);
+      contacts.push({
+        source: 'task',
+        task_id: t.task_id,
+        task_type: t.task_type,
+        patient_id: t.patient_id,
+        patient_name: t.patient_name,
+        patient_phone: t.patient_phone,
+        referral_source: t.referral_source,
+        region: t.region,
+        treatment_type: t.treatment_type,
+        amount: t.amount,
+        decision_score: t.decision_score,
+        recommended_message: t.recommended_message,
+        points: safeParseJSON(t.points as string, []),
+        days_overdue: daysPassed,
+        urgency: t.task_type === 'closing' ? (daysPassed > 3 ? 'critical' : 'high') : 'medium',
+        reason: t.task_type === 'closing' 
+          ? '미결정 클로징 (예정일' + (daysPassed > 0 ? ' ' + daysPassed + '일 초과' : ' 오늘') + ')' 
+          : '안부 연락'
+      });
+    }
+
+    // 2. 미결정 상담인데 아직 태스크가 없는 환자 (2일 이상 경과)
+    const noTaskUndecided = await db.prepare(`
+      SELECT c.id as consultation_id, c.treatment_type, c.amount, c.decision_score, c.consultation_date,
+             p.id as patient_id, p.name as patient_name, p.phone as patient_phone, p.referral_source, p.region,
+             CAST(julianday('now') - julianday(c.consultation_date) AS INTEGER) as days_passed
+      FROM consultations c
+      JOIN patients p ON c.patient_id = p.id
+      WHERE c.organization_id = ? AND c.user_id = ?
+        AND c.status = 'undecided'
+        AND julianday('now') - julianday(c.consultation_date) >= 1
+        AND NOT EXISTS (
+          SELECT 1 FROM contact_tasks t 
+          WHERE t.consultation_id = c.id AND t.status = 'pending'
+        )
+      ORDER BY c.decision_score DESC, days_passed DESC
+      LIMIT 10
+    `).bind(orgId, userId).all();
+
+    for (const c of noTaskUndecided.results) {
+      const dp = c.days_passed as number;
+      contacts.push({
+        source: 'undecided',
+        consultation_id: c.consultation_id,
+        patient_id: c.patient_id,
+        patient_name: c.patient_name,
+        patient_phone: c.patient_phone,
+        referral_source: c.referral_source,
+        region: c.region,
+        treatment_type: c.treatment_type,
+        amount: c.amount,
+        decision_score: c.decision_score,
+        days_passed: dp,
+        urgency: dp >= 5 ? 'critical' : dp >= 3 ? 'high' : 'medium',
+        reason: '미결정 ' + dp + '일 경과' + ((c.decision_score as number) >= 7 ? ' (결정도 높음!)' : '')
+      });
+    }
+
+    // 3. 리텐션 연락 필요 환자 (이탈위험, 미예약 등)
+    const retentionNeed = await db.prepare(`
+      SELECT r.status as retention_status, r.days_since_visit, r.risk_score, r.remaining_treatment_value,
+             r.recommended_contact_script,
+             p.id as patient_id, p.name as patient_name, p.phone as patient_phone, p.referral_source, p.region
+      FROM patient_retention_status r
+      JOIN patients p ON r.patient_id = p.id
+      WHERE r.organization_id = ?
+        AND r.status IN ('unscheduled_urgent', 'unscheduled_warning', 'at_risk', 'consulted_unconverted')
+        AND NOT EXISTS (
+          SELECT 1 FROM retention_contacts rc 
+          WHERE rc.patient_id = p.id AND date(rc.contacted_at) >= date('now', '-3 days')
+        )
+      ORDER BY r.priority_score DESC
+      LIMIT 10
+    `).bind(orgId).all();
+
+    const retStatusLabel: Record<string, string> = {
+      unscheduled_urgent: '미예약 긴급',
+      unscheduled_warning: '미예약 주의',
+      at_risk: '이탈 위험',
+      consulted_unconverted: '상담 미전환'
+    };
+
+    for (const r of retentionNeed.results) {
+      // 이미 같은 환자가 contacts에 있으면 스킵
+      if (contacts.find(c => c.patient_id === r.patient_id)) continue;
+
+      contacts.push({
+        source: 'retention',
+        patient_id: r.patient_id,
+        patient_name: r.patient_name,
+        patient_phone: r.patient_phone,
+        referral_source: r.referral_source,
+        region: r.region,
+        retention_status: r.retention_status,
+        days_since_visit: r.days_since_visit,
+        risk_score: r.risk_score,
+        remaining_value: r.remaining_treatment_value,
+        recommended_script: r.recommended_contact_script,
+        urgency: (r.risk_score as number) >= 70 ? 'critical' : (r.risk_score as number) >= 40 ? 'high' : 'medium',
+        reason: (retStatusLabel[r.retention_status as string] || '리텐션') + ' (' + r.days_since_visit + '일 미내원)'
+      });
+    }
+
+    // urgency 순 정렬: critical > high > medium
+    const urgencyOrder: Record<string, number> = { critical: 0, high: 1, medium: 2 };
+    contacts.sort((a, b) => (urgencyOrder[a.urgency] || 2) - (urgencyOrder[b.urgency] || 2));
+
+    return c.json({
+      success: true,
+      data: {
+        contacts,
+        total: contacts.length,
+        critical_count: contacts.filter(c => c.urgency === 'critical').length,
+        high_count: contacts.filter(c => c.urgency === 'high').length
+      }
+    });
+  } catch (error) {
+    console.error('Today contacts error:', error);
+    return c.json({ success: false, error: '오늘 연락 목록을 불러오는데 실패했습니다.' }, 500);
+  }
+});
+
 export default dashboard;

@@ -68,31 +68,16 @@ export const HomePage: FC = () => {
           </div>
         </div>
 
-        {/* Today's Tasks */}
+        {/* Today's Contact List */}
         <div>
           <SectionTitle 
-            title="오늘 할 일"
-            icon="fas fa-list-check"
-            action={<span id="taskCount" class="text-xs font-bold text-surface-400 bg-surface-100 px-2 py-0.5 rounded-md">0</span>}
+            title="오늘 연락 리스트"
+            icon="fas fa-phone-volume"
+            action={<div class="flex items-center gap-2"><span id="contactCount" class="text-xs font-bold text-white bg-rose-500 px-2 py-0.5 rounded-full min-w-[24px] text-center">0</span><button onclick="generateTasks()" class="text-xs font-semibold text-brand-600 bg-brand-50 px-2 py-0.5 rounded-lg hover:bg-brand-100 transition-all"><i class="fas fa-rotate mr-1"></i>갱신</button></div>}
           />
-          <div id="taskSection" class="space-y-3">
-            <Skeleton type="card" />
-          </div>
-        </div>
-
-        {/* Retention Tasks */}
-        <div>
-          <SectionTitle 
-            title="리텐션 연락"
-            icon="fas fa-heart-pulse"
-            action={
-              <a href="/retention" class="text-xs font-semibold text-brand-600 flex items-center gap-1 hover:text-brand-700 transition-colors">
-                전체 <i class="fas fa-chevron-right text-[8px]"></i>
-              </a>
-            }
-          />
-          <div id="retentionSection" class="space-y-2">
-            <div class="card-premium p-4"><div class="shimmer h-12 rounded-lg w-full"></div></div>
+          <div id="todayContactsSection" class="space-y-2">
+            <div class="card-premium p-4"><div class="shimmer h-16 rounded-lg w-full"></div></div>
+            <div class="card-premium p-4"><div class="shimmer h-16 rounded-lg w-full"></div></div>
           </div>
         </div>
 
@@ -146,8 +131,12 @@ export const HomePage: FC = () => {
                 <h1 class="text-2xl font-black text-white tracking-tight">\${authData.data.organization_name}</h1>
               \`;
 
-              const summaryRes = await fetch('/api/dashboard/summary');
+              const [summaryRes, todayContactsRes] = await Promise.all([
+                fetch('/api/dashboard/summary'),
+                fetch('/api/dashboard/today-contacts')
+              ]);
               const summaryData = await summaryRes.json();
+              const todayContactsData = await todayContactsRes.json();
               
               if (summaryData.success) {
                 const { week_stats, today_tasks, recent_consultations, user } = summaryData.data;
@@ -216,7 +205,9 @@ export const HomePage: FC = () => {
                   </div>
                 \`;
 
-                document.getElementById('taskCount').textContent = today_tasks.total + '명';
+                // Update contact count badge
+                var tcTotal = todayContactsData.success ? todayContactsData.data.total : 0;
+                document.getElementById('contactCount').textContent = tcTotal;
 
                 // Recent consultations
                 if (recent_consultations && recent_consultations.length > 0) {
@@ -251,117 +242,117 @@ export const HomePage: FC = () => {
                 }
               }
 
-              // Load today's tasks
-              const tasksRes = await fetch('/api/tasks/today');
-              const tasksData = await tasksRes.json();
-              
-              if (tasksData.success && (tasksData.data.closing.length > 0 || tasksData.data.proactive.length > 0)) {
-                var taskHtml = '';
-                
-                if (tasksData.data.closing.length > 0) {
-                  taskHtml += '<div class="mb-3"><div class="flex items-center gap-2 mb-2"><span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-rose-50 text-rose-700 text-[10px] font-bold ring-1 ring-inset ring-rose-200/50"><i class="fas fa-fire text-[9px]"></i>클로징 ' + tasksData.data.closing.length + '</span></div>';
-                  taskHtml += tasksData.data.closing.slice(0, 3).map(function(t) {
-                    return '<div class="card-premium p-4 mb-2 border-l-4 border-l-rose-400">' +
-                      '<div class="flex items-center justify-between mb-2">' +
-                        '<div class="flex items-center gap-2">' +
-                          '<div class="w-8 h-8 rounded-lg bg-rose-50 flex items-center justify-center text-rose-700 font-bold text-xs">' + (t.patient_name ? t.patient_name.charAt(0) : '?') + '</div>' +
-                          '<div>' +
-                            '<span class="font-bold text-sm">' + t.patient_name + '</span>' +
-                            '<div class="text-[10px] text-surface-500">' + (t.treatment_type || '') + ' ' + (t.amount ? (t.amount / 10000).toFixed(0) + '만' : '') + '</div>' +
-                          '</div>' +
-                        '</div>' +
-                        '<div class="text-right">' +
-                          '<div class="text-[10px] font-bold text-brand-600">결정도</div>' +
-                          '<div class="text-lg font-black text-surface-900">' + (t.decision_score || '-') + '<span class="text-xs text-surface-400">/10</span></div>' +
-                        '</div>' +
-                      '</div>' +
-                      '<p class="text-xs text-surface-600 line-clamp-1 mb-2">' + (t.points && t.points[0] ? t.points[0] : '') + '</p>' +
-                      '<a href="tel:' + t.patient_phone + '" class="inline-flex items-center gap-1.5 text-xs font-semibold text-brand-600 hover:text-brand-700 bg-brand-50 px-3 py-1.5 rounded-lg transition-colors">' +
-                        '<i class="fas fa-phone text-[10px]"></i>연락하기' +
-                      '</a>' +
-                    '</div>';
-                  }).join('');
-                  taskHtml += '</div>';
-                }
-                
-                if (tasksData.data.proactive.length > 0) {
-                  taskHtml += '<div><div class="flex items-center gap-2 mb-2"><span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-sky-50 text-sky-700 text-[10px] font-bold ring-1 ring-inset ring-sky-200/50"><i class="fas fa-heart text-[9px]"></i>안부 ' + tasksData.data.proactive.length + '</span></div>';
-                  taskHtml += tasksData.data.proactive.slice(0, 2).map(function(t) {
-                    return '<div class="card-premium p-4 mb-2 border-l-4 border-l-sky-400">' +
-                      '<div class="flex items-center justify-between">' +
-                        '<div class="flex items-center gap-2">' +
-                          '<div class="w-8 h-8 rounded-lg bg-sky-50 flex items-center justify-center text-sky-700 font-bold text-xs">' + (t.patient_name ? t.patient_name.charAt(0) : '?') + '</div>' +
-                          '<span class="font-bold text-sm">' + t.patient_name + '</span>' +
-                        '</div>' +
-                        '<a href="tel:' + t.patient_phone + '" class="w-8 h-8 rounded-lg bg-brand-50 flex items-center justify-center text-brand-600 hover:bg-brand-100 transition-colors"><i class="fas fa-phone text-xs"></i></a>' +
-                      '</div>' +
-                      '<p class="text-xs text-surface-500 mt-2 line-clamp-1">' + (t.points && t.points[0] ? t.points[0] : '') + '</p>' +
-                    '</div>';
-                  }).join('');
-                  taskHtml += '</div>';
-                }
-                
-                document.getElementById('taskSection').innerHTML = taskHtml;
-              } else {
-                document.getElementById('taskSection').innerHTML = 
-                  '<div class="card-premium p-6 text-center">' +
-                    '<div class="w-14 h-14 mx-auto bg-emerald-50 rounded-2xl flex items-center justify-center mb-3">' +
-                      '<i class="fas fa-circle-check text-2xl text-emerald-500"></i>' +
-                    '</div>' +
-                    '<p class="font-bold text-surface-800 mb-0.5">오늘 할 일 완료!</p>' +
-                    '<p class="text-sm text-surface-500 mb-4">연락할 환자가 없어요</p>' +
-                    '<button onclick="generateTasks()" class="inline-flex items-center gap-2 text-sm font-semibold text-brand-600 hover:text-brand-700 bg-brand-50 hover:bg-brand-100 px-4 py-2 rounded-xl transition-all">' +
-                      '<i class="fas fa-wand-magic-sparkles"></i>연락 대상 찾기' +
-                    '</button>' +
-                  '</div>';
-              }
-              // Load retention summary
-              try {
-                var retRes = await fetch('/api/retention/home-summary');
-                var retData = await retRes.json();
-                if (retData.success && retData.data.contacts.length > 0) {
-                  var retStatusMap = {
-                    unscheduled_urgent: { label: '미예약', bg: 'bg-rose-50', text: 'text-rose-700', ring: 'ring-rose-200' },
-                    unscheduled_warning: { label: '미예약', bg: 'bg-amber-50', text: 'text-amber-700', ring: 'ring-amber-200' },
-                    at_risk: { label: '이탈위험', bg: 'bg-red-50', text: 'text-red-700', ring: 'ring-red-200' },
-                    recall_6m: { label: '리콜', bg: 'bg-sky-50', text: 'text-sky-700', ring: 'ring-sky-200' },
-                    recall_12m: { label: '리콜', bg: 'bg-sky-50', text: 'text-sky-700', ring: 'ring-sky-200' },
-                    consulted_unconverted: { label: '미전환', bg: 'bg-amber-50', text: 'text-amber-700', ring: 'ring-amber-200' }
-                  };
-                  var retHtml = retData.data.contacts.map(function(c) {
-                    var st = retStatusMap[c.status] || { label: c.status, bg: 'bg-surface-50', text: 'text-surface-600', ring: 'ring-surface-200' };
-                    return '<a href="/retention" class="card-premium p-3.5 flex items-center gap-3 group border-l-4 border-l-purple-400">' +
-                      '<div class="w-9 h-9 rounded-lg bg-purple-50 flex items-center justify-center font-bold text-xs text-purple-700 shrink-0">' + c.patient_name.charAt(0) + '</div>' +
-                      '<div class="flex-1 min-w-0">' +
-                        '<div class="flex items-center gap-1.5">' +
-                          '<span class="font-bold text-sm text-surface-900">' + c.patient_name + '</span>' +
-                          '<span class="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-semibold ring-1 ring-inset ' + st.bg + ' ' + st.text + ' ' + st.ring + '">' + st.label + '</span>' +
-                        '</div>' +
-                        '<p class="text-[11px] text-surface-500 mt-0.5">' + c.days_since_visit + '일 경과' + (c.remaining_treatment_value > 0 ? ' · 잔여 ' + Math.round(c.remaining_treatment_value / 10000) + '만원' : '') + '</p>' +
-                      '</div>' +
-                      '<i class="fas fa-chevron-right text-surface-300 text-xs group-hover:text-brand-500 transition-colors"></i>' +
-                    '</a>';
-                  }).join('');
-                  document.getElementById('retentionSection').innerHTML = retHtml;
-                } else {
-                  document.getElementById('retentionSection').innerHTML =
-                    '<div class="card-premium p-4 text-center"><p class="text-surface-500 text-xs"><i class="fas fa-check-circle text-emerald-500 mr-1"></i>리텐션 연락 대상 없음</p></div>';
-                }
-              } catch (retErr) { console.error('Retention load error:', retErr); }
+              // Render today contacts section
+              renderTodayContacts(todayContactsData);
             } catch (err) {
               console.error('Failed to load home page:', err);
             }
           }
 
+          function renderTodayContacts(data) {
+            var container = document.getElementById('todayContactsSection');
+            if (!data.success || !data.data.contacts || data.data.contacts.length === 0) {
+              container.innerHTML = 
+                '<div class="card-premium p-6 text-center">' +
+                  '<div class="w-14 h-14 mx-auto bg-emerald-50 rounded-2xl flex items-center justify-center mb-3">' +
+                    '<i class="fas fa-circle-check text-2xl text-emerald-500"></i>' +
+                  '</div>' +
+                  '<p class="font-bold text-surface-800 mb-0.5">오늘 연락 완료!</p>' +
+                  '<p class="text-sm text-surface-500 mb-4">연락할 환자가 없어요</p>' +
+                  '<button onclick="generateTasks()" class="inline-flex items-center gap-2 text-sm font-semibold text-brand-600 hover:text-brand-700 bg-brand-50 hover:bg-brand-100 px-4 py-2 rounded-xl transition-all">' +
+                    '<i class="fas fa-wand-magic-sparkles"></i>연락 대상 찾기' +
+                  '</button>' +
+                '</div>';
+              return;
+            }
+
+            var contacts = data.data.contacts;
+            var urgencyConfig = {
+              critical: { border: 'border-l-rose-500', bg: 'bg-rose-50', text: 'text-rose-700', icon: 'fa-fire', label: '긴급', badgeBg: 'bg-rose-500', pulse: true },
+              high: { border: 'border-l-amber-500', bg: 'bg-amber-50', text: 'text-amber-700', icon: 'fa-bolt', label: '높음', badgeBg: 'bg-amber-500', pulse: false },
+              medium: { border: 'border-l-sky-400', bg: 'bg-sky-50', text: 'text-sky-700', icon: 'fa-heart', label: '보통', badgeBg: 'bg-sky-500', pulse: false }
+            };
+
+            var html = '';
+
+            // Summary bar
+            var crit = data.data.critical_count || 0;
+            var hi = data.data.high_count || 0;
+            var rest = contacts.length - crit - hi;
+            html += '<div class="flex gap-2 mb-1">';
+            if (crit > 0) html += '<span class="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-rose-50 text-rose-700 text-xs font-bold ring-1 ring-inset ring-rose-200"><i class="fas fa-fire text-[10px]"></i>긴급 ' + crit + '</span>';
+            if (hi > 0) html += '<span class="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-amber-50 text-amber-700 text-xs font-bold ring-1 ring-inset ring-amber-200"><i class="fas fa-bolt text-[10px]"></i>높음 ' + hi + '</span>';
+            if (rest > 0) html += '<span class="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-sky-50 text-sky-700 text-xs font-bold ring-1 ring-inset ring-sky-200"><i class="fas fa-heart text-[10px]"></i>보통 ' + rest + '</span>';
+            html += '</div>';
+
+            contacts.forEach(function(c) {
+              var u = urgencyConfig[c.urgency] || urgencyConfig.medium;
+              var avatarColors = ['bg-brand-100 text-brand-700', 'bg-emerald-100 text-emerald-700', 'bg-amber-100 text-amber-700', 'bg-rose-100 text-rose-700', 'bg-sky-100 text-sky-700', 'bg-purple-100 text-purple-700'];
+              var ci = c.patient_name.charCodeAt(0) % avatarColors.length;
+
+              html += '<div class="card-premium p-4 border-l-4 ' + u.border + ' group">';
+              html += '<div class="flex items-start gap-3">';
+              
+              // Avatar + link
+              html += '<a href="/patients/' + c.patient_id + '" class="w-10 h-10 rounded-xl ' + avatarColors[ci] + ' flex items-center justify-center font-bold text-sm shrink-0 hover:scale-110 transition-transform">' + c.patient_name.charAt(0) + '</a>';
+
+              // Info
+              html += '<div class="flex-1 min-w-0">';
+              html += '<div class="flex items-center gap-1.5 flex-wrap">';
+              html += '<a href="/patients/' + c.patient_id + '" class="font-bold text-sm text-surface-900 hover:text-brand-600 transition-colors">' + c.patient_name + '</a>';
+              html += '<span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md text-[9px] font-bold ' + u.bg + ' ' + u.text + '">';
+              if (u.pulse) html += '<span class="w-1.5 h-1.5 rounded-full ' + u.badgeBg + ' animate-pulse"></span>';
+              html += '<i class="fas ' + u.icon + ' text-[8px]"></i>' + u.label + '</span>';
+              html += '</div>';
+
+              // Reason line
+              html += '<p class="text-xs text-surface-600 mt-0.5">' + (c.reason || '') + '</p>';
+
+              // Detail chips
+              html += '<div class="flex flex-wrap gap-1 mt-1.5">';
+              if (c.treatment_type) html += '<span class="text-[10px] px-1.5 py-0.5 rounded-md bg-brand-50 text-brand-600 font-medium">' + c.treatment_type + '</span>';
+              if (c.amount) html += '<span class="text-[10px] px-1.5 py-0.5 rounded-md bg-emerald-50 text-emerald-600 font-medium">' + (c.amount / 10000).toFixed(0) + '만원</span>';
+              if (c.decision_score) html += '<span class="text-[10px] px-1.5 py-0.5 rounded-md bg-purple-50 text-purple-600 font-medium">결정도 ' + c.decision_score + '/10</span>';
+              if (c.risk_score) html += '<span class="text-[10px] px-1.5 py-0.5 rounded-md bg-rose-50 text-rose-600 font-medium">위험도 ' + c.risk_score + '</span>';
+              if (c.remaining_value > 0) html += '<span class="text-[10px] px-1.5 py-0.5 rounded-md bg-amber-50 text-amber-600 font-medium">잔여 ' + Math.round(c.remaining_value / 10000) + '만</span>';
+              if (c.referral_source) html += '<span class="text-[10px] px-1.5 py-0.5 rounded-md bg-sky-50 text-sky-600 font-medium">' + c.referral_source + '</span>';
+              if (c.region) html += '<span class="text-[10px] px-1.5 py-0.5 rounded-md bg-surface-100 text-surface-600 font-medium">' + c.region + '</span>';
+              html += '</div>';
+
+              // Tip line (points or recommended script)
+              if (c.points && c.points.length > 0) {
+                html += '<p class="text-[11px] text-surface-500 mt-1.5 line-clamp-1"><i class="fas fa-lightbulb text-amber-400 mr-1"></i>' + c.points[0] + '</p>';
+              } else if (c.recommended_script) {
+                html += '<p class="text-[11px] text-surface-500 mt-1.5 line-clamp-1"><i class="fas fa-sparkles text-brand-400 mr-1"></i>' + c.recommended_script + '</p>';
+              }
+
+              html += '</div>'; // end flex-1
+
+              // Call button
+              if (c.patient_phone) {
+                html += '<a href="tel:' + c.patient_phone + '" class="w-10 h-10 rounded-xl bg-brand-50 flex items-center justify-center text-brand-600 hover:bg-brand-100 active:scale-90 transition-all shrink-0">' +
+                  '<i class="fas fa-phone text-sm"></i></a>';
+              }
+
+              html += '</div>'; // end flex row
+              html += '</div>'; // end card
+            });
+
+            container.innerHTML = html;
+          }
+
           async function generateTasks() {
             try {
+              var btn = event && event.target;
+              if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i>찾는 중...'; }
               const res = await fetch('/api/tasks/generate', { method: 'POST' });
               const data = await res.json();
               if (data.success && data.data.generated > 0) {
                 alert(data.data.generated + '명의 연락 대상을 찾았습니다!');
                 window.location.reload();
               } else {
-                alert('연락할 환자를 찾지 못했습니다.');
+                alert('새로 추가할 연락 대상이 없습니다.');
+                if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-rotate mr-1"></i>갱신'; }
               }
             } catch (err) {
               alert('오류가 발생했습니다.');
