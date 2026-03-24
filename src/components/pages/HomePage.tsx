@@ -29,6 +29,9 @@ export const HomePage: FC = () => {
               <a href="/settings" class="w-9 h-9 glass-dark rounded-xl flex items-center justify-center text-surface-400 hover:text-white transition-colors">
                 <i class="fas fa-gear text-sm"></i>
               </a>
+              <button id="headerLogoutBtn" class="w-9 h-9 glass-dark rounded-xl flex items-center justify-center text-surface-400 hover:text-rose-400 transition-colors" title="로그아웃">
+                <i class="fas fa-arrow-right-from-bracket text-sm"></i>
+              </button>
             </div>
           </div>
 
@@ -479,6 +482,16 @@ export const HomePage: FC = () => {
               }
             } catch(e) { alert('오류가 발생했습니다.'); }
           }
+
+          // === LOGOUT ===
+          document.getElementById('headerLogoutBtn').addEventListener('click', async function() {
+            if (!confirm('로그아웃 하시겠습니까?')) return;
+            try { await fetch('/api/auth/logout', { method: 'POST' }); } catch (e) {}
+            document.cookie.split(';').forEach(function(c) {
+              document.cookie = c.replace(/^ +/, '').replace(/=.*/, '=;expires=' + new Date().toUTCString() + ';path=/');
+            });
+            window.location.href = '/login';
+          });
 
           loadHomePage();
         `
