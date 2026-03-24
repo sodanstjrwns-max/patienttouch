@@ -114,7 +114,7 @@ dashboard.get('/kpi', async (c) => {
   }
 });
 
-// GET /api/dashboard/summary - Get home dashboard summary
+// GET /api/dashboard/summary - Get home dashboard summary (ENHANCED v2)
 dashboard.get('/summary', async (c) => {
   try {
     const orgId = c.get('organizationId');
@@ -142,6 +142,79 @@ dashboard.get('/summary', async (c) => {
         AND recommended_date <= ?
     `).bind(orgId, userId, today).first();
 
+    // ====== TODAY STATS (NEW) ======
+    const todayConsults = await db.prepare(`
+      SELECT 
+        COUNT(*) as total,
+        SUM(CASE WHEN status = 'paid' THEN 1 ELSE 0 END) as paid,
+        SUM(CASE WHEN status = 'undecided' THEN 1 ELSE 0 END) as undecided,
+        SUM(CASE WHEN status = 'paid' THEN amount ELSE 0 END) as today_revenue
+      FROM consultations 
+      WHERE organization_id = ? AND user_id = ?
+        AND date(consultation_date) = date('now')
+    `).bind(orgId, userId).first();
+
+    // ====== WEEK REVENUE & TARGET (NEW) ======
+    const weekRevenue = await db.prepare(`
+      SELECT 
+        SUM(CASE WHEN status = 'paid' THEN amount ELSE 0 END) as week_revenue,
+        COUNT(*) as total_consultations,
+        SUM(CASE WHEN status = 'paid' THEN 1 ELSE 0 END) as paid_consultations,
+        AVG(CASE WHEN ai_analysis_status = 'completed' THEN 
+          CAST(json_extract(feedback, '$.total_score') AS INTEGER) 
+        END) as avg_score
+      FROM consultations 
+      WHERE organization_id = ? AND user_id = ?
+        AND consultation_date >= datetime('now', '-7 days')
+    `).bind(orgId, userId).first();
+
+    // ====== PREVIOUS WEEK REVENUE (for comparison) ======
+    const prevWeekRevenue = await db.prepare(`
+      SELECT SUM(CASE WHEN status = 'paid' THEN amount ELSE 0 END) as prev_week_revenue
+      FROM consultations 
+      WHERE organization_id = ? AND user_id = ?
+        AND consultation_date >= datetime('now', '-14 days')
+        AND consultation_date < datetime('now', '-7 days')
+    `).bind(orgId, userId).first();
+
+    // ====== DAILY SPARKLINE (last 7 days) ======
+    const dailySparkline = await db.prepare(`
+      SELECT 
+        date(consultation_date) as date,
+        COUNT(*) as total,
+        SUM(CASE WHEN status = 'paid' THEN 1 ELSE 0 END) as paid,
+        SUM(CASE WHEN status = 'paid' THEN amount ELSE 0 END) as revenue
+      FROM consultations
+      WHERE organization_id = ? AND user_id = ?
+        AND consultation_date >= datetime('now', '-7 days')
+      GROUP BY date(consultation_date)
+      ORDER BY date ASC
+    `).bind(orgId, userId).all();
+
+    // ====== WEEK TASK STATS ======
+    const weekTaskStats = await db.prepare(`
+      SELECT 
+        COUNT(*) as total_tasks,
+        SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed_tasks
+      FROM contact_tasks
+      WHERE organization_id = ? AND user_id = ?
+        AND created_at >= datetime('now', '-7 days')
+    `).bind(orgId, userId).first();
+
+    // ====== MVP CASE (best conversion this week) ======
+    const mvpCase = await db.prepare(`
+      SELECT c.id, c.treatment_type, c.amount, c.decision_score,
+             p.name as patient_name,
+             json_extract(c.feedback, '$.total_score') as consult_score
+      FROM consultations c
+      JOIN patients p ON c.patient_id = p.id
+      WHERE c.organization_id = ? AND c.user_id = ?
+        AND c.status = 'paid'
+        AND c.consultation_date >= datetime('now', '-7 days')
+      ORDER BY c.amount DESC
+      LIMIT 1
+    `).bind(orgId, userId).first();
+
     // Get recent consultations (today)
     const recentConsults = await db.prepare(`
       SELECT c.*, p.name as patient_name
@@ -153,27 +226,19 @@ dashboard.get('/summary', async (c) => {
       LIMIT 5
     `).bind(orgId, userId).all();
 
-    // Get week stats
-    const weekStats = await db.prepare(`
-      SELECT 
-        COUNT(*) as total_consultations,
-        SUM(CASE WHEN status = 'paid' THEN 1 ELSE 0 END) as paid_consultations,
-        AVG(CASE WHEN ai_analysis_status = 'completed' THEN 
-          CAST(json_extract(feedback, '$.total_score') AS INTEGER) 
-        END) as avg_score
-      FROM consultations 
-      WHERE organization_id = ? AND user_id = ?
-        AND consultation_date >= datetime('now', '-7 days')
-    `).bind(orgId, userId).first();
+    // ====== MONTHLY REVENUE TARGET ======
+    const goals = safeParseJSON(user?.goals as string, {});
+    const monthlyTarget = (goals as any).monthly_revenue_target || 200000000; // default 2억
+    const weeklyTarget = Math.round(monthlyTarget / 4);
 
-    const weekTaskStats = await db.prepare(`
-      SELECT 
-        COUNT(*) as total_tasks,
-        SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed_tasks
-      FROM contact_tasks
-      WHERE organization_id = ? AND user_id = ?
-        AND created_at >= datetime('now', '-7 days')
-    `).bind(orgId, userId).first();
+    const currentWeekRevenue = (weekRevenue?.week_revenue as number) || 0;
+    const previousWeekRevenue = (prevWeekRevenue?.prev_week_revenue as number) || 0;
+    const revenueTrend = previousWeekRevenue > 0 
+      ? Math.round(((currentWeekRevenue - previousWeekRevenue) / previousWeekRevenue) * 100) 
+      : 0;
+
+    const totalConsultations = (weekRevenue?.total_consultations as number) || 0;
+    const paidConsultations = (weekRevenue?.paid_consultations as number) || 0;
 
     return c.json({
       success: true,
@@ -181,30 +246,52 @@ dashboard.get('/summary', async (c) => {
         user: {
           name: user?.name,
           organization_name: user?.organization_name,
-          goals: safeParseJSON(user?.goals as string, {})
+          goals
+        },
+        // NEW: today snapshot
+        today: {
+          total_consultations: (todayConsults?.total as number) || 0,
+          paid: (todayConsults?.paid as number) || 0,
+          undecided: (todayConsults?.undecided as number) || 0,
+          revenue: (todayConsults?.today_revenue as number) || 0,
         },
         today_tasks: {
           total: todayTasks?.total || 0,
           closing: todayTasks?.closing || 0,
           proactive: todayTasks?.proactive || 0
         },
-        recent_consultations: recentConsults.results.map(c => ({
-          ...c,
-          feedback: safeParseJSON(c.feedback as string, {})
-        })),
+        // ENHANCED: week stats with revenue
         week_stats: {
-          total_consultations: weekStats?.total_consultations || 0,
-          paid_consultations: weekStats?.paid_consultations || 0,
-          conversion_rate: (weekStats?.total_consultations as number) > 0
-            ? Math.round(((weekStats?.paid_consultations as number) / (weekStats?.total_consultations as number)) * 100)
+          total_consultations: totalConsultations,
+          paid_consultations: paidConsultations,
+          conversion_rate: totalConsultations > 0
+            ? Math.round((paidConsultations / totalConsultations) * 100)
             : 0,
-          avg_score: Math.round((weekStats?.avg_score as number) || 0),
+          avg_score: Math.round((weekRevenue?.avg_score as number) || 0),
           total_tasks: weekTaskStats?.total_tasks || 0,
           completed_tasks: weekTaskStats?.completed_tasks || 0,
           contact_rate: (weekTaskStats?.total_tasks as number) > 0
             ? Math.round(((weekTaskStats?.completed_tasks as number) / (weekTaskStats?.total_tasks as number)) * 100)
-            : 0
-        }
+            : 0,
+          revenue: currentWeekRevenue,
+          revenue_target: weeklyTarget,
+          revenue_trend: revenueTrend,
+        },
+        // NEW: sparkline data (7 days)
+        sparkline: dailySparkline.results,
+        // NEW: MVP case of the week
+        mvp_case: mvpCase ? {
+          id: mvpCase.id,
+          patient_name: mvpCase.patient_name,
+          treatment_type: mvpCase.treatment_type,
+          amount: mvpCase.amount,
+          decision_score: mvpCase.decision_score,
+          consult_score: mvpCase.consult_score,
+        } : null,
+        recent_consultations: recentConsults.results.map(c => ({
+          ...c,
+          feedback: safeParseJSON(c.feedback as string, {})
+        })),
       }
     });
   } catch (error) {
