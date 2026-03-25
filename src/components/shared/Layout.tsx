@@ -13,10 +13,10 @@ interface LayoutProps {
 export const Layout: FC<LayoutProps> = ({ children, activeTab, hideNav }) => {
   const tabs = [
     { id: 'home', href: '/', icon: 'fas fa-house', label: '홈' },
-    { id: 'consultations', href: '/consultations', icon: 'fas fa-waveform-lines', label: '상담' },
+    { id: 'consultations', href: '/consultations', icon: 'fas fa-comments', label: '상담' },
     { id: 'patients', href: '/patients', icon: 'fas fa-user-group', label: '환자' },
-    { id: 'retention', href: '/retention', icon: 'fas fa-heart-pulse', label: '리텐션' },
-    { id: 'report', href: '/report', icon: 'fas fa-chart-mixed', label: '리포트' },
+    { id: 'retention', href: '/retention', icon: 'fas fa-heart', label: '리텐션' },
+    { id: 'report', href: '/report', icon: 'fas fa-chart-pie', label: '리포트' },
   ]
 
   return (
