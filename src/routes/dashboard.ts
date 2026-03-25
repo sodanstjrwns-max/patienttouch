@@ -229,6 +229,53 @@ dashboard.get('/summary', async (c) => {
       LIMIT 5
     `).bind(orgId, userId).all();
 
+    // ====== PREVIOUS WEEK KPI (for comparison arrows) ======
+    const prevWeekKPI = await db.prepare(`
+      SELECT 
+        COUNT(*) as total_consultations,
+        SUM(CASE WHEN status = 'paid' THEN 1 ELSE 0 END) as paid_consultations,
+        AVG(CASE WHEN ai_analysis_status = 'completed' THEN 
+          CAST(json_extract(feedback, '$.total_score') AS INTEGER) 
+        END) as avg_score
+      FROM consultations 
+      WHERE organization_id = ? AND user_id = ?
+        AND consultation_date >= datetime('now', '-14 days')
+        AND consultation_date < datetime('now', '-7 days')
+    `).bind(orgId, userId).first();
+
+    const prevWeekTaskStats = await db.prepare(`
+      SELECT 
+        COUNT(*) as total_tasks,
+        SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed_tasks
+      FROM contact_tasks
+      WHERE organization_id = ? AND user_id = ?
+        AND created_at >= datetime('now', '-14 days')
+        AND created_at < datetime('now', '-7 days')
+    `).bind(orgId, userId).first();
+
+    // ====== STALE UNDECIDED ALERT (3+ days without contact) ======
+    const staleUndecided = await db.prepare(`
+      SELECT COUNT(*) as count,
+             SUM(COALESCE(c.amount, 0)) as total_amount
+      FROM consultations c
+      WHERE c.organization_id = ? AND c.user_id = ?
+        AND c.status = 'undecided'
+        AND julianday('now') - julianday(c.consultation_date) >= 3
+        AND NOT EXISTS (
+          SELECT 1 FROM contact_tasks t 
+          WHERE t.consultation_id = c.id AND t.status = 'completed'
+        )
+    `).bind(orgId, userId).first();
+
+    // ====== TODAY MISSION PROGRESS ======
+    const todayCompletedTasks = await db.prepare(`
+      SELECT COUNT(*) as done
+      FROM contact_tasks
+      WHERE organization_id = ? AND user_id = ?
+        AND status = 'completed'
+        AND date(completed_at) = date('now')
+    `).bind(orgId, userId).first();
+
     // ====== MONTHLY TARGET ======
     const goals = safeParseJSON(user?.goals as string, {});
     const monthlyTarget = (goals as any).monthly_revenue_target || 200000000; // default 2억
@@ -243,6 +290,23 @@ dashboard.get('/summary', async (c) => {
 
     const totalConsultations = (weekRevenue?.total_consultations as number) || 0;
     const paidConsultations = (weekRevenue?.paid_consultations as number) || 0;
+
+    // Previous week comparison
+    const prevTotalConsultations = (prevWeekKPI?.total_consultations as number) || 0;
+    const prevPaidConsultations = (prevWeekKPI?.paid_consultations as number) || 0;
+    const prevConversionRate = prevTotalConsultations > 0
+      ? Math.round((prevPaidConsultations / prevTotalConsultations) * 100) : 0;
+    const prevAvgScore = Math.round((prevWeekKPI?.avg_score as number) || 0);
+    const prevTotalTasks = (prevWeekTaskStats?.total_tasks as number) || 0;
+    const prevCompletedTasks = (prevWeekTaskStats?.completed_tasks as number) || 0;
+    const prevContactRate = prevTotalTasks > 0
+      ? Math.round((prevCompletedTasks / prevTotalTasks) * 100) : 0;
+
+    const currentConversionRate = totalConsultations > 0
+      ? Math.round((paidConsultations / totalConsultations) * 100) : 0;
+    const currentAvgScore = Math.round((weekRevenue?.avg_score as number) || 0);
+    const currentContactRate = (weekTaskStats?.total_tasks as number) > 0
+      ? Math.round(((weekTaskStats?.completed_tasks as number) / (weekTaskStats?.total_tasks as number)) * 100) : 0;
 
     return c.json({
       success: true,
@@ -265,23 +329,36 @@ dashboard.get('/summary', async (c) => {
           closing: todayTasks?.closing || 0,
           proactive: todayTasks?.proactive || 0
         },
-        // ENHANCED: week stats with revenue
+        // TODAY MISSION
+        today_mission: {
+          contacts_done: (todayCompletedTasks?.done as number) || 0,
+          contacts_total: (todayTasks?.total as number) || 0,
+          consultations_done: (todayConsults?.total as number) || 0,
+          decisions_done: (todayConsults?.paid as number) || 0,
+        },
+        // STALE UNDECIDED ALERT
+        stale_alert: {
+          count: (staleUndecided?.count as number) || 0,
+          amount: (staleUndecided?.total_amount as number) || 0,
+        },
+        // ENHANCED: week stats with revenue + prev week comparison
         week_stats: {
           total_consultations: totalConsultations,
           paid_consultations: paidConsultations,
-          conversion_rate: totalConsultations > 0
-            ? Math.round((paidConsultations / totalConsultations) * 100)
-            : 0,
-          avg_score: Math.round((weekRevenue?.avg_score as number) || 0),
+          conversion_rate: currentConversionRate,
+          avg_score: currentAvgScore,
           total_tasks: weekTaskStats?.total_tasks || 0,
           completed_tasks: weekTaskStats?.completed_tasks || 0,
-          contact_rate: (weekTaskStats?.total_tasks as number) > 0
-            ? Math.round(((weekTaskStats?.completed_tasks as number) / (weekTaskStats?.total_tasks as number)) * 100)
-            : 0,
+          contact_rate: currentContactRate,
           decided: currentWeekDecided,
           consulted: currentWeekConsulted,
           decided_target: weeklyTarget,
           decided_trend: decidedTrend,
+          // Previous week for comparison arrows
+          prev_conversion_rate: prevConversionRate,
+          prev_avg_score: prevAvgScore,
+          prev_contact_rate: prevContactRate,
+          prev_total_consultations: prevTotalConsultations,
         },
         // NEW: sparkline data (7 days)
         sparkline: dailySparkline.results,
@@ -684,7 +761,9 @@ dashboard.get('/today-contacts', async (c) => {
     const pendingTasks = await db.prepare(`
       SELECT t.id as task_id, t.task_type, t.recommended_date, t.recommended_message, t.points,
              p.id as patient_id, p.name as patient_name, p.phone as patient_phone, p.referral_source, p.region,
-             c.treatment_type, c.amount, c.decision_score, c.consultation_date
+             c.treatment_type, c.amount, c.decision_score, c.consultation_date,
+             (SELECT MAX(ct2.completed_at) FROM contact_tasks ct2 
+              WHERE ct2.patient_id = p.id AND ct2.status = 'completed') as last_contact_date
       FROM contact_tasks t
       JOIN patients p ON t.patient_id = p.id
       LEFT JOIN consultations c ON t.consultation_id = c.id
@@ -711,6 +790,7 @@ dashboard.get('/today-contacts', async (c) => {
         recommended_message: t.recommended_message,
         points: safeParseJSON(t.points as string, []),
         days_overdue: daysPassed,
+        last_contact_date: t.last_contact_date || null,
         urgency: t.task_type === 'closing' ? (daysPassed > 3 ? 'critical' : 'high') : 'medium',
         reason: t.task_type === 'closing' 
           ? '미결정 클로징 (예정일' + (daysPassed > 0 ? ' ' + daysPassed + '일 초과' : ' 오늘') + ')' 

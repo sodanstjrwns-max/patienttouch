@@ -44,29 +44,43 @@ export const HomePage: FC = () => {
       {/* MAIN CONTENT */}
       <div class="px-4 pt-4 space-y-5">
 
-        {/* ====== QUICK ACTIONS ====== */}
-        <div class="grid grid-cols-2 gap-2.5">
-          <a href="/recording" class="card-premium p-3.5 flex items-center gap-3 hover:shadow-md transition-all active:scale-[0.97] group">
-            <div class="w-10 h-10 bg-brand-50 rounded-xl flex items-center justify-center group-hover:bg-brand-100 transition-colors shrink-0">
+        {/* ====== STALE UNDECIDED ALERT BANNER ====== */}
+        <div id="staleAlertBanner" class="hidden"></div>
+
+        {/* ====== TODAY MISSION PROGRESS ====== */}
+        <div id="todayMission" class="card-premium p-4 hidden">
+          <div class="shimmer h-16 rounded-lg w-full"></div>
+        </div>
+
+        {/* ====== QUICK ACTIONS (2x2) ====== */}
+        <div class="grid grid-cols-4 gap-2">
+          <a href="/recording" class="card-premium p-3 flex flex-col items-center gap-1.5 hover:shadow-md transition-all active:scale-[0.97] group">
+            <div class="w-10 h-10 bg-brand-50 rounded-xl flex items-center justify-center group-hover:bg-brand-100 transition-colors">
               <i class="fas fa-microphone text-brand-600 text-base"></i>
             </div>
-            <div class="min-w-0">
-              <p class="font-bold text-sm text-surface-900">상담 녹음</p>
-              <p class="text-[11px] text-surface-500">터치 한 번으로 시작</p>
-            </div>
+            <span class="text-[10px] font-bold text-surface-700">상담 녹음</span>
           </a>
-          <a href="/patients" class="card-premium p-3.5 flex items-center gap-3 hover:shadow-md transition-all active:scale-[0.97] group">
-            <div class="w-10 h-10 bg-emerald-50 rounded-xl flex items-center justify-center group-hover:bg-emerald-100 transition-colors shrink-0">
+          <a href="/patients" class="card-premium p-3 flex flex-col items-center gap-1.5 hover:shadow-md transition-all active:scale-[0.97] group">
+            <div class="w-10 h-10 bg-emerald-50 rounded-xl flex items-center justify-center group-hover:bg-emerald-100 transition-colors">
               <i class="fas fa-user-plus text-emerald-600 text-base"></i>
             </div>
-            <div class="min-w-0">
-              <p class="font-bold text-sm text-surface-900">환자 등록</p>
-              <p class="text-[11px] text-surface-500">새 환자 추가</p>
+            <span class="text-[10px] font-bold text-surface-700">환자 등록</span>
+          </a>
+          <a href="/consultations" class="card-premium p-3 flex flex-col items-center gap-1.5 hover:shadow-md transition-all active:scale-[0.97] group">
+            <div class="w-10 h-10 bg-sky-50 rounded-xl flex items-center justify-center group-hover:bg-sky-100 transition-colors">
+              <i class="fas fa-stethoscope text-sky-600 text-base"></i>
             </div>
+            <span class="text-[10px] font-bold text-surface-700">오늘 상담</span>
+          </a>
+          <a href="/report" class="card-premium p-3 flex flex-col items-center gap-1.5 hover:shadow-md transition-all active:scale-[0.97] group">
+            <div class="w-10 h-10 bg-purple-50 rounded-xl flex items-center justify-center group-hover:bg-purple-100 transition-colors">
+              <i class="fas fa-chart-pie text-purple-600 text-base"></i>
+            </div>
+            <span class="text-[10px] font-bold text-surface-700">리포트</span>
           </a>
         </div>
 
-        {/* ====== KPI STATS ROW ====== */}
+        {/* ====== KPI STATS ROW with comparison arrows ====== */}
         <div>
           <div class="flex items-center justify-between mb-3">
             <h2 class="text-sm font-bold text-surface-900">금주 현황</h2>
@@ -147,7 +161,7 @@ export const HomePage: FC = () => {
       <script dangerouslySetInnerHTML={{
         __html: `
           // =========================================
-          // COMMAND CENTER v4 — clean design edition
+          // COMMAND CENTER v5 — full enhancement
           // =========================================
 
           function fmt(n) {
@@ -159,7 +173,7 @@ export const HomePage: FC = () => {
             if (!el) return;
             var target = Math.round((rawValue || 0) / 10000);
             if (target === 0) { el.textContent = '0'; return; }
-            var start = 0, startT = null;
+            var startT = null;
             function tick(ts) {
               if (!startT) startT = ts;
               var p = Math.min((ts - startT) / ms, 1);
@@ -224,6 +238,24 @@ export const HomePage: FC = () => {
             setTimeout(function(){ var c=document.getElementById('rc'); if(c) c.setAttribute('stroke-dashoffset', off); }, 100);
           }
 
+          // Helper: comparison arrow
+          function cmpArrow(cur, prev) {
+            var diff = cur - prev;
+            if (diff > 0) return '<div class="text-[8px] font-bold text-emerald-600 mt-0.5"><i class="fas fa-caret-up"></i>+'+diff+'</div>';
+            if (diff < 0) return '<div class="text-[8px] font-bold text-rose-600 mt-0.5"><i class="fas fa-caret-down"></i>'+diff+'</div>';
+            return '<div class="text-[8px] font-bold text-surface-400 mt-0.5">—</div>';
+          }
+
+          // Helper: days ago label
+          function daysAgoLabel(dateStr) {
+            if (!dateStr) return '<span class="text-[8px] px-1 py-0.5 rounded bg-rose-50 text-rose-600 font-bold">미연락</span>';
+            var d = Math.floor((Date.now() - new Date(dateStr).getTime()) / 86400000);
+            if (d === 0) return '<span class="text-[8px] px-1 py-0.5 rounded bg-emerald-50 text-emerald-600 font-bold">오늘</span>';
+            if (d <= 3) return '<span class="text-[8px] px-1 py-0.5 rounded bg-sky-50 text-sky-600 font-bold">'+d+'일전</span>';
+            if (d <= 7) return '<span class="text-[8px] px-1 py-0.5 rounded bg-amber-50 text-amber-600 font-bold">'+d+'일전</span>';
+            return '<span class="text-[8px] px-1 py-0.5 rounded bg-rose-50 text-rose-600 font-bold">'+d+'일전</span>';
+          }
+
           async function loadHomePage() {
             try {
               var authRes = await fetch('/api/auth/me');
@@ -251,6 +283,8 @@ export const HomePage: FC = () => {
               var d = sData.data;
               var ws = d.week_stats || {};
               var td = d.today || {};
+              var tm = d.today_mission || {};
+              var sa = d.stale_alert || {};
 
               // === HERO DECIDED ===
               animNum(document.getElementById('heroRevenue'), td.decided, 1200);
@@ -262,33 +296,76 @@ export const HomePage: FC = () => {
                   '<span class="w-1.5 h-1.5 rounded-full bg-amber-400"></span>미결정 '+(td.undecided||0)+'건</span>' +
                 '<span class="text-xs text-white/40">총 '+(td.total_consultations||0)+'건</span>';
 
-              // === KPI STATS ROW ===
-              var cr = ws.conversion_rate||0;
-              var sc = ws.avg_score||0;
-              var ct = ws.contact_rate||0;
-              var tc = ws.total_consultations||0;
+              // === STALE UNDECIDED ALERT ===
+              if (sa.count > 0) {
+                var alertEl = document.getElementById('staleAlertBanner');
+                alertEl.classList.remove('hidden');
+                alertEl.innerHTML =
+                  '<div class="bg-gradient-to-r from-rose-500 to-orange-500 rounded-xl p-3.5 flex items-center gap-3 shadow-md shadow-rose-500/20">' +
+                    '<div class="w-9 h-9 bg-white/20 rounded-xl flex items-center justify-center shrink-0"><i class="fas fa-triangle-exclamation text-white"></i></div>' +
+                    '<div class="flex-1 min-w-0">' +
+                      '<p class="text-white font-bold text-xs">미결정 3일+ 방치 '+sa.count+'명</p>' +
+                      '<p class="text-white/70 text-[11px]">'+fmt(sa.amount)+'만원 이탈 위험</p>' +
+                    '</div>' +
+                    '<a href="/retention" class="text-white/90 text-[10px] font-bold bg-white/20 px-2.5 py-1.5 rounded-lg hover:bg-white/30 transition-all shrink-0">연락하기</a>' +
+                  '</div>';
+              }
+
+              // === TODAY MISSION PROGRESS ===
+              var mTotal = (tm.contacts_total||0) + (td.total_consultations||0);
+              var mDone = (tm.contacts_done||0) + (td.total_consultations||0);
+              var mPct = mTotal > 0 ? Math.min(100, Math.round((mDone / mTotal) * 100)) : (td.total_consultations > 0 ? 100 : 0);
+              
+              var mEl = document.getElementById('todayMission');
+              mEl.classList.remove('hidden');
+              mEl.innerHTML =
+                '<div class="flex items-center justify-between mb-2.5">' +
+                  '<div class="flex items-center gap-2">' +
+                    '<div class="w-6 h-6 rounded-lg bg-brand-50 flex items-center justify-center"><i class="fas fa-flag text-[10px] text-brand-600"></i></div>' +
+                    '<span class="text-sm font-bold text-surface-900">오늘 미션</span>' +
+                  '</div>' +
+                  '<span class="text-xs font-extrabold '+(mPct>=100?'text-emerald-600':'text-brand-600')+'">'+mPct+'%</span>' +
+                '</div>' +
+                '<div class="h-2 bg-surface-100 rounded-full overflow-hidden mb-3">' +
+                  '<div class="h-full rounded-full transition-all duration-1000 '+(mPct>=100?'bg-emerald-500':'bg-brand-500')+'" style="width:'+mPct+'%"></div>' +
+                '</div>' +
+                '<div class="flex items-center gap-3">' +
+                  '<div class="flex items-center gap-1.5"><i class="fas fa-phone text-[10px] text-brand-500"></i><span class="text-[11px] font-semibold text-surface-700">연락 <b class="text-brand-600">'+(tm.contacts_done||0)+'</b>/'+(tm.contacts_total||0)+'</span></div>' +
+                  '<div class="flex items-center gap-1.5"><i class="fas fa-stethoscope text-[10px] text-sky-500"></i><span class="text-[11px] font-semibold text-surface-700">상담 <b class="text-sky-600">'+(tm.consultations_done||0)+'</b>건</span></div>' +
+                  '<div class="flex items-center gap-1.5"><i class="fas fa-circle-check text-[10px] text-emerald-500"></i><span class="text-[11px] font-semibold text-surface-700">결정 <b class="text-emerald-600">'+(tm.decisions_done||0)+'</b>건</span></div>' +
+                '</div>';
+
+              // === KPI STATS ROW with comparison arrows ===
+              var cr = ws.conversion_rate||0, pcr = ws.prev_conversion_rate||0;
+              var sc = ws.avg_score||0, psc = ws.prev_avg_score||0;
+              var ct = ws.contact_rate||0, pct2 = ws.prev_contact_rate||0;
+              var tc = ws.total_consultations||0, ptc = ws.prev_total_consultations||0;
               document.getElementById('kpiStatsRow').innerHTML =
-                '<div class="card-premium p-3 text-center">' +
-                  '<div class="text-lg font-extrabold text-brand-600 leading-none mb-1">'+cr+'<span class="text-[10px] font-bold">%</span></div>' +
+                '<div class="card-premium p-2.5 text-center">' +
+                  '<div class="text-lg font-extrabold text-brand-600 leading-none mb-0.5">'+cr+'<span class="text-[10px]">%</span></div>' +
                   '<div class="text-[10px] font-medium text-surface-500">전환율</div>' +
+                  cmpArrow(cr,pcr) +
                 '</div>' +
-                '<div class="card-premium p-3 text-center">' +
-                  '<div class="text-lg font-extrabold text-emerald-600 leading-none mb-1">'+sc+'<span class="text-[10px] font-bold">점</span></div>' +
+                '<div class="card-premium p-2.5 text-center">' +
+                  '<div class="text-lg font-extrabold text-emerald-600 leading-none mb-0.5">'+sc+'<span class="text-[10px]">점</span></div>' +
                   '<div class="text-[10px] font-medium text-surface-500">상담점수</div>' +
+                  cmpArrow(sc,psc) +
                 '</div>' +
-                '<div class="card-premium p-3 text-center">' +
-                  '<div class="text-lg font-extrabold text-amber-600 leading-none mb-1">'+ct+'<span class="text-[10px] font-bold">%</span></div>' +
+                '<div class="card-premium p-2.5 text-center">' +
+                  '<div class="text-lg font-extrabold text-amber-600 leading-none mb-0.5">'+ct+'<span class="text-[10px]">%</span></div>' +
                   '<div class="text-[10px] font-medium text-surface-500">연락수행</div>' +
+                  cmpArrow(ct,pct2) +
                 '</div>' +
-                '<div class="card-premium p-3 text-center">' +
-                  '<div class="text-lg font-extrabold text-sky-600 leading-none mb-1">'+tc+'<span class="text-[10px] font-bold">건</span></div>' +
+                '<div class="card-premium p-2.5 text-center">' +
+                  '<div class="text-lg font-extrabold text-sky-600 leading-none mb-0.5">'+tc+'<span class="text-[10px]">건</span></div>' +
                   '<div class="text-[10px] font-medium text-surface-500">상담건수</div>' +
+                  cmpArrow(tc,ptc) +
                 '</div>';
 
               // === WEEK RING ===
               var tgt = ws.decided_target || 50000000;
-              var pct = tgt > 0 ? Math.round(((ws.decided||0) / tgt) * 100) : 0;
-              ring(pct, ws.decided||0, tgt);
+              var ringPct = tgt > 0 ? Math.round(((ws.decided||0) / tgt) * 100) : 0;
+              ring(ringPct, ws.decided||0, tgt);
 
               // === KPI SPARKLINE CARDS ===
               var sp = d.sparkline || [];
@@ -419,6 +496,12 @@ export const HomePage: FC = () => {
             };
             var avCol = ['bg-brand-100 text-brand-700','bg-emerald-100 text-emerald-700','bg-amber-100 text-amber-700','bg-rose-100 text-rose-700','bg-sky-100 text-sky-700','bg-purple-100 text-purple-700'];
 
+            // Referral source icons
+            var refIcons = {
+              'naver':'fa-n','blog':'fa-blog','instagram':'fa-instagram','youtube':'fa-youtube',
+              'google':'fa-google','kakao':'fa-comment','referral':'fa-user-group','walk_in':'fa-walking'
+            };
+
             var html = '';
             var cr=data.data.critical_count||0, hi=data.data.high_count||0, rest=cs.length-cr-hi;
             if(cr>0||hi>0) {
@@ -436,15 +519,26 @@ export const HomePage: FC = () => {
               html += '<div class="flex items-start gap-2.5">';
               html += '<a href="/patients/'+c.patient_id+'" class="w-8 h-8 rounded-lg '+avCol[ci]+' flex items-center justify-center font-bold text-xs shrink-0">'+c.patient_name.charAt(0)+'</a>';
               html += '<div class="flex-1 min-w-0">';
+              // Name + urgency + last contact
               html += '<div class="flex items-center gap-1.5 flex-wrap">';
               html += '<a href="/patients/'+c.patient_id+'" class="font-bold text-sm text-surface-900 hover:text-brand-600">'+c.patient_name+'</a>';
               html += '<span class="inline-flex items-center gap-0.5 px-1 py-0.5 rounded text-[9px] font-bold '+u.bg+' '+u.tx+'">';
               if(u.pu) html += '<span class="w-1 h-1 rounded-full bg-rose-500 animate-pulse"></span>';
-              html += '<i class="fas '+u.ic+' text-[7px]"></i>'+u.lb+'</span></div>';
+              html += '<i class="fas '+u.ic+' text-[7px]"></i>'+u.lb+'</span>';
+              // Last contact date tag
+              html += daysAgoLabel(c.last_contact_date);
+              html += '</div>';
               html += '<p class="text-[11px] text-surface-600 mt-0.5 line-clamp-1">'+(c.reason||'')+'</p>';
+              // Tags: treatment + amount + referral_source + region
               html += '<div class="flex flex-wrap gap-1 mt-1">';
               if(c.treatment_type) html += '<span class="text-[9px] px-1 py-0.5 rounded bg-brand-50 text-brand-600 font-medium">'+c.treatment_type+'</span>';
               if(c.amount) html += '<span class="text-[9px] px-1 py-0.5 rounded bg-emerald-50 text-emerald-600 font-medium">'+fmt(c.amount)+'만</span>';
+              if(c.referral_source) {
+                var rIcon = refIcons[c.referral_source] || 'fa-tag';
+                var rLabel = c.referral_source === 'naver' ? '네이버' : c.referral_source === 'blog' ? '블로그' : c.referral_source === 'instagram' ? '인스타' : c.referral_source === 'youtube' ? '유튜브' : c.referral_source === 'google' ? '구글' : c.referral_source === 'kakao' ? '카카오' : c.referral_source === 'referral' ? '소개' : c.referral_source === 'walk_in' ? '워크인' : c.referral_source;
+                html += '<span class="text-[9px] px-1 py-0.5 rounded bg-orange-50 text-orange-600 font-medium"><i class="fab '+rIcon+' text-[7px] mr-0.5"></i>'+rLabel+'</span>';
+              }
+              if(c.region) html += '<span class="text-[9px] px-1 py-0.5 rounded bg-slate-100 text-slate-600 font-medium"><i class="fas fa-location-dot text-[7px] mr-0.5"></i>'+c.region+'</span>';
               if(c.decision_score) html += '<span class="text-[9px] px-1 py-0.5 rounded bg-purple-50 text-purple-600 font-medium">결정도 '+c.decision_score+'</span>';
               html += '</div>';
               if(c.points && c.points.length > 0) html += '<p class="text-[10px] text-surface-500 mt-1 line-clamp-1"><i class="fas fa-lightbulb text-amber-400 mr-1 text-[8px]"></i>'+c.points[0]+'</p>';
