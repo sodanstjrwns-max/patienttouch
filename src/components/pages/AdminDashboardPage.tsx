@@ -112,7 +112,7 @@ export const AdminDashboardPage: FC = () => {
               var authRes = await fetch('/api/auth/me');
               if (!authRes.ok) { window.location.href = '/login'; return; }
               var userData = await authRes.json();
-              if (userData.data.role !== 'admin') { alert('관리자만 접근할 수 있습니다.'); window.location.href = '/'; return; }
+              if (userData.data.role !== 'admin') { showToast('관리자만 접근할 수 있습니다.','error'); window.location.href = '/'; return; }
               await Promise.all([loadSummary(), loadStaffPerformance(), loadCoachingBreakdown(), loadLowScoreConsultations(), loadProposalAnalytics()]);
             } catch (err) { console.error('Failed to load dashboard:', err); }
           }

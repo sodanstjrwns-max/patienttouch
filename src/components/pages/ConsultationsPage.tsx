@@ -274,6 +274,7 @@ export const ConsultationsPage: FC = () => {
           }
 
           loadConsultations();
+          initPullToRefresh(function(){ loadConsultations(); });
 
           // ============================================
           // Manual Consultation Entry
@@ -305,7 +306,7 @@ export const ConsultationsPage: FC = () => {
           document.getElementById('manualForm').addEventListener('submit', async function(e) {
             e.preventDefault();
             var patientId = document.getElementById('mPatient').value;
-            if (!patientId) { alert('환자를 선택해주세요.'); return; }
+            if (!patientId) { showToast('환자를 선택해주세요.','warning'); return; }
             try {
               var res = await fetch('/api/consultations', {
                 method: 'POST',
@@ -332,8 +333,8 @@ export const ConsultationsPage: FC = () => {
                 closeManualModal();
                 document.getElementById('manualForm').reset();
                 loadConsultations();
-              } else { alert(data.error || '저장 실패'); }
-            } catch (err) { alert('오류가 발생했습니다.'); }
+              } else { showToast(data.error || '저장 실패','error'); }
+            } catch (err) { showToast('오류가 발생했습니다.','error'); }
           });
         `
       }} />

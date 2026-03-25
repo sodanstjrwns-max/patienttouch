@@ -327,8 +327,8 @@ export const ConsultationReportPage: FC<Props> = ({ id }) => {
                 proposalData = data.data;
                 document.getElementById('proposalUrl').value = window.location.origin + data.data.public_url;
                 document.getElementById('proposalModal').classList.remove('hidden');
-              } else { alert(data.error || '제안서 생성에 실패했습니다.'); }
-            } catch (err) { alert('오류가 발생했습니다.'); }
+              } else { showToast(data.error || '제안서 생성에 실패했습니다.','error'); }
+            } catch (err) { showToast('오류가 발생했습니다.','error'); }
             finally { btn.disabled = false; btn.innerHTML = '<i class="fas fa-file-invoice"></i>제안서 생성'; }
           });
 
@@ -340,7 +340,7 @@ export const ConsultationReportPage: FC<Props> = ({ id }) => {
           function copyProposalUrl() {
             var input = document.getElementById('proposalUrl');
             input.select();
-            navigator.clipboard.writeText(input.value).then(function() { alert('링크가 복사되었습니다!'); });
+            navigator.clipboard.writeText(input.value).then(function() { showToast('링크가 복사되었습니다!','success'); });
           }
 
           function sendViaKakao() {

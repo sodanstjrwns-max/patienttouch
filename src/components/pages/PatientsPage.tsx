@@ -222,9 +222,9 @@ export const PatientsPage: FC = () => {
                 loadPatients();
                 document.getElementById('addPatientForm').reset();
               } else {
-                alert(data.error || '등록 실패');
+                showToast(data.error || '등록 실패','error');
               }
-            } catch (err) { alert('오류가 발생했습니다.'); }
+            } catch (err) { showToast('오류가 발생했습니다.','error'); }
           });
 
           function renderPatients(patients) {
@@ -292,6 +292,7 @@ export const PatientsPage: FC = () => {
           }
 
           loadPatients();
+          initPullToRefresh(function(){ loadPatients(); });
         `
       }} />
     </Layout>

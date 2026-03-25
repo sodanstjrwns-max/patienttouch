@@ -343,4 +343,116 @@ auth.put('/settings', authMiddleware, async (c) => {
   }
 });
 
+// ============================================
+// FEATURE 10: Team Management
+// ============================================
+
+// GET /api/auth/team - Get team members
+auth.get('/team', authMiddleware, async (c) => {
+  try {
+    const orgId = c.get('organizationId');
+    const db = c.env.DB;
+
+    const members = await db.prepare(`
+      SELECT u.id, u.name, u.email, u.role, u.phone, u.last_login_at, u.created_at,
+        (SELECT COUNT(*) FROM consultations c WHERE c.user_id = u.id AND c.consultation_date >= datetime('now','-30 days')) as monthly_consultations,
+        (SELECT SUM(CASE WHEN c.status='paid' THEN c.amount ELSE 0 END) FROM consultations c WHERE c.user_id = u.id AND c.consultation_date >= datetime('now','-30 days')) as monthly_revenue
+      FROM users u WHERE u.organization_id = ? ORDER BY u.role ASC, u.name ASC
+    `).bind(orgId).all();
+
+    return c.json({ success: true, data: members.results });
+  } catch (error) {
+    console.error('Get team error:', error);
+    return c.json({ success: false, error: '팀 정보를 불러오는데 실패했습니다.' }, 500);
+  }
+});
+
+// POST /api/auth/team - Add team member
+auth.post('/team', authMiddleware, async (c) => {
+  try {
+    const orgId = c.get('organizationId');
+    const userRole = c.get('userRole');
+    const db = c.env.DB;
+    
+    // Only admin can add members
+    const currentUser = await db.prepare('SELECT role FROM users WHERE id=?').bind(c.get('userId')).first();
+    if (currentUser?.role !== 'admin') {
+      return c.json({ success: false, error: '관리자만 팀원을 추가할 수 있습니다.' }, 403);
+    }
+
+    const { name, email, password, role, phone } = await c.req.json();
+    if (!name || !email || !password) {
+      return c.json({ success: false, error: '이름, 이메일, 비밀번호를 입력해주세요.' }, 400);
+    }
+
+    // Check duplicate email
+    const existing = await db.prepare('SELECT id FROM users WHERE email=?').bind(email).first();
+    if (existing) return c.json({ success: false, error: '이미 등록된 이메일입니다.' }, 409);
+
+    const userId = 'user_' + generateId().slice(0, 8);
+    const passwordHash = await hashPassword(password);
+
+    await db.prepare(`
+      INSERT INTO users (id, organization_id, name, email, password_hash, role, phone)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).bind(userId, orgId, name, email, passwordHash, role || 'staff', phone || null).run();
+
+    return c.json({ success: true, data: { id: userId, name, email, role: role || 'staff' } });
+  } catch (error) {
+    console.error('Add team member error:', error);
+    return c.json({ success: false, error: '팀원 추가에 실패했습니다.' }, 500);
+  }
+});
+
+// PUT /api/auth/team/:id - Update team member role
+auth.put('/team/:id', authMiddleware, async (c) => {
+  try {
+    const orgId = c.get('organizationId');
+    const memberId = c.req.param('id');
+    const db = c.env.DB;
+
+    const currentUser = await db.prepare('SELECT role FROM users WHERE id=?').bind(c.get('userId')).first();
+    if (currentUser?.role !== 'admin') {
+      return c.json({ success: false, error: '관리자만 수정할 수 있습니다.' }, 403);
+    }
+
+    const { role, name, phone } = await c.req.json();
+
+    await db.prepare(`
+      UPDATE users SET role=COALESCE(?,role), name=COALESCE(?,name), phone=COALESCE(?,phone)
+      WHERE id=? AND organization_id=?
+    `).bind(role, name, phone, memberId, orgId).run();
+
+    return c.json({ success: true });
+  } catch (error) {
+    console.error('Update team member error:', error);
+    return c.json({ success: false, error: '팀원 수정에 실패했습니다.' }, 500);
+  }
+});
+
+// DELETE /api/auth/team/:id - Remove team member
+auth.delete('/team/:id', authMiddleware, async (c) => {
+  try {
+    const orgId = c.get('organizationId');
+    const memberId = c.req.param('id');
+    const db = c.env.DB;
+
+    const currentUser = await db.prepare('SELECT role FROM users WHERE id=?').bind(c.get('userId')).first();
+    if (currentUser?.role !== 'admin') {
+      return c.json({ success: false, error: '관리자만 삭제할 수 있습니다.' }, 403);
+    }
+
+    // Don't allow self-deletion
+    if (memberId === c.get('userId')) {
+      return c.json({ success: false, error: '자신을 삭제할 수 없습니다.' }, 400);
+    }
+
+    await db.prepare('DELETE FROM users WHERE id=? AND organization_id=?').bind(memberId, orgId).run();
+    return c.json({ success: true });
+  } catch (error) {
+    console.error('Delete team member error:', error);
+    return c.json({ success: false, error: '팀원 삭제에 실패했습니다.' }, 500);
+  }
+});
+
 export default auth;

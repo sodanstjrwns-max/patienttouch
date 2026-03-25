@@ -257,4 +257,101 @@ patients.get('/:id/stats', async (c) => {
   }
 });
 
+// ============================================
+// FEATURE 12: Duplicate Check & Merge
+// ============================================
+
+// GET /api/patients/duplicates/check - Check for duplicate patients by phone
+patients.get('/duplicates/check', async (c) => {
+  try {
+    const orgId = c.get('organizationId');
+    const db = c.env.DB;
+
+    // Find phone numbers with multiple patients
+    const dupes = await db.prepare(`
+      SELECT p.phone, GROUP_CONCAT(p.id) as patient_ids, GROUP_CONCAT(p.name) as patient_names,
+             COUNT(*) as cnt
+      FROM patients p
+      WHERE p.organization_id = ? AND p.phone IS NOT NULL AND p.phone != '' AND p.status = 'active'
+      GROUP BY p.phone HAVING COUNT(*) > 1
+      ORDER BY cnt DESC
+      LIMIT 20
+    `).bind(orgId).all();
+
+    const duplicates = dupes.results.map(d => ({
+      phone: d.phone,
+      count: d.cnt,
+      patient_ids: (d.patient_ids as string).split(','),
+      patient_names: (d.patient_names as string).split(',')
+    }));
+
+    return c.json({ success: true, data: duplicates });
+  } catch (error) {
+    console.error('Duplicate check error:', error);
+    return c.json({ success: false, error: '중복 체크에 실패했습니다.' }, 500);
+  }
+});
+
+// POST /api/patients/duplicates/merge - Merge duplicate patients
+patients.post('/duplicates/merge', async (c) => {
+  try {
+    const orgId = c.get('organizationId');
+    const db = c.env.DB;
+    const { keep_id, merge_ids } = await c.req.json();
+
+    if (!keep_id || !merge_ids || merge_ids.length === 0) {
+      return c.json({ success: false, error: '병합할 환자를 선택해주세요.' }, 400);
+    }
+
+    // Verify all patients belong to org
+    for (const id of [keep_id, ...merge_ids]) {
+      const exists = await db.prepare('SELECT id FROM patients WHERE id=? AND organization_id=?')
+        .bind(id, orgId).first();
+      if (!exists) return c.json({ success: false, error: '환자를 찾을 수 없습니다: ' + id }, 404);
+    }
+
+    // Move consultations
+    for (const mid of merge_ids) {
+      await db.prepare('UPDATE consultations SET patient_id=? WHERE patient_id=? AND organization_id=?')
+        .bind(keep_id, mid, orgId).run();
+      await db.prepare('UPDATE contact_tasks SET patient_id=? WHERE patient_id=? AND organization_id=?')
+        .bind(keep_id, mid, orgId).run();
+      await db.prepare('UPDATE contact_logs SET patient_id=? WHERE patient_id=? AND organization_id=?')
+        .bind(keep_id, mid, orgId).run();
+      await db.prepare('UPDATE patient_treatments SET patient_id=? WHERE patient_id=? AND organization_id=?')
+        .bind(keep_id, mid, orgId).run();
+      await db.prepare('UPDATE retention_contacts SET patient_id=? WHERE patient_id=? AND organization_id=?')
+        .bind(keep_id, mid, orgId).run();
+      // Soft-delete merged patient
+      await db.prepare("UPDATE patients SET status='inactive', memo=COALESCE(memo,'')||' [병합됨→'||?||']' WHERE id=? AND organization_id=?")
+        .bind(keep_id, mid, orgId).run();
+    }
+
+    return c.json({ success: true, data: { kept: keep_id, merged: merge_ids.length } });
+  } catch (error) {
+    console.error('Merge patients error:', error);
+    return c.json({ success: false, error: '환자 병합에 실패했습니다.' }, 500);
+  }
+});
+
+// GET /api/patients/duplicates/check-phone - Check single phone for duplicates
+patients.get('/duplicates/check-phone', async (c) => {
+  try {
+    const orgId = c.get('organizationId');
+    const db = c.env.DB;
+    const { phone } = c.req.query();
+
+    if (!phone) return c.json({ success: true, data: [] });
+
+    const result = await db.prepare(`
+      SELECT id, name, phone, created_at FROM patients 
+      WHERE organization_id=? AND phone=? AND status='active'
+    `).bind(orgId, phone).all();
+
+    return c.json({ success: true, data: result.results });
+  } catch (error) {
+    return c.json({ success: false, error: '확인에 실패했습니다.' }, 500);
+  }
+});
+
 export default patients;

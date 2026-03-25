@@ -408,8 +408,8 @@ export const RetentionPage: FC = () => {
                 document.body.appendChild(toast);
                 setTimeout(function(){ toast.remove(); }, 2500);
               }
-              else { alert(data.error || '저장에 실패했습니다.'); }
-            } catch (err) { alert('오류가 발생했습니다.'); }
+              else { showToast(data.error || '저장에 실패했습니다.','error'); }
+            } catch (err) { showToast('오류가 발생했습니다.','error'); }
           }
 
           async function updateRetentionStatus() {
@@ -464,7 +464,7 @@ export const RetentionPage: FC = () => {
               var ta = document.createElement('textarea');
               ta.value = msg; document.body.appendChild(ta); ta.select();
               document.execCommand('copy'); ta.remove();
-              alert('복사되었습니다!');
+              showToast('복사되었습니다!','success');
             }
             var modal = document.getElementById('kakaoModal');
             if (modal) modal.remove();

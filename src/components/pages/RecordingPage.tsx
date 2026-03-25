@@ -223,7 +223,7 @@ export const RecordingPage: FC<RecordingPageProps> = ({ patientId }) => {
                 if (createData.success) consultationId = createData.data.id;
                 
               } catch (err) {
-                alert('마이크 접근이 거부되었습니다. 설정에서 권한을 허용해주세요.');
+                showToast('마이크 접근이 거부되었습니다.','error');
               }
             } else if (!isPaused) {
               mediaRecorder.pause();

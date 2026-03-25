@@ -367,9 +367,14 @@ export const renderer = jsxRenderer(({ children, title }) => {
           `
         }} />
         
-        {/* Global Auth Interceptor - auto redirect to login on 401 */}
+        {/* Global Auth Interceptor + Utilities */}
         <script dangerouslySetInnerHTML={{
           __html: `
+            // ==========================================
+            // GLOBAL UTILITIES v2
+            // ==========================================
+
+            // === 1. Auth Interceptor ===
             (function() {
               var origFetch = window.fetch;
               window.fetch = function(url, opts) {
@@ -381,6 +386,150 @@ export const renderer = jsxRenderer(({ children, title }) => {
                 });
               };
             })();
+
+            // === 2. Toast Notification System ===
+            window._toastContainer = null;
+            window._toastQueue = [];
+            function showToast(msg, type, duration) {
+              type = type || 'info';
+              duration = duration || 3000;
+              if (!window._toastContainer) {
+                window._toastContainer = document.createElement('div');
+                window._toastContainer.id = 'toast-container';
+                window._toastContainer.style.cssText = 'position:fixed;top:env(safe-area-inset-top,12px);left:50%;transform:translateX(-50%);z-index:9999;display:flex;flex-direction:column;align-items:center;gap:8px;pointer-events:none;width:90%;max-width:400px;padding-top:12px;';
+                document.body.appendChild(window._toastContainer);
+              }
+              var icons = {success:'fa-circle-check',error:'fa-circle-xmark',warning:'fa-triangle-exclamation',info:'fa-circle-info'};
+              var colors = {success:'#10b981',error:'#ef4444',warning:'#f59e0b',info:'#6366f1'};
+              var bgColors = {success:'rgba(16,185,129,0.12)',error:'rgba(239,68,68,0.12)',warning:'rgba(245,158,11,0.12)',info:'rgba(99,102,241,0.12)'};
+              var t = document.createElement('div');
+              t.style.cssText = 'pointer-events:auto;display:flex;align-items:center;gap:10px;padding:12px 18px;border-radius:14px;font-size:13px;font-weight:600;color:#1e293b;background:white;box-shadow:0 4px 24px rgba(0,0,0,0.12),0 1px 4px rgba(0,0,0,0.06);border:1px solid '+bgColors[type]+';backdrop-filter:blur(16px);opacity:0;transform:translateY(-12px) scale(0.96);transition:all 0.35s cubic-bezier(0.16,1,0.3,1);max-width:100%;';
+              t.innerHTML = '<i class="fas '+icons[type]+'" style="color:'+colors[type]+';font-size:15px;flex-shrink:0;"></i><span style="flex:1;line-height:1.4;">'+msg+'</span>';
+              window._toastContainer.appendChild(t);
+              requestAnimationFrame(function(){ requestAnimationFrame(function(){ t.style.opacity='1'; t.style.transform='translateY(0) scale(1)'; }); });
+              setTimeout(function(){
+                t.style.opacity='0'; t.style.transform='translateY(-8px) scale(0.96)';
+                setTimeout(function(){ t.remove(); }, 350);
+              }, duration);
+            }
+
+            // === 3. Pull-to-Refresh ===
+            function initPullToRefresh(refreshFn) {
+              var startY=0, pulling=false, indicator=null;
+              var main = document.querySelector('main') || document.body;
+              main.addEventListener('touchstart', function(e) {
+                if (window.scrollY <= 0) { startY = e.touches[0].clientY; pulling = true; }
+              }, {passive:true});
+              main.addEventListener('touchmove', function(e) {
+                if (!pulling) return;
+                var dy = e.touches[0].clientY - startY;
+                if (dy > 10 && dy < 200) {
+                  if (!indicator) {
+                    indicator = document.createElement('div');
+                    indicator.style.cssText = 'position:fixed;top:0;left:0;right:0;display:flex;justify-content:center;padding:16px;z-index:9998;transition:opacity 0.3s;';
+                    indicator.innerHTML = '<div style="background:white;border-radius:999px;width:36px;height:36px;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 12px rgba(0,0,0,0.1);"><i class="fas fa-arrow-rotate-right text-brand-600" style="font-size:14px;"></i></div>';
+                    document.body.appendChild(indicator);
+                  }
+                  var p = Math.min(1, dy/80);
+                  indicator.style.opacity = p;
+                  indicator.querySelector('i').style.transform = 'rotate('+(p*360)+'deg)';
+                }
+              }, {passive:true});
+              main.addEventListener('touchend', function(e) {
+                if (!pulling) return;
+                pulling = false;
+                var dy = e.changedTouches && e.changedTouches[0] ? e.changedTouches[0].clientY - startY : 0;
+                if (indicator) {
+                  if (dy >= 80) {
+                    indicator.querySelector('i').className = 'fas fa-spinner fa-spin text-brand-600';
+                    if (refreshFn) refreshFn();
+                    setTimeout(function(){ indicator && indicator.remove(); indicator=null; }, 1000);
+                  } else { indicator.remove(); indicator=null; }
+                }
+              }, {passive:true});
+            }
+
+            // === 4. Error State with Retry ===
+            function showErrorState(containerId, message, retryFn) {
+              var el = document.getElementById(containerId);
+              if (!el) return;
+              var retryId = 'retry_' + Date.now();
+              el.innerHTML = '<div class="card-premium p-6 text-center"><div class="w-12 h-12 mx-auto bg-rose-50 rounded-2xl flex items-center justify-center mb-3"><i class="fas fa-wifi-slash text-rose-400 text-lg"></i></div><p class="text-sm font-bold text-surface-800 mb-1">\ub370\uc774\ud130\ub97c \ubd88\ub7ec\uc62c \uc218 \uc5c6\uc2b5\ub2c8\ub2e4</p><p class="text-xs text-surface-500 mb-4">'+(message||'\ub124\ud2b8\uc6cc\ud06c \uc5f0\uacb0\uc744 \ud655\uc778\ud574\uc8fc\uc138\uc694')+'</p><button id="'+retryId+'" class="inline-flex items-center gap-1.5 text-sm font-semibold text-brand-600 bg-brand-50 px-4 py-2 rounded-xl hover:bg-brand-100 transition-all active:scale-95"><i class="fas fa-rotate text-xs"></i>\ub2e4\uc2dc \uc2dc\ub3c4</button></div>';
+              if (retryFn) {
+                var btn = document.getElementById(retryId);
+                if (btn) btn.addEventListener('click', function() {
+                  el.innerHTML = '<div class="card-premium p-4"><div class="shimmer h-16 rounded-lg w-full"></div></div>';
+                  retryFn();
+                });
+              }
+            }
+
+            // === 5. Page Transition (smooth) ===
+            function navigateTo(url, animate) {
+              if (animate === false) { window.location.href = url; return; }
+              document.body.style.transition = 'opacity 0.15s ease-out';
+              document.body.style.opacity = '0';
+              setTimeout(function(){ window.location.href = url; }, 150);
+            }
+            window.addEventListener('pageshow', function() {
+              document.body.style.opacity = '1';
+            });
+
+            // === 6. Empty-State with Onboarding ===
+            function showOnboardingState(containerId, steps) {
+              var el = document.getElementById(containerId);
+              if (!el) return;
+              var html = '<div class="card-premium p-6 text-center animate-fade-in">';
+              html += '<div class="w-16 h-16 mx-auto bg-gradient-to-br from-brand-100 to-purple-100 rounded-2xl flex items-center justify-center mb-4"><i class="fas fa-rocket text-brand-600 text-2xl"></i></div>';
+              html += '<h3 class="text-base font-bold text-surface-900 mb-1">\uc2dc\uc791\ud574\ubcfc\uae4c\uc694?</h3>';
+              html += '<p class="text-xs text-surface-500 mb-5">\uc544\ub798 \ub2e8\uacc4\ub97c \ub530\ub77c\ud574\ubcf4\uc138\uc694</p>';
+              html += '<div class="space-y-2.5 text-left">';
+              (steps||[]).forEach(function(s, i) {
+                html += '<a href="'+(s.href||'#')+'" class="flex items-center gap-3 p-3 rounded-xl bg-surface-50 hover:bg-brand-50 transition-all group">';
+                html += '<div class="w-8 h-8 rounded-lg '+(s.done?'bg-emerald-100':'bg-brand-100')+' flex items-center justify-center shrink-0">';
+                html += s.done ? '<i class="fas fa-check text-emerald-600 text-xs"></i>' : '<span class="text-xs font-bold text-brand-600">'+(i+1)+'</span>';
+                html += '</div>';
+                html += '<div class="flex-1"><p class="text-sm font-semibold text-surface-900 group-hover:text-brand-700">'+s.title+'</p><p class="text-[11px] text-surface-500">'+s.desc+'</p></div>';
+                html += '<i class="fas fa-chevron-right text-surface-300 text-xs group-hover:text-brand-400"></i></a>';
+              });
+              html += '</div></div>';
+              el.innerHTML = html;
+            }
+
+            // === 7. Format helpers ===
+            function fmtWon(n){ if(!n&&n!==0) return '0'; return Math.round(n/10000).toLocaleString(); }
+            function fmtDate(d){ if(!d) return '-'; return new Date(d).toLocaleDateString('ko-KR',{month:'short',day:'numeric'}); }
+            function fmtFullDate(d){ if(!d) return '-'; return new Date(d).toLocaleDateString('ko-KR',{year:'numeric',month:'2-digit',day:'2-digit'}); }
+          `
+        }} />
+
+        {/* Pull-to-refresh CSS */}
+        <style dangerouslySetInnerHTML={{
+          __html: `
+            /* Page transition */
+            body { transition: opacity 0.2s ease-out; }
+            
+            /* Toast animations */
+            #toast-container > div {
+              will-change: transform, opacity;
+            }
+            
+            /* Timeline styles for Patient Detail */
+            .timeline-dot { position:relative; }
+            .timeline-dot::before {
+              content:''; position:absolute; left:50%; top:100%;
+              width:2px; height:calc(100% + 12px);
+              background:#e2e8f0; transform:translateX(-50%);
+            }
+            .timeline-item:last-child .timeline-dot::before { display:none; }
+            
+            /* Comparison card highlights */
+            .compare-better { border-left:3px solid #10b981; }
+            .compare-worse { border-left:3px solid #ef4444; }
+            .compare-same { border-left:3px solid #94a3b8; }
+            
+            /* Export button pulse */
+            .export-ready { animation: pulseSoft 2s ease-in-out infinite; }
           `
         }} />
       </head>

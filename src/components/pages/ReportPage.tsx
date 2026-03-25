@@ -17,6 +17,12 @@ export const ReportPage: FC = () => {
         <button class="report-tab px-3.5 py-2 text-xs font-bold rounded-xl transition-all bg-brand-600 text-white shadow-sm whitespace-nowrap" data-tab="overview" onclick="switchTab('overview')">
           <i class="fas fa-bullseye mr-1"></i>목표
         </button>
+        <button class="report-tab px-3.5 py-2 text-xs font-bold rounded-xl transition-all bg-surface-100 text-surface-600 whitespace-nowrap" data-tab="compare" onclick="switchTab('compare')">
+          <i class="fas fa-code-compare mr-1"></i>기간비교
+        </button>
+        <button class="report-tab px-3.5 py-2 text-xs font-bold rounded-xl transition-all bg-surface-100 text-surface-600 whitespace-nowrap" data-tab="schedule" onclick="switchTab('schedule')">
+          <i class="fas fa-calendar-clock mr-1"></i>스마트연락
+        </button>
         <button class="report-tab px-3.5 py-2 text-xs font-bold rounded-xl transition-all bg-surface-100 text-surface-600 whitespace-nowrap" data-tab="chart" onclick="switchTab('chart')">
           <i class="fas fa-chart-line mr-1"></i>매출 추이
         </button>
@@ -29,6 +35,43 @@ export const ReportPage: FC = () => {
       </div>
       
       <div class="px-4 py-4 space-y-3 pb-24">
+        {/* Feature 7: Period Comparison Tab */}
+        <div id="compareTab" class="hidden">
+          <div class="card-premium p-5 mb-3">
+            <div class="flex items-center justify-between mb-4">
+              <div class="flex items-center gap-2">
+                <div class="w-7 h-7 rounded-lg bg-purple-50 flex items-center justify-center"><i class="fas fa-code-compare text-xs text-purple-600"></i></div>
+                <h2 class="font-bold text-sm text-surface-900">기간 비교</h2>
+              </div>
+              <div class="flex gap-1">
+                <button onclick="loadPeriodCompare('week')" class="cmp-period-btn text-[10px] font-bold px-2.5 py-1 rounded-lg bg-brand-600 text-white transition-all" data-p="week">주간</button>
+                <button onclick="loadPeriodCompare('month')" class="cmp-period-btn text-[10px] font-bold px-2.5 py-1 rounded-lg bg-surface-100 text-surface-600 transition-all" data-p="month">월간</button>
+                <button onclick="loadPeriodCompare('quarter')" class="cmp-period-btn text-[10px] font-bold px-2.5 py-1 rounded-lg bg-surface-100 text-surface-600 transition-all" data-p="quarter">분기</button>
+              </div>
+            </div>
+            <div id="compareContent" class="space-y-3">
+              <div class="shimmer h-24 rounded-xl"></div>
+              <div class="shimmer h-20 rounded-xl"></div>
+            </div>
+          </div>
+        </div>
+
+        {/* Feature 8: Smart Schedule Tab */}
+        <div id="scheduleTab" class="hidden">
+          <div class="card-premium p-5 mb-3">
+            <div class="flex items-center gap-2 mb-4">
+              <div class="w-7 h-7 rounded-lg bg-emerald-50 flex items-center justify-center"><i class="fas fa-calendar-clock text-xs text-emerald-600"></i></div>
+              <h2 class="font-bold text-sm text-surface-900">AI 추천 연락 스케줄</h2>
+            </div>
+            <p class="text-xs text-surface-500 mb-4">결정도, 경과일수, 금액을 기반으로 최적 연락 시점을 추천합니다</p>
+            <div id="scheduleContent" class="space-y-2">
+              <div class="shimmer h-16 rounded-xl"></div>
+              <div class="shimmer h-16 rounded-xl"></div>
+              <div class="shimmer h-16 rounded-xl"></div>
+            </div>
+          </div>
+        </div>
+
         {/* Overview Tab */}
         <div id="overviewTab">
           {/* KPI Overview */}
@@ -187,8 +230,9 @@ export const ReportPage: FC = () => {
 
           function switchTab(tab) {
             currentTab = tab;
-            ['overview','chart','referral','treatment'].forEach(function(t) {
-              document.getElementById(t + 'Tab').classList.toggle('hidden', t !== tab);
+            ['overview','compare','schedule','chart','referral','treatment'].forEach(function(t) {
+              var el = document.getElementById(t + 'Tab');
+              if (el) el.classList.toggle('hidden', t !== tab);
             });
             document.querySelectorAll('.report-tab').forEach(function(b) {
               b.className = b.dataset.tab === tab
@@ -199,6 +243,115 @@ export const ReportPage: FC = () => {
             if (tab === 'chart') loadChartData(period);
             if (tab === 'referral') loadReferralROI(period);
             if (tab === 'treatment') loadTreatmentAnalysis(period);
+            if (tab === 'compare') loadPeriodCompare('week');
+            if (tab === 'schedule') loadSmartSchedule();
+          }
+
+          // === Feature 7: Period Comparison ===
+          async function loadPeriodCompare(p) {
+            document.querySelectorAll('.cmp-period-btn').forEach(function(b){
+              b.className = b.dataset.p === p
+                ? 'cmp-period-btn text-[10px] font-bold px-2.5 py-1 rounded-lg bg-brand-600 text-white transition-all'
+                : 'cmp-period-btn text-[10px] font-bold px-2.5 py-1 rounded-lg bg-surface-100 text-surface-600 transition-all';
+            });
+            try {
+              var res = await fetch('/api/dashboard/period-compare?period=' + p);
+              var data = await res.json();
+              if (!data.success) { showErrorState('compareContent','기간 비교 데이터를 불러올 수 없습니다',function(){loadPeriodCompare(p)}); return; }
+              var d = data.data, cur = d.current, prev = d.previous, ch = d.changes;
+              var pLabels = {week:'이번 주',month:'이번 달',quarter:'이번 분기'};
+              var ppLabels = {week:'지난 주',month:'지난 달',quarter:'지난 분기'};
+
+              var arrow = function(v) {
+                if (v > 0) return '<span class="text-[10px] font-bold text-emerald-600"><i class="fas fa-caret-up text-[8px]"></i> +'+v+'%</span>';
+                if (v < 0) return '<span class="text-[10px] font-bold text-rose-600"><i class="fas fa-caret-down text-[8px]"></i> '+v+'%</span>';
+                return '<span class="text-[10px] font-bold text-surface-400">—</span>';
+              };
+
+              var html = '<div class="grid grid-cols-2 gap-2.5 mb-3">';
+              // Revenue card
+              html += '<div class="p-3.5 rounded-xl '+(ch.revenue>=0?'bg-emerald-50/70 border border-emerald-200/50':'bg-rose-50/70 border border-rose-200/50')+'">';
+              html += '<p class="text-[10px] font-bold text-surface-500 mb-1">결정 금액</p>';
+              html += '<div class="flex items-end gap-1"><span class="text-xl font-black '+(ch.revenue>=0?'text-emerald-700':'text-rose-700')+'">'+fmtWon(cur.revenue)+'</span><span class="text-[10px] text-surface-400 mb-0.5">만원</span></div>';
+              html += '<div class="flex items-center gap-1.5 mt-1">'+arrow(ch.revenue)+'<span class="text-[10px] text-surface-400">vs '+ppLabels[p]+' '+fmtWon(prev.revenue)+'만</span></div>';
+              html += '</div>';
+              // Consult count
+              html += '<div class="p-3.5 rounded-xl '+(ch.total>=0?'bg-sky-50/70 border border-sky-200/50':'bg-rose-50/70 border border-rose-200/50')+'">';
+              html += '<p class="text-[10px] font-bold text-surface-500 mb-1">상담 건수</p>';
+              html += '<div class="flex items-end gap-1"><span class="text-xl font-black '+(ch.total>=0?'text-sky-700':'text-rose-700')+'">'+cur.total+'</span><span class="text-[10px] text-surface-400 mb-0.5">건</span></div>';
+              html += '<div class="flex items-center gap-1.5 mt-1">'+arrow(ch.total)+'<span class="text-[10px] text-surface-400">vs '+ppLabels[p]+' '+prev.total+'건</span></div>';
+              html += '</div>';
+              html += '</div>';
+
+              // Detailed metrics
+              html += '<div class="grid grid-cols-3 gap-2">';
+              var metrics = [
+                {label:'전환율',cur:cur.conversion+'%',prev:prev.conversion+'%',ch:ch.conversion,suffix:'%p'},
+                {label:'결정건수',cur:cur.paid+'건',prev:prev.paid+'건',ch:ch.paid,suffix:'%'},
+                {label:'상담점수',cur:cur.avg_score+'점',prev:prev.avg_score+'점',ch:ch.avg_score,suffix:'점'}
+              ];
+              metrics.forEach(function(m){
+                html += '<div class="p-2.5 rounded-xl bg-surface-50 text-center">';
+                html += '<p class="text-[10px] font-bold text-surface-500 mb-1">'+m.label+'</p>';
+                html += '<p class="text-base font-extrabold text-surface-900">'+m.cur+'</p>';
+                html += '<p class="text-[10px] text-surface-400">'+m.prev+'</p>';
+                if(m.ch > 0) html += '<p class="text-[10px] font-bold text-emerald-600 mt-0.5">+'+m.ch+m.suffix+'</p>';
+                else if(m.ch < 0) html += '<p class="text-[10px] font-bold text-rose-600 mt-0.5">'+m.ch+m.suffix+'</p>';
+                html += '</div>';
+              });
+              html += '</div>';
+
+              document.getElementById('compareContent').innerHTML = html;
+            } catch(e) { showErrorState('compareContent','기간 비교 오류',function(){loadPeriodCompare(p)}); }
+          }
+
+          // === Feature 8: Smart Schedule ===
+          async function loadSmartSchedule() {
+            try {
+              var res = await fetch('/api/dashboard/smart-schedule');
+              var data = await res.json();
+              if (!data.success) { showErrorState('scheduleContent','스케줄을 불러올 수 없습니다',loadSmartSchedule); return; }
+
+              if (data.data.length === 0) {
+                document.getElementById('scheduleContent').innerHTML = '<div class="text-center py-6"><div class="w-12 h-12 mx-auto bg-emerald-50 rounded-2xl flex items-center justify-center mb-2"><i class="fas fa-circle-check text-emerald-500 text-lg"></i></div><p class="text-sm font-bold text-surface-800">미결정 환자가 없습니다</p><p class="text-xs text-surface-500">모든 환자에게 연락을 완료했어요!</p></div>';
+                return;
+              }
+
+              var uCfg = {today:'border-l-rose-500',tomorrow:'border-l-amber-400'};
+              var urgColors = ['bg-rose-500','bg-amber-500','bg-sky-400','bg-surface-300'];
+              var html = '';
+              data.data.forEach(function(s, i) {
+                var urgPct = Math.min(100, s.urgency_score);
+                html += '<div class="card-premium p-3 border-l-[3px] '+(uCfg[s.recommended_day]||'border-l-sky-400')+' animate-fade-in" style="animation-delay:'+(i*50)+'ms">';
+                html += '<div class="flex items-start gap-2.5">';
+                html += '<div class="w-9 h-9 rounded-lg bg-gradient-to-br from-brand-100 to-purple-100 flex items-center justify-center font-bold text-xs text-brand-700 shrink-0">'+(i+1)+'</div>';
+                html += '<div class="flex-1 min-w-0">';
+                html += '<div class="flex items-center gap-1.5 flex-wrap">';
+                html += '<a href="/patients/'+s.patient_id+'" class="font-bold text-sm text-surface-900 hover:text-brand-600">'+s.patient_name+'</a>';
+                html += '<span class="text-[9px] px-1.5 py-0.5 rounded bg-brand-50 text-brand-600 font-semibold">결정도 '+s.decision_score+'</span>';
+                html += '</div>';
+                html += '<p class="text-[11px] text-surface-600 mt-0.5">'+(s.treatment_type||'일반')+' · '+fmtWon(s.amount)+'만원 · '+s.days_passed+'일 경과</p>';
+                // Urgency bar
+                html += '<div class="flex items-center gap-2 mt-1.5">';
+                html += '<div class="flex-1 h-1.5 bg-surface-100 rounded-full overflow-hidden"><div class="h-full rounded-full '+(urgPct>=80?'bg-rose-500':urgPct>=60?'bg-amber-500':'bg-sky-400')+'" style="width:'+urgPct+'%"></div></div>';
+                html += '<span class="text-[10px] font-bold '+(urgPct>=80?'text-rose-600':urgPct>=60?'text-amber-600':'text-sky-600')+'">'+urgPct+'</span>';
+                html += '</div>';
+                html += '<p class="text-[10px] text-surface-500 mt-1"><i class="fas fa-lightbulb text-amber-400 mr-1 text-[8px]"></i>'+s.reason+'</p>';
+                html += '<div class="flex items-center gap-2 mt-1">';
+                html += '<span class="text-[9px] px-1.5 py-0.5 rounded '+(s.recommended_day==='today'?'bg-rose-50 text-rose-600':'bg-amber-50 text-amber-600')+' font-bold">';
+                html += '<i class="fas fa-clock text-[7px] mr-0.5"></i>'+(s.recommended_day==='today'?'오늘':'내일')+' '+s.recommended_time+'</span>';
+                if(s.contact_count===0) html += '<span class="text-[9px] px-1.5 py-0.5 rounded bg-purple-50 text-purple-600 font-bold">첫 연락</span>';
+                html += '</div>';
+                html += '</div>';
+                // Action buttons
+                html += '<div class="flex flex-col gap-1.5 shrink-0">';
+                if(s.patient_phone) html += '<a href="tel:'+s.patient_phone+'" class="w-8 h-8 rounded-lg bg-brand-50 flex items-center justify-center text-brand-600 hover:bg-brand-100 active:scale-90 transition-all"><i class="fas fa-phone text-xs"></i></a>';
+                html += '<a href="/patients/'+s.patient_id+'" class="w-8 h-8 rounded-lg bg-surface-100 flex items-center justify-center text-surface-500 hover:bg-surface-200 active:scale-90 transition-all"><i class="fas fa-user text-xs"></i></a>';
+                html += '</div></div></div>';
+              });
+
+              document.getElementById('scheduleContent').innerHTML = html;
+            } catch(e) { showErrorState('scheduleContent','스마트 스케줄 오류',loadSmartSchedule); }
           }
 
           async function loadReport(period) {
@@ -540,11 +693,12 @@ export const ReportPage: FC = () => {
               var res = await fetch('/api/auth/goals', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(goals) });
               var data = await res.json();
               if (data.success) { closeGoalsModal(); loadReport(document.getElementById('periodSelect').value); }
-              else { alert(data.error || '목표 저장에 실패했습니다.'); }
-            } catch (err) { alert('오류가 발생했습니다.'); }
+              else { showToast(data.error || '목표 저장에 실패했습니다.','error'); }
+            } catch (err) { showToast('오류가 발생했습니다.','error'); }
           });
 
           loadReport();
+          initPullToRefresh(function(){ loadReport(); });
         `
       }} />
     </Layout>

@@ -19,6 +19,9 @@ export const PatientDetailPage: FC<Props> = ({ id }) => {
         <button id="tabInfo" onclick="switchTab('info')" class="flex-1 py-2.5 text-sm font-bold rounded-xl transition-all bg-brand-600 text-white shadow-md">
           <i class="fas fa-user mr-1.5 text-xs"></i>정보
         </button>
+        <button id="tabTimeline" onclick="switchTab('timeline')" class="flex-1 py-2.5 text-sm font-bold rounded-xl transition-all bg-surface-100 text-surface-600">
+          <i class="fas fa-timeline mr-1.5 text-xs"></i>타임라인
+        </button>
         <button id="tabRetention" onclick="switchTab('retention')" class="flex-1 py-2.5 text-sm font-bold rounded-xl transition-all bg-surface-100 text-surface-600">
           <i class="fas fa-heart-pulse mr-1.5 text-xs"></i>리텐션
         </button>
@@ -34,6 +37,32 @@ export const PatientDetailPage: FC<Props> = ({ id }) => {
       <div id="retentionDetail" class="px-4 py-3 space-y-3 pb-24 hidden">
         <div class="space-y-3 stagger-children">
           <div class="card-premium p-5"><div class="shimmer h-5 rounded-lg w-1/3 mb-3"></div><div class="shimmer h-20 rounded-lg w-full"></div></div>
+        </div>
+      </div>
+
+      {/* Feature 6: Timeline View */}
+      <div id="timelineDetail" class="px-4 py-3 space-y-3 pb-24 hidden">
+        <div class="card-premium p-4">
+          <div class="flex items-center justify-between mb-4">
+            <h3 class="text-sm font-bold text-surface-900"><i class="fas fa-timeline text-brand-500 mr-2 text-xs"></i>환자 여정 타임라인</h3>
+            <span id="timelineCount" class="text-[10px] font-bold bg-brand-50 text-brand-600 px-2 py-0.5 rounded-full">0건</span>
+          </div>
+          <div id="timelineContent" class="space-y-0">
+            <div class="shimmer h-20 rounded-lg w-full mb-2"></div>
+            <div class="shimmer h-20 rounded-lg w-full"></div>
+          </div>
+        </div>
+        {/* Feature 9: Consultation Comparison */}
+        <div id="comparisonSection" class="hidden">
+          <div class="card-premium p-4">
+            <div class="flex items-center gap-2 mb-4">
+              <div class="w-7 h-7 rounded-lg bg-purple-50 flex items-center justify-center">
+                <i class="fas fa-code-compare text-purple-600 text-xs"></i>
+              </div>
+              <h3 class="text-sm font-bold text-surface-900">상담 비교 분석</h3>
+            </div>
+            <div id="comparisonContent"></div>
+          </div>
         </div>
       </div>
 
@@ -256,15 +285,117 @@ export const PatientDetailPage: FC<Props> = ({ id }) => {
 
           function switchTab(tab) {
             currentTab = tab;
-            document.getElementById('tabInfo').className = tab === 'info' 
-              ? 'flex-1 py-2.5 text-sm font-bold rounded-xl transition-all bg-brand-600 text-white shadow-md'
-              : 'flex-1 py-2.5 text-sm font-bold rounded-xl transition-all bg-surface-100 text-surface-600';
-            document.getElementById('tabRetention').className = tab === 'retention'
-              ? 'flex-1 py-2.5 text-sm font-bold rounded-xl transition-all bg-brand-600 text-white shadow-md'
-              : 'flex-1 py-2.5 text-sm font-bold rounded-xl transition-all bg-surface-100 text-surface-600';
+            ['Info','Timeline','Retention'].forEach(function(t){
+              var el = document.getElementById('tab'+t);
+              if(el) el.className = tab === t.toLowerCase()
+                ? 'flex-1 py-2.5 text-sm font-bold rounded-xl transition-all bg-brand-600 text-white shadow-md'
+                : 'flex-1 py-2.5 text-sm font-bold rounded-xl transition-all bg-surface-100 text-surface-600';
+            });
             document.getElementById('patientDetail').classList.toggle('hidden', tab !== 'info');
             document.getElementById('retentionDetail').classList.toggle('hidden', tab !== 'retention');
+            document.getElementById('timelineDetail').classList.toggle('hidden', tab !== 'timeline');
             if (tab === 'retention' && !retentionData) loadRetention();
+            if (tab === 'timeline') loadTimeline();
+          }
+
+          var timelineLoaded = false;
+          async function loadTimeline() {
+            if (timelineLoaded) return;
+            try {
+              var [retRes, cmpRes] = await Promise.all([
+                fetch('/api/retention/patients/' + patientId),
+                fetch('/api/dashboard/consultation-compare/' + patientId)
+              ]);
+              var retData = await retRes.json();
+              var cmpData = await cmpRes.json();
+
+              // Render timeline
+              var timeline = (retData.success && retData.data.timeline) ? retData.data.timeline : [];
+              document.getElementById('timelineCount').textContent = timeline.length + '건';
+
+              var evIcons = {consultation:'fa-stethoscope',treatment:'fa-tooth',contact:'fa-phone'};
+              var evColors = {consultation:'bg-brand-100 text-brand-600',treatment:'bg-emerald-100 text-emerald-700',contact:'bg-sky-100 text-sky-600'};
+              var evLabels = {consultation:'상담',treatment:'치료',contact:'연락'};
+              var stBadge = {paid:'bg-emerald-50 text-emerald-700',undecided:'bg-amber-50 text-amber-700',lost:'bg-rose-50 text-rose-700',completed:'bg-emerald-50 text-emerald-700',in_progress:'bg-sky-50 text-sky-700',scheduled:'bg-purple-50 text-purple-700',connected:'bg-emerald-50 text-emerald-700',no_answer:'bg-rose-50 text-rose-700',appointment_booked:'bg-brand-50 text-brand-700'};
+              
+              if (timeline.length === 0) {
+                document.getElementById('timelineContent').innerHTML = '<div class="text-center py-8"><i class="fas fa-timeline text-surface-300 text-2xl mb-2"></i><p class="text-sm text-surface-500">아직 이벤트가 없습니다</p></div>';
+              } else {
+                var html = '';
+                timeline.forEach(function(ev, i) {
+                  var et = ev.event_type || 'consultation';
+                  html += '<div class="timeline-item flex gap-3 pb-4 relative">';
+                  html += '<div class="timeline-dot flex flex-col items-center shrink-0">';
+                  html += '<div class="w-8 h-8 rounded-lg '+(evColors[et]||'bg-surface-100 text-surface-600')+' flex items-center justify-center"><i class="fas '+(evIcons[et]||'fa-circle')+' text-xs"></i></div>';
+                  if (i < timeline.length - 1) html += '<div class="w-0.5 flex-1 bg-surface-200 mt-1 min-h-[16px]"></div>';
+                  html += '</div>';
+                  html += '<div class="flex-1 min-w-0 pb-1">';
+                  html += '<div class="flex items-center justify-between"><span class="text-xs font-bold text-surface-900">'+(evLabels[et]||et)+'</span><span class="text-[10px] text-surface-400">'+fmtDate(ev.date)+'</span></div>';
+                  
+                  if (et === 'consultation') {
+                    html += '<p class="text-[11px] text-surface-600 mt-0.5">'+(ev.treatment_type||'일반')+'</p>';
+                    if(ev.amount) html += '<span class="text-[10px] font-semibold text-emerald-600">'+fmtWon(ev.amount)+'만원</span> ';
+                    if(ev.status) html += '<span class="text-[10px] px-1.5 py-0.5 rounded '+(stBadge[ev.status]||'bg-surface-100 text-surface-600')+' font-semibold">'+(ev.status==='paid'?'결정':ev.status==='undecided'?'미결정':ev.status)+'</span>';
+                  } else if (et === 'treatment') {
+                    html += '<p class="text-[11px] text-surface-600 mt-0.5">'+(ev.treatment_name||ev.treatment_type||'치료')+'</p>';
+                    if(ev.status) html += '<span class="text-[10px] px-1.5 py-0.5 rounded '+(stBadge[ev.status]||'bg-surface-100 text-surface-600')+' font-semibold">'+(ev.status==='completed'?'완료':ev.status==='in_progress'?'진행중':ev.status)+'</span>';
+                  } else if (et === 'contact') {
+                    html += '<p class="text-[11px] text-surface-600 mt-0.5">'+(ev.contact_type==='phone'?'전화':ev.contact_type==='text'?'문자':'카카오')+' - '+(ev.result==='connected'?'통화성공':ev.result==='no_answer'?'부재중':ev.result==='appointment_booked'?'예약완료':ev.result||'')+'</p>';
+                    if(ev.notes) html += '<p class="text-[10px] text-surface-500 mt-0.5 line-clamp-1">'+ev.notes+'</p>';
+                    if(ev.staff_name) html += '<span class="text-[10px] text-surface-400">'+ev.staff_name+'</span>';
+                  }
+                  html += '</div></div>';
+                });
+                document.getElementById('timelineContent').innerHTML = html;
+              }
+
+              // Render comparison (Feature 9)
+              if (cmpData.success && cmpData.data.comparison) {
+                var cmp = cmpData.data.comparison;
+                var sec = document.getElementById('comparisonSection');
+                sec.classList.remove('hidden');
+                var f = cmp.first, l = cmp.last, imp = cmp.improvements;
+                
+                var cHtml = '<div class="grid grid-cols-2 gap-3">';
+                // First consult
+                cHtml += '<div class="p-3 rounded-xl bg-surface-50 border border-surface-200">';
+                cHtml += '<p class="text-[10px] font-bold text-surface-500 mb-2">1차 상담</p>';
+                cHtml += '<p class="text-xs text-surface-400">'+fmtDate(f.date)+'</p>';
+                cHtml += '<p class="text-sm font-bold mt-1">'+(f.treatment_type||'-')+'</p>';
+                if(f.amount) cHtml += '<p class="text-xs font-semibold text-emerald-600">'+fmtWon(f.amount)+'만원</p>';
+                cHtml += '<div class="flex gap-1.5 mt-2">';
+                cHtml += '<span class="text-[10px] px-1.5 py-0.5 rounded bg-brand-50 text-brand-600 font-semibold">결정도 '+(f.decision_score||0)+'</span>';
+                if(f.total_score) cHtml += '<span class="text-[10px] px-1.5 py-0.5 rounded bg-purple-50 text-purple-600 font-semibold">'+f.total_score+'점</span>';
+                cHtml += '</div></div>';
+                
+                // Last consult
+                cHtml += '<div class="p-3 rounded-xl bg-brand-50/50 border border-brand-200/50">';
+                cHtml += '<p class="text-[10px] font-bold text-brand-600 mb-2">최근 상담</p>';
+                cHtml += '<p class="text-xs text-surface-400">'+fmtDate(l.date)+'</p>';
+                cHtml += '<p class="text-sm font-bold mt-1">'+(l.treatment_type||'-')+'</p>';
+                if(l.amount) cHtml += '<p class="text-xs font-semibold text-emerald-600">'+fmtWon(l.amount)+'만원</p>';
+                cHtml += '<div class="flex gap-1.5 mt-2">';
+                cHtml += '<span class="text-[10px] px-1.5 py-0.5 rounded bg-brand-50 text-brand-600 font-semibold">결정도 '+(l.decision_score||0)+'</span>';
+                if(l.total_score) cHtml += '<span class="text-[10px] px-1.5 py-0.5 rounded bg-purple-50 text-purple-600 font-semibold">'+l.total_score+'점</span>';
+                cHtml += '</div></div>';
+                cHtml += '</div>';
+
+                // Improvements summary
+                cHtml += '<div class="mt-3 p-3 rounded-xl '+(imp.decision_score>0?'bg-emerald-50':'bg-amber-50')+'">';
+                cHtml += '<p class="text-xs font-bold '+(imp.decision_score>0?'text-emerald-700':'text-amber-700')+'">';
+                cHtml += '<i class="fas '+(imp.decision_score>0?'fa-arrow-trend-up':'fa-minus')+' mr-1"></i>';
+                cHtml += '총 '+cmp.total_consultations+'회 상담 | 결정도 '+(imp.decision_score>0?'+':'')+imp.decision_score;
+                if(imp.total_score) cHtml += ' | 점수 '+(imp.total_score>0?'+':'')+imp.total_score;
+                cHtml += '</p></div>';
+
+                document.getElementById('comparisonContent').innerHTML = cHtml;
+              }
+
+              timelineLoaded = true;
+            } catch (err) {
+              console.error('Timeline error:', err);
+              showErrorState('timelineContent', '타임라인을 불러올 수 없습니다', loadTimeline);
+            }
           }
 
           async function loadPatient() {
@@ -614,8 +745,8 @@ export const PatientDetailPage: FC<Props> = ({ id }) => {
                 closeTreatmentModal();
                 retentionData = null;
                 loadRetention();
-              } else { alert(data.error || '저장에 실패했습니다.'); }
-            } catch (err) { alert('오류가 발생했습니다.'); }
+              } else { showToast(data.error || '저장에 실패했습니다.','error'); }
+            } catch (err) { showToast('오류가 발생했습니다.','error'); }
           }
 
           // ============================================
@@ -655,8 +786,8 @@ export const PatientDetailPage: FC<Props> = ({ id }) => {
                 closeRetContactModal();
                 retentionData = null;
                 loadRetention();
-              } else { alert(data.error || '저장에 실패했습니다.'); }
-            } catch (err) { alert('오류가 발생했습니다.'); }
+              } else { showToast(data.error || '저장에 실패했습니다.','error'); }
+            } catch (err) { showToast('오류가 발생했습니다.','error'); }
           }
 
           // ============================================
@@ -702,8 +833,8 @@ export const PatientDetailPage: FC<Props> = ({ id }) => {
               if (data.success) {
                 closeEditModal();
                 loadPatient();
-              } else { alert(data.error || '저장에 실패했습니다.'); }
-            } catch (err) { alert('오류가 발생했습니다.'); }
+              } else { showToast(data.error || '저장에 실패했습니다.','error'); }
+            } catch (err) { showToast('오류가 발생했습니다.','error'); }
             finally { btn.disabled = false; btn.innerHTML = '<i class="fas fa-check mr-2"></i>저장'; }
           }
 

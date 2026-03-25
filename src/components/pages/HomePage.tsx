@@ -492,10 +492,19 @@ export const HomePage: FC = () => {
                     '</div><i class="fas fa-chevron-right text-surface-300 text-xs"></i></a>';
                 }).join('') + '</div>';
               } else {
-                document.getElementById('recentConsultations').innerHTML =
-                  '<div class="card-premium p-5"><div class="text-center py-3">' +
-                  '<div class="w-10 h-10 mx-auto bg-surface-100 rounded-xl flex items-center justify-center mb-2"><i class="fas fa-calendar-check text-surface-300 text-sm"></i></div>' +
-                  '<p class="text-surface-400 text-sm font-medium">오늘 상담 내역이 없습니다</p></div></div>';
+                // Feature 5: Onboarding empty state when no data at all
+                if (td.total_consultations === 0 && (ws.total_consultations||0) === 0) {
+                  showOnboardingState('recentConsultations', [
+                    {title:'첫 환자 등록하기', desc:'환자 정보를 등록하세요', href:'/patients', done: false},
+                    {title:'상담 녹음해보기', desc:'AI가 자동으로 분석해줍니다', href:'/recording', done: false},
+                    {title:'리포트 확인하기', desc:'상담 분석 결과를 확인하세요', href:'/report', done: false}
+                  ]);
+                } else {
+                  document.getElementById('recentConsultations').innerHTML =
+                    '<div class="card-premium p-5"><div class="text-center py-3">' +
+                    '<div class="w-10 h-10 mx-auto bg-surface-100 rounded-xl flex items-center justify-center mb-2"><i class="fas fa-calendar-check text-surface-300 text-sm"></i></div>' +
+                    '<p class="text-surface-400 text-sm font-medium">오늘 상담 내역이 없습니다</p></div></div>';
+                }
               }
 
               // === TODAY CONTACTS ===
@@ -503,6 +512,7 @@ export const HomePage: FC = () => {
 
             } catch (err) {
               console.error('Dashboard error:', err);
+              showErrorState('recentConsultations', '대시보드 데이터를 불러올 수 없습니다', loadHomePage);
               document.getElementById('heroSubStats').innerHTML = '<span class="text-xs text-white/50">데이터를 불러올 수 없습니다</span>';
             }
           }
@@ -608,13 +618,15 @@ export const HomePage: FC = () => {
               var res = await fetch('/api/tasks/generate',{method:'POST'});
               var data = await res.json();
               if(data.success && data.data.generated > 0){
-                alert(data.data.generated+'명의 연락 대상을 찾았습니다!');
-                window.location.reload();
+                showToast(data.data.generated+'명의 연락 대상을 찾았습니다!', 'success');
+                var cR = await fetch('/api/dashboard/today-contacts');
+                var cD = await cR.json();
+                renderContacts(cD);
               } else {
-                alert('새로 추가할 연락 대상이 없습니다.');
+                showToast('새로 추가할 연락 대상이 없습니다.', 'info');
                 if(btn){btn.disabled=false;btn.innerHTML='<i class="fas fa-rotate mr-1"></i>갱신';}
               }
-            } catch(e) { alert('오류가 발생했습니다.'); }
+            } catch(e) { showToast('오류가 발생했습니다.', 'error'); }
           }
 
           // === HOME CONTACT MODAL ===
@@ -703,9 +715,9 @@ export const HomePage: FC = () => {
                       '<div class="flex items-center gap-3"><div class="flex items-center gap-1.5"><i class="fas fa-phone text-[10px] text-brand-500"></i><span class="text-[11px] font-semibold text-surface-700">\uc5f0\ub77d <b class="text-brand-600">'+(tm.contacts_done||0)+'</b>/'+(tm.contacts_total||0)+'</span></div><div class="flex items-center gap-1.5"><i class="fas fa-stethoscope text-[10px] text-sky-500"></i><span class="text-[11px] font-semibold text-surface-700">\uc0c1\ub2f4 <b class="text-sky-600">'+(tm.consultations_done||0)+'</b>\uac74</span></div><div class="flex items-center gap-1.5"><i class="fas fa-circle-check text-[10px] text-emerald-500"></i><span class="text-[11px] font-semibold text-surface-700">\uacb0\uc815 <b class="text-emerald-600">'+(tm.decisions_done||0)+'</b>\uac74</span></div></div>';
                   }
                 }
-              } else { alert(data.error || '\uc800\uc7a5\uc5d0 \uc2e4\ud328\ud588\uc2b5\ub2c8\ub2e4.'); }
-            } catch (err) { alert('\uc624\ub958\uac00 \ubc1c\uc0dd\ud588\uc2b5\ub2c8\ub2e4.'); }
-            finally { btn.disabled = false; btn.innerHTML = '<i class="fas fa-check mr-2"></i>\uae30\ub85d \uc800\uc7a5'; }
+              } else { showToast(data.error || '저장에 실패했습니다.', 'error'); }
+            } catch (err) { showToast('오류가 발생했습니다.', 'error'); }
+            finally { btn.disabled = false; btn.innerHTML = '<i class="fas fa-check mr-2"></i>기록 저장'; }
           }
 
           // === LOGOUT ===
@@ -719,6 +731,9 @@ export const HomePage: FC = () => {
           });
 
           loadHomePage();
+
+          // Pull-to-Refresh
+          initPullToRefresh(function(){ loadHomePage(); });
         `
       }} />
     </Layout>

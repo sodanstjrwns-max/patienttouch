@@ -1067,4 +1067,315 @@ dashboard.get('/revenue-trend', async (c) => {
   }
 });
 
+// ============================================
+// FEATURE 7: Period Comparison KPI
+// ============================================
+dashboard.get('/period-compare', async (c) => {
+  try {
+    const orgId = c.get('organizationId');
+    const userId = c.get('userId');
+    const db = c.env.DB;
+    const { period = 'week' } = c.req.query();
+
+    let daysBack = 7;
+    if (period === 'month') daysBack = 30;
+    if (period === 'quarter') daysBack = 90;
+
+    const getStats = async (startDays: number, endDays: number) => {
+      const start = `datetime('now', '-${startDays} days')`;
+      const end = endDays === 0 ? `datetime('now')` : `datetime('now', '-${endDays} days')`;
+      const r = await db.prepare(`
+        SELECT 
+          COUNT(*) as total, 
+          SUM(CASE WHEN status='paid' THEN 1 ELSE 0 END) as paid,
+          SUM(CASE WHEN status='paid' THEN amount ELSE 0 END) as revenue,
+          AVG(CASE WHEN ai_analysis_status='completed' THEN CAST(json_extract(feedback,'$.total_score') AS REAL) END) as avg_score
+        FROM consultations
+        WHERE organization_id=? AND user_id=? AND consultation_date >= ${start} AND consultation_date < ${end}
+      `).bind(orgId, userId).first();
+      return {
+        total: (r?.total as number) || 0,
+        paid: (r?.paid as number) || 0,
+        revenue: (r?.revenue as number) || 0,
+        avg_score: Math.round((r?.avg_score as number) || 0),
+        conversion: (r?.total as number) > 0 ? Math.round(((r?.paid as number) || 0) / (r?.total as number) * 100) : 0
+      };
+    };
+
+    const current = await getStats(daysBack, 0);
+    const previous = await getStats(daysBack * 2, daysBack);
+
+    const pctChange = (cur: number, prev: number) => prev > 0 ? Math.round(((cur - prev) / prev) * 100) : (cur > 0 ? 100 : 0);
+
+    return c.json({
+      success: true,
+      data: {
+        period,
+        current,
+        previous,
+        changes: {
+          revenue: pctChange(current.revenue, previous.revenue),
+          total: pctChange(current.total, previous.total),
+          paid: pctChange(current.paid, previous.paid),
+          conversion: current.conversion - previous.conversion,
+          avg_score: current.avg_score - previous.avg_score
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Period compare error:', error);
+    return c.json({ success: false, error: '기간 비교 데이터 조회에 실패했습니다.' }, 500);
+  }
+});
+
+// ============================================
+// FEATURE 8: Smart Contact Scheduling
+// ============================================
+dashboard.get('/smart-schedule', async (c) => {
+  try {
+    const orgId = c.get('organizationId');
+    const userId = c.get('userId');
+    const db = c.env.DB;
+
+    // Get undecided consultations with AI-recommended contact times
+    const undecided = await db.prepare(`
+      SELECT c.id, c.patient_id, c.treatment_type, c.amount, c.decision_score,
+             c.consultation_date, c.status,
+             p.name as patient_name, p.phone as patient_phone,
+             CAST(julianday('now') - julianday(c.consultation_date) AS INTEGER) as days_passed,
+             (SELECT MAX(rc.contacted_at) FROM retention_contacts rc WHERE rc.patient_id = c.patient_id) as last_contact,
+             (SELECT COUNT(*) FROM contact_tasks ct WHERE ct.patient_id = c.patient_id AND ct.status='completed') as contact_count
+      FROM consultations c
+      JOIN patients p ON c.patient_id = p.id
+      WHERE c.organization_id=? AND c.user_id=? AND c.status='undecided'
+      ORDER BY c.decision_score DESC, c.amount DESC
+      LIMIT 20
+    `).bind(orgId, userId).all();
+
+    const schedule = undecided.results.map((c: any) => {
+      const dp = c.days_passed || 0;
+      const ds = c.decision_score || 5;
+      const amt = c.amount || 0;
+      const cc = c.contact_count || 0;
+
+      // AI scoring: higher score = contact sooner
+      // Factors: decision_score (high = ready), days_passed (sweet spot 2-5 days), amount, contact_count
+      let urgency = 0;
+      if (ds >= 8) urgency += 40;
+      else if (ds >= 6) urgency += 25;
+      else urgency += 10;
+
+      if (dp >= 2 && dp <= 5) urgency += 30; // Golden window
+      else if (dp >= 6 && dp <= 10) urgency += 20;
+      else if (dp > 10) urgency += 15;
+      else urgency += 5; // too soon
+
+      if (amt >= 5000000) urgency += 20;
+      else if (amt >= 2000000) urgency += 10;
+
+      if (cc === 0) urgency += 10; // Never contacted
+
+      // Recommended time
+      let recommendedDay = 'today';
+      let reason = '';
+      if (ds >= 8 && dp >= 2) {
+        recommendedDay = 'today';
+        reason = '결정도 높음! 지금 연락이 최적';
+      } else if (dp < 2) {
+        recommendedDay = 'tomorrow';
+        reason = '상담 직후, 하루 뒤 연락 추천';
+      } else if (dp >= 7) {
+        recommendedDay = 'today';
+        reason = dp + '일 경과 - 이탈 방지 긴급';
+      } else {
+        recommendedDay = 'today';
+        reason = '연락 적기 (2-5일 골든타임)';
+      }
+
+      // Best time of day
+      let bestTime = '10:00-11:30';
+      if (amt >= 5000000) bestTime = '14:00-16:00'; // High-value: afternoon (more time)
+      
+      return {
+        consultation_id: c.id,
+        patient_id: c.patient_id,
+        patient_name: c.patient_name,
+        patient_phone: c.patient_phone,
+        treatment_type: c.treatment_type,
+        amount: c.amount,
+        decision_score: c.decision_score,
+        days_passed: dp,
+        contact_count: cc,
+        last_contact: c.last_contact,
+        urgency_score: urgency,
+        recommended_day: recommendedDay,
+        recommended_time: bestTime,
+        reason: reason
+      };
+    });
+
+    schedule.sort((a: any, b: any) => b.urgency_score - a.urgency_score);
+
+    return c.json({ success: true, data: schedule });
+  } catch (error) {
+    console.error('Smart schedule error:', error);
+    return c.json({ success: false, error: '스마트 스케줄 조회에 실패했습니다.' }, 500);
+  }
+});
+
+// ============================================
+// FEATURE 9: Consultation Comparison
+// ============================================
+dashboard.get('/consultation-compare/:patientId', async (c) => {
+  try {
+    const patientId = c.req.param('patientId');
+    const orgId = c.get('organizationId');
+    const db = c.env.DB;
+
+    const consults = await db.prepare(`
+      SELECT c.*, u.name as user_name
+      FROM consultations c
+      JOIN users u ON c.user_id = u.id
+      WHERE c.patient_id=? AND c.organization_id=?
+      ORDER BY c.consultation_date ASC
+    `).bind(patientId, orgId).all();
+
+    if (consults.results.length < 2) {
+      return c.json({ success: true, data: { items: consults.results.map(c => ({...c, feedback: safeParseJSON(c.feedback as string, {}), emotion_flow: safeParseJSON(c.emotion_flow as string, {})})), comparison: null } });
+    }
+
+    const first = consults.results[0];
+    const last = consults.results[consults.results.length - 1];
+
+    const fb1 = safeParseJSON(first.feedback as string, {} as any);
+    const fb2 = safeParseJSON(last.feedback as string, {} as any);
+
+    const comparison = {
+      first: {
+        id: first.id, date: first.consultation_date, status: first.status,
+        treatment_type: first.treatment_type, amount: first.amount,
+        decision_score: first.decision_score,
+        total_score: fb1.total_score || 0,
+        feedback: fb1
+      },
+      last: {
+        id: last.id, date: last.consultation_date, status: last.status,
+        treatment_type: last.treatment_type, amount: last.amount,
+        decision_score: last.decision_score,
+        total_score: fb2.total_score || 0,
+        feedback: fb2
+      },
+      improvements: {
+        decision_score: (last.decision_score as number || 0) - (first.decision_score as number || 0),
+        total_score: (fb2.total_score || 0) - (fb1.total_score || 0),
+        status_changed: first.status !== last.status
+      },
+      total_consultations: consults.results.length
+    };
+
+    return c.json({
+      success: true,
+      data: {
+        items: consults.results.map(c => ({...c, feedback: safeParseJSON(c.feedback as string, {}), emotion_flow: safeParseJSON(c.emotion_flow as string, {})})),
+        comparison
+      }
+    });
+  } catch (error) {
+    console.error('Consultation compare error:', error);
+    return c.json({ success: false, error: '상담 비교 데이터 조회에 실패했습니다.' }, 500);
+  }
+});
+
+// ============================================
+// FEATURE 11: Data Export (CSV format for Excel)
+// ============================================
+dashboard.get('/export', async (c) => {
+  try {
+    const orgId = c.get('organizationId');
+    const userId = c.get('userId');
+    const db = c.env.DB;
+    const { type = 'consultations', period = '30' } = c.req.query();
+    const days = parseInt(period);
+
+    if (type === 'consultations') {
+      const result = await db.prepare(`
+        SELECT c.consultation_date, p.name as patient_name, c.treatment_type, c.amount,
+               c.status, c.decision_score,
+               CAST(json_extract(c.feedback, '$.total_score') AS INTEGER) as consult_score,
+               u.name as consultant_name
+        FROM consultations c
+        LEFT JOIN patients p ON c.patient_id = p.id
+        JOIN users u ON c.user_id = u.id
+        WHERE c.organization_id=? AND c.consultation_date >= datetime('now', '-${days} days')
+        ORDER BY c.consultation_date DESC
+      `).bind(orgId).all();
+
+      // BOM for Excel Korean support
+      let csv = '\\uFEFF날짜,환자명,치료항목,금액,상태,결정도,상담점수,상담사\\n';
+      const statusMap: Record<string,string> = {paid:'결제완료',undecided:'미결정',lost:'이탈',pending:'대기중'};
+      for (const r of result.results) {
+        csv += `${r.consultation_date},${r.patient_name||''},${r.treatment_type||''},${r.amount||0},${statusMap[r.status as string]||r.status},${r.decision_score||0},${r.consult_score||0},${r.consultant_name}\\n`;
+      }
+
+      return new Response(csv, {
+        headers: {
+          'Content-Type': 'text/csv; charset=utf-8',
+          'Content-Disposition': `attachment; filename=consultations_${new Date().toISOString().split('T')[0]}.csv`
+        }
+      });
+    }
+
+    if (type === 'patients') {
+      const result = await db.prepare(`
+        SELECT p.name, p.phone, p.age, p.gender, p.referral_source, p.region, p.tags, p.status, p.created_at,
+               (SELECT COUNT(*) FROM consultations c WHERE c.patient_id = p.id) as consult_count,
+               (SELECT SUM(CASE WHEN c.status='paid' THEN c.amount ELSE 0 END) FROM consultations c WHERE c.patient_id = p.id) as total_paid
+        FROM patients p
+        WHERE p.organization_id=? AND p.status='active'
+        ORDER BY p.created_at DESC
+      `).bind(orgId).all();
+
+      let csv = '\\uFEFF이름,전화,나이,성별,내원경로,지역,태그,등록일,상담횟수,결제금액\\n';
+      for (const r of result.results) {
+        csv += `${r.name},${r.phone||''},${r.age||''},${r.gender==='male'?'남':'여'},${r.referral_source||''},${r.region||''},${r.tags||''},${(r.created_at as string||'').split('T')[0]},${r.consult_count||0},${r.total_paid||0}\\n`;
+      }
+
+      return new Response(csv, {
+        headers: {
+          'Content-Type': 'text/csv; charset=utf-8',
+          'Content-Disposition': `attachment; filename=patients_${new Date().toISOString().split('T')[0]}.csv`
+        }
+      });
+    }
+
+    if (type === 'retention') {
+      const result = await db.prepare(`
+        SELECT p.name as patient_name, p.phone, r.status, r.risk_score, r.days_since_visit, r.remaining_treatment_value, r.priority_score
+        FROM patient_retention_status r
+        JOIN patients p ON r.patient_id = p.id
+        WHERE r.organization_id=?
+        ORDER BY r.priority_score DESC
+      `).bind(orgId).all();
+
+      const sMap: Record<string,string> = {in_treatment:'치료중',unscheduled_urgent:'긴급미예약',unscheduled_warning:'주의미예약',recall_6m:'6개월리콜',recall_12m:'12개월리콜',at_risk:'이탈위험',consulted_unconverted:'상담미전환',active:'활성',completed:'완료'};
+      let csv = '\\uFEFF환자명,전화,상태,위험도,미내원일수,잔여치료비,우선도\\n';
+      for (const r of result.results) {
+        csv += `${r.patient_name},${r.phone||''},${sMap[r.status as string]||r.status},${r.risk_score},${r.days_since_visit},${r.remaining_treatment_value},${r.priority_score}\\n`;
+      }
+
+      return new Response(csv, {
+        headers: {
+          'Content-Type': 'text/csv; charset=utf-8',
+          'Content-Disposition': `attachment; filename=retention_${new Date().toISOString().split('T')[0]}.csv`
+        }
+      });
+    }
+
+    return c.json({ success: false, error: 'Invalid export type' }, 400);
+  } catch (error) {
+    console.error('Export error:', error);
+    return c.json({ success: false, error: '데이터 내보내기에 실패했습니다.' }, 500);
+  }
+});
+
 export default dashboard;

@@ -372,8 +372,8 @@ export const ConsultationDetailPage: FC<Props> = ({ id }) => {
               });
               var data = await res.json();
               if (data.success) { closeLinkModal(); loadConsultation(); }
-              else { alert(data.error || '환자 연결에 실패했습니다.'); }
-            } catch (err) { alert('오류가 발생했습니다.'); }
+              else { showToast(data.error || '환자 연결에 실패했습니다.','error'); }
+            } catch (err) { showToast('오류가 발생했습니다.','error'); }
           }
 
           function filterPatients(query) {
@@ -406,9 +406,9 @@ export const ConsultationDetailPage: FC<Props> = ({ id }) => {
                 body: JSON.stringify({ name: formData.get('name'), phone: formData.get('phone') || undefined, age: formData.get('age') ? parseInt(formData.get('age')) : undefined, gender: formData.get('gender') || undefined })
               });
               var patientData = await patientRes.json();
-              if (!patientData.success) { alert(patientData.error || '환자 등록에 실패했습니다.'); return false; }
+              if (!patientData.success) { showToast(patientData.error || '환자 등록에 실패했습니다.','error'); return false; }
               await linkPatient(patientData.data.id);
-            } catch (err) { alert('오류가 발생했습니다.'); }
+            } catch (err) { showToast('오류가 발생했습니다.','error'); }
             return false;
           }
 
