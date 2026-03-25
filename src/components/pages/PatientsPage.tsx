@@ -14,12 +14,48 @@ export const PatientsPage: FC = () => {
         }
       />
 
+      {/* Stats Summary */}
+      <div id="patientStats" class="px-4 pt-3 pb-1">
+        <div class="grid grid-cols-3 gap-2">
+          <div class="card-premium p-3 text-center">
+            <p id="statTotal" class="text-lg font-black text-surface-900">-</p>
+            <p class="text-[10px] font-semibold text-surface-400">전체</p>
+          </div>
+          <div class="card-premium p-3 text-center">
+            <p id="statConsulted" class="text-lg font-black text-brand-600">-</p>
+            <p class="text-[10px] font-semibold text-surface-400">상담완료</p>
+          </div>
+          <div class="card-premium p-3 text-center">
+            <p id="statPaid" class="text-lg font-black text-emerald-600">-</p>
+            <p class="text-[10px] font-semibold text-surface-400">결제완료</p>
+          </div>
+        </div>
+      </div>
+
       {/* Search */}
       <div class="px-4 py-3">
         <div class="relative">
           <i class="fas fa-magnifying-glass absolute left-4 top-1/2 -translate-y-1/2 text-surface-400 text-sm"></i>
-          <input id="searchInput" type="text" placeholder="이름 또는 전화번호로 검색" class="w-full pl-11 pr-4 py-3 bg-white border border-surface-200 rounded-xl text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 transition-all placeholder-surface-400" />
+          <input id="searchInput" type="text" placeholder="이름, 전화번호, 내원경로, 지역, 태그 검색" class="w-full pl-11 pr-4 py-3 bg-white border border-surface-200 rounded-xl text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 transition-all placeholder-surface-400" />
         </div>
+      </div>
+
+      {/* Sort & Filter */}
+      <div class="px-4 pb-2 flex items-center gap-2 overflow-x-auto scrollbar-hide">
+        <select id="sortSelect" class="shrink-0 px-3 py-1.5 text-xs font-semibold bg-surface-100 text-surface-600 border-0 rounded-xl outline-none cursor-pointer">
+          <option value="recent">최근 등록순</option>
+          <option value="name">이름순</option>
+          <option value="consultation">최근 상담순</option>
+        </select>
+        <button class="patient-filter-btn shrink-0 px-3 py-1.5 text-xs font-bold rounded-xl transition-all bg-brand-600 text-white" data-filter="all" onclick="applyPatientFilter('all')">전체</button>
+        <button class="patient-filter-btn shrink-0 px-3 py-1.5 text-xs font-bold rounded-xl transition-all bg-surface-100 text-surface-600" data-filter="undecided" onclick="applyPatientFilter('undecided')">미결정</button>
+        <button class="patient-filter-btn shrink-0 px-3 py-1.5 text-xs font-bold rounded-xl transition-all bg-surface-100 text-surface-600" data-filter="paid" onclick="applyPatientFilter('paid')">결제완료</button>
+        <button class="patient-filter-btn shrink-0 px-3 py-1.5 text-xs font-bold rounded-xl transition-all bg-surface-100 text-surface-600" data-filter="lost" onclick="applyPatientFilter('lost')">이탈</button>
+      </div>
+
+      {/* Patient Count */}
+      <div class="px-4 pb-2 flex items-center justify-between">
+        <span id="patientCount" class="text-xs font-semibold text-surface-500"></span>
       </div>
 
       <div class="px-4 pb-6">
@@ -94,6 +130,8 @@ export const PatientsPage: FC = () => {
       <script dangerouslySetInnerHTML={{
         __html: `
           var allPatients = [];
+          var currentPatientFilter = 'all';
+          var currentSort = 'recent';
           
           document.getElementById('addPatientBtn').addEventListener('click', function() {
             document.getElementById('addPatientModal').classList.remove('hidden');
@@ -104,11 +142,63 @@ export const PatientsPage: FC = () => {
           };
 
           document.getElementById('searchInput').addEventListener('input', function(e) {
-            var q = e.target.value.toLowerCase();
-            renderPatients(allPatients.filter(function(p) {
-              return p.name.toLowerCase().includes(q) || (p.phone && p.phone.includes(q));
-            }));
+            filterAndRender();
           });
+
+          document.getElementById('sortSelect').addEventListener('change', function(e) {
+            currentSort = e.target.value;
+            filterAndRender();
+          });
+
+          window.applyPatientFilter = function(filter) {
+            currentPatientFilter = filter;
+            document.querySelectorAll('.patient-filter-btn').forEach(function(b) {
+              b.className = b.dataset.filter === filter
+                ? 'patient-filter-btn shrink-0 px-3 py-1.5 text-xs font-bold rounded-xl transition-all bg-brand-600 text-white'
+                : 'patient-filter-btn shrink-0 px-3 py-1.5 text-xs font-bold rounded-xl transition-all bg-surface-100 text-surface-600';
+            });
+            filterAndRender();
+          };
+
+          function filterAndRender() {
+            var q = (document.getElementById('searchInput').value || '').toLowerCase();
+            var filtered = allPatients.filter(function(p) {
+              // Text search: name, phone, referral_source, region, tags
+              var matchText = true;
+              if (q) {
+                var tags = [];
+                try { tags = Array.isArray(p.tags) ? p.tags : JSON.parse(p.tags || '[]'); } catch(e) {}
+                var tagsStr = tags.join(' ').toLowerCase();
+                matchText = p.name.toLowerCase().includes(q) || 
+                  (p.phone && p.phone.includes(q)) ||
+                  (p.referral_source && p.referral_source.toLowerCase().includes(q)) ||
+                  (p.region && p.region.toLowerCase().includes(q)) ||
+                  tagsStr.includes(q) ||
+                  (p.memo && p.memo.toLowerCase().includes(q));
+              }
+              // Status filter
+              var matchFilter = true;
+              if (currentPatientFilter !== 'all') {
+                matchFilter = p.last_consultation_status === currentPatientFilter;
+              }
+              return matchText && matchFilter;
+            });
+
+            // Sort
+            filtered.sort(function(a, b) {
+              if (currentSort === 'name') return a.name.localeCompare(b.name, 'ko');
+              if (currentSort === 'consultation') {
+                var da = a.last_consultation || '';
+                var db = b.last_consultation || '';
+                return db.localeCompare(da);
+              }
+              // recent (default): by updated_at desc
+              return (b.updated_at || b.created_at || '').localeCompare(a.updated_at || a.created_at || '');
+            });
+
+            document.getElementById('patientCount').textContent = filtered.length + '명';
+            renderPatients(filtered);
+          }
 
           document.getElementById('addPatientForm').addEventListener('submit', async function(e) {
             e.preventDefault();
@@ -143,10 +233,17 @@ export const PatientsPage: FC = () => {
               return;
             }
             var colors = ['bg-brand-100 text-brand-700', 'bg-emerald-100 text-emerald-700', 'bg-amber-100 text-amber-700', 'bg-rose-100 text-rose-700', 'bg-sky-100 text-sky-700', 'bg-purple-100 text-purple-700'];
+            var statusMap = {
+              paid: { label: '결제', bg: 'bg-emerald-50 text-emerald-700' },
+              undecided: { label: '미결정', bg: 'bg-amber-50 text-amber-700' },
+              lost: { label: '이탈', bg: 'bg-rose-50 text-rose-700' },
+              pending: { label: '대기', bg: 'bg-surface-100 text-surface-600' }
+            };
             var html = patients.map(function(p) {
               var ci = p.name.charCodeAt(0) % colors.length;
               var tags = [];
-              try { tags = JSON.parse(p.tags || '[]'); } catch(e){}
+              try { tags = Array.isArray(p.tags) ? p.tags : JSON.parse(p.tags || '[]'); } catch(e){}
+              var st = statusMap[p.last_consultation_status] || null;
               return '<a href="/patients/' + p.id + '" class="card-premium p-4 flex items-center gap-3.5 block">' +
                 '<div class="w-11 h-11 rounded-xl flex items-center justify-center shrink-0 ' + colors[ci] + '">' +
                   '<span class="text-base font-bold">' + p.name.charAt(0) + '</span>' +
@@ -156,18 +253,29 @@ export const PatientsPage: FC = () => {
                     '<span class="font-bold text-sm">' + p.name + '</span>' +
                     (p.age ? '<span class="text-xs text-surface-400">' + p.age + '세</span>' : '') +
                     (p.gender ? '<span class="text-xs text-surface-400">' + (p.gender === 'male' ? '남' : '여') + '</span>' : '') +
+                    (st ? '<span class="text-[9px] px-1.5 py-0.5 rounded-md font-semibold ' + st.bg + '">' + st.label + '</span>' : '') +
                   '</div>' +
-                  '<div class="flex items-center gap-1.5 mt-0.5">' +
+                  '<div class="flex items-center gap-1.5 mt-0.5 flex-wrap">' +
                     (p.phone ? '<span class="text-xs text-surface-500">' + p.phone + '</span>' : '') +
                     (p.referral_source ? '<span class="text-[10px] px-1.5 py-0.5 rounded-md bg-sky-50 text-sky-600 font-medium">' + p.referral_source + '</span>' : '') +
                     (p.region ? '<span class="text-[10px] px-1.5 py-0.5 rounded-md bg-emerald-50 text-emerald-600 font-medium">' + p.region + '</span>' : '') +
                     (tags.length > 0 ? tags.slice(0,2).map(function(t){ return '<span class="text-[10px] px-1.5 py-0.5 rounded-md bg-brand-50 text-brand-600 font-medium">' + t + '</span>'; }).join('') : '') +
+                    (p.consultation_count > 0 ? '<span class="text-[10px] px-1.5 py-0.5 rounded-md bg-surface-100 text-surface-500 font-medium">상담 ' + p.consultation_count + '회</span>' : '') +
                   '</div>' +
                 '</div>' +
                 '<i class="fas fa-chevron-right text-surface-300 text-xs"></i>' +
               '</a>';
             }).join('');
-            document.getElementById('patientList').innerHTML = '<div class="space-y-2">' + html + '</div>';
+            document.getElementById('patientList').innerHTML = '<div class="space-y-2 stagger-children">' + html + '</div>';
+          }
+
+          function updateStats() {
+            var total = allPatients.length;
+            var consulted = allPatients.filter(function(p) { return p.consultation_count > 0; }).length;
+            var paid = allPatients.filter(function(p) { return p.last_consultation_status === 'paid'; }).length;
+            document.getElementById('statTotal').textContent = total;
+            document.getElementById('statConsulted').textContent = consulted;
+            document.getElementById('statPaid').textContent = paid;
           }
 
           async function loadPatients() {
@@ -177,7 +285,8 @@ export const PatientsPage: FC = () => {
               var data = await res.json();
               if (data.success) {
                 allPatients = data.data;
-                renderPatients(allPatients);
+                updateStats();
+                filterAndRender();
               }
             } catch (err) { console.error(err); }
           }

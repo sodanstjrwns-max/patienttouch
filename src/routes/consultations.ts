@@ -18,12 +18,12 @@ consultations.get('/', async (c) => {
     const userId = c.get('userId');
     const db = c.env.DB;
 
-    const { status, patient_id, my_only, limit = '50', offset = '0' } = c.req.query();
+    const { status, patient_id, my_only, search, limit = '50', offset = '0' } = c.req.query();
 
     let query = `
       SELECT c.*, p.name as patient_name, u.name as user_name
       FROM consultations c
-      JOIN patients p ON c.patient_id = p.id
+      LEFT JOIN patients p ON c.patient_id = p.id
       JOIN users u ON c.user_id = u.id
       WHERE c.organization_id = ?
     `;
@@ -42,6 +42,11 @@ consultations.get('/', async (c) => {
     if (patient_id) {
       query += ` AND c.patient_id = ?`;
       params.push(patient_id);
+    }
+
+    if (search) {
+      query += ` AND (p.name LIKE ? OR c.treatment_type LIKE ? OR u.name LIKE ?)`;
+      params.push(`%${search}%`, `%${search}%`, `%${search}%`);
     }
 
     query += ` ORDER BY c.consultation_date DESC LIMIT ? OFFSET ?`;

@@ -13,7 +13,7 @@ export const HomePage: FC = () => {
           </div>
           <div class="flex items-center gap-1.5">
             <a href="/admin" class="w-8 h-8 rounded-xl bg-surface-100 flex items-center justify-center text-surface-400 hover:text-brand-600 hover:bg-brand-50 transition-all">
-              <i class="fas fa-chart-mixed text-xs"></i>
+              <i class="fas fa-chart-line text-xs"></i>
             </a>
             <a href="/settings" class="w-8 h-8 rounded-xl bg-surface-100 flex items-center justify-center text-surface-400 hover:text-brand-600 hover:bg-brand-50 transition-all">
               <i class="fas fa-gear text-xs"></i>
@@ -156,6 +156,53 @@ export const HomePage: FC = () => {
         </div>
 
         <div class="h-6" />
+      </div>
+
+      {/* Contact Record Modal for Home */}
+      <div id="homeContactModal" class="hidden fixed inset-0 bg-surface-900/60 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center">
+        <div class="bg-white rounded-t-3xl sm:rounded-3xl w-full sm:max-w-lg p-6 animate-slide-up">
+          <div class="flex justify-between items-center mb-5">
+            <h3 class="text-lg font-bold text-surface-900">연락 결과 기록</h3>
+            <button onclick="closeHomeContactModal()" class="w-9 h-9 flex items-center justify-center rounded-xl bg-surface-100 hover:bg-surface-200 text-surface-500 transition-all active:scale-95">
+              <i class="fas fa-xmark"></i>
+            </button>
+          </div>
+          <input type="hidden" id="hcPatientId" />
+          <input type="hidden" id="hcTaskId" />
+          <input type="hidden" id="hcSource" />
+          <div class="space-y-4">
+            <div>
+              <label class="block text-sm font-semibold text-surface-700 mb-1.5">연락 방법</label>
+              <div class="flex gap-2">
+                <button class="hc-type-btn flex-1 py-2.5 rounded-xl text-sm font-semibold border-2 border-brand-500 text-brand-600 bg-brand-50 transition-all" data-type="phone" onclick="selectHcType('phone')"><i class="fas fa-phone mr-1.5"></i>전화</button>
+                <button class="hc-type-btn flex-1 py-2.5 rounded-xl text-sm font-semibold border-2 border-surface-200 text-surface-600 transition-all" data-type="text" onclick="selectHcType('text')"><i class="fas fa-comment mr-1.5"></i>문자</button>
+                <button class="hc-type-btn flex-1 py-2.5 rounded-xl text-sm font-semibold border-2 border-surface-200 text-surface-600 transition-all" data-type="kakao" onclick="selectHcType('kakao')"><i class="fas fa-comment-dots mr-1.5"></i>카카오</button>
+              </div>
+            </div>
+            <div>
+              <label class="block text-sm font-semibold text-surface-700 mb-1.5">결과</label>
+              <select id="hcResult" class="w-full px-4 py-3 bg-surface-50 border border-surface-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-400 transition-all">
+                <option value="connected">통화 성공</option>
+                <option value="no_answer">부재중</option>
+                <option value="message_sent">메시지 발송</option>
+                <option value="callback_promised">콜백 약속</option>
+                <option value="appointment_booked">예약 완료</option>
+                <option value="refused">거절</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-sm font-semibold text-surface-700 mb-1.5">메모</label>
+              <textarea id="hcNotes" rows={3} class="w-full px-4 py-3 bg-surface-50 border border-surface-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-400 transition-all resize-none" placeholder="연락 내용 메모"></textarea>
+            </div>
+            <div>
+              <label class="block text-sm font-semibold text-surface-700 mb-1.5">다음 연락 예정일</label>
+              <input type="date" id="hcNextDate" class="w-full px-4 py-3 bg-surface-50 border border-surface-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-400 transition-all" />
+            </div>
+            <button onclick="saveHomeContact()" id="hcSaveBtn" class="w-full bg-gradient-brand text-white font-semibold py-3.5 rounded-xl transition-all active:scale-[0.98] shadow-lg shadow-brand-600/20">
+              <i class="fas fa-check mr-2"></i>기록 저장
+            </button>
+          </div>
+        </div>
       </div>
 
       <script dangerouslySetInnerHTML={{
@@ -544,7 +591,10 @@ export const HomePage: FC = () => {
               if(c.points && c.points.length > 0) html += '<p class="text-[10px] text-surface-500 mt-1 line-clamp-1"><i class="fas fa-lightbulb text-amber-400 mr-1 text-[8px]"></i>'+c.points[0]+'</p>';
               else if(c.recommended_script) html += '<p class="text-[10px] text-surface-500 mt-1 line-clamp-1"><i class="fas fa-sparkles text-brand-400 mr-1 text-[8px]"></i>'+c.recommended_script+'</p>';
               html += '</div>';
-              if(c.patient_phone) html += '<a href="tel:'+c.patient_phone+'" class="w-8 h-8 rounded-lg bg-brand-50 flex items-center justify-center text-brand-600 hover:bg-brand-100 active:scale-90 transition-all shrink-0"><i class="fas fa-phone text-xs"></i></a>';
+              html += '<div class="flex flex-col gap-1.5 shrink-0">';
+              if(c.patient_phone) html += '<a href="tel:'+c.patient_phone+'" class="w-8 h-8 rounded-lg bg-brand-50 flex items-center justify-center text-brand-600 hover:bg-brand-100 active:scale-90 transition-all"><i class="fas fa-phone text-xs"></i></a>';
+              html += '<button onclick="openHomeContactModal(\\'' + c.patient_id + '\\', \\'' + (c.task_id||'') + '\\', \\'' + (c.source||'task') + '\\')" class="w-8 h-8 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-600 hover:bg-emerald-100 active:scale-90 transition-all"><i class="fas fa-check text-xs"></i></button>';
+              html += '</div>';
               html += '</div></div>';
             });
 
@@ -565,6 +615,97 @@ export const HomePage: FC = () => {
                 if(btn){btn.disabled=false;btn.innerHTML='<i class="fas fa-rotate mr-1"></i>갱신';}
               }
             } catch(e) { alert('오류가 발생했습니다.'); }
+          }
+
+          // === HOME CONTACT MODAL ===
+          var hcContactType = 'phone';
+          function openHomeContactModal(patientId, taskId, source) {
+            document.getElementById('hcPatientId').value = patientId || '';
+            document.getElementById('hcTaskId').value = taskId || '';
+            document.getElementById('hcSource').value = source || 'task';
+            document.getElementById('hcResult').value = 'connected';
+            document.getElementById('hcNotes').value = '';
+            document.getElementById('hcNextDate').value = '';
+            hcContactType = 'phone';
+            document.querySelectorAll('.hc-type-btn').forEach(function(b) {
+              b.className = b.dataset.type === 'phone'
+                ? 'hc-type-btn flex-1 py-2.5 rounded-xl text-sm font-semibold border-2 border-brand-500 text-brand-600 bg-brand-50 transition-all'
+                : 'hc-type-btn flex-1 py-2.5 rounded-xl text-sm font-semibold border-2 border-surface-200 text-surface-600 transition-all';
+            });
+            document.getElementById('homeContactModal').classList.remove('hidden');
+          }
+          function closeHomeContactModal() { document.getElementById('homeContactModal').classList.add('hidden'); }
+          function selectHcType(type) {
+            hcContactType = type;
+            document.querySelectorAll('.hc-type-btn').forEach(function(b) {
+              b.className = b.dataset.type === type
+                ? 'hc-type-btn flex-1 py-2.5 rounded-xl text-sm font-semibold border-2 border-brand-500 text-brand-600 bg-brand-50 transition-all'
+                : 'hc-type-btn flex-1 py-2.5 rounded-xl text-sm font-semibold border-2 border-surface-200 text-surface-600 transition-all';
+            });
+          }
+          async function saveHomeContact() {
+            var btn = document.getElementById('hcSaveBtn');
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>저장 중...';
+            try {
+              var patientId = document.getElementById('hcPatientId').value;
+              var taskId = document.getElementById('hcTaskId').value;
+              var source = document.getElementById('hcSource').value;
+              var result = document.getElementById('hcResult').value;
+              var notes = document.getElementById('hcNotes').value;
+              var nextDate = document.getElementById('hcNextDate').value;
+
+              // Save via retention contacts API
+              var res = await fetch('/api/retention/contacts', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  patient_id: patientId,
+                  contact_type: hcContactType === 'text' ? 'text' : hcContactType,
+                  result: result,
+                  notes: notes,
+                  next_contact_date: nextDate || null
+                })
+              });
+              var data = await res.json();
+
+              // Also complete the task if it came from a task
+              if (taskId && source === 'task') {
+                var taskResult = result === 'appointment_booked' ? 'booked' : result === 'callback_promised' ? 'callback' : result === 'refused' ? 'rejected' : 'hold';
+                await fetch('/api/tasks/' + taskId + '/complete', {
+                  method: 'PUT',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ result: taskResult, result_note: notes })
+                });
+              }
+
+              if (data.success) {
+                closeHomeContactModal();
+                // Reload contacts section without full page reload
+                var cRes = await fetch('/api/dashboard/today-contacts');
+                var cData = await cRes.json();
+                renderContacts(cData);
+                // Update mission progress
+                var sRes = await fetch('/api/dashboard/summary');
+                var sData = await sRes.json();
+                if (sData.success) {
+                  var tm = sData.data.today_mission || {};
+                  var td = sData.data.today || {};
+                  var mTotal = (tm.contacts_total||0) + (td.total_consultations||0);
+                  var mDone = (tm.contacts_done||0) + (td.total_consultations||0);
+                  var mPct = mTotal > 0 ? Math.min(100, Math.round((mDone / mTotal) * 100)) : 0;
+                  var mEl = document.getElementById('todayMission');
+                  if (mEl) {
+                    mEl.classList.remove('hidden');
+                    mEl.innerHTML =
+                      '<div class="flex items-center justify-between mb-2.5"><div class="flex items-center gap-2"><div class="w-6 h-6 rounded-lg bg-brand-50 flex items-center justify-center"><i class="fas fa-flag text-[10px] text-brand-600"></i></div><span class="text-sm font-bold text-surface-900">\uc624\ub298 \ubbf8\uc158</span></div><span class="text-xs font-extrabold '+(mPct>=100?'text-emerald-600':'text-brand-600')+'">'+mPct+'%</span></div>' +
+                      '<div class="h-2 bg-surface-100 rounded-full overflow-hidden mb-3"><div class="h-full rounded-full transition-all duration-1000 '+(mPct>=100?'bg-emerald-500':'bg-brand-500')+'" style="width:'+mPct+'%"></div></div>' +
+                      '<div class="flex items-center gap-3"><div class="flex items-center gap-1.5"><i class="fas fa-phone text-[10px] text-brand-500"></i><span class="text-[11px] font-semibold text-surface-700">\uc5f0\ub77d <b class="text-brand-600">'+(tm.contacts_done||0)+'</b>/'+(tm.contacts_total||0)+'</span></div><div class="flex items-center gap-1.5"><i class="fas fa-stethoscope text-[10px] text-sky-500"></i><span class="text-[11px] font-semibold text-surface-700">\uc0c1\ub2f4 <b class="text-sky-600">'+(tm.consultations_done||0)+'</b>\uac74</span></div><div class="flex items-center gap-1.5"><i class="fas fa-circle-check text-[10px] text-emerald-500"></i><span class="text-[11px] font-semibold text-surface-700">\uacb0\uc815 <b class="text-emerald-600">'+(tm.decisions_done||0)+'</b>\uac74</span></div></div>';
+                  }
+                }
+              } else { alert(data.error || '\uc800\uc7a5\uc5d0 \uc2e4\ud328\ud588\uc2b5\ub2c8\ub2e4.'); }
+            } catch (err) { alert('\uc624\ub958\uac00 \ubc1c\uc0dd\ud588\uc2b5\ub2c8\ub2e4.'); }
+            finally { btn.disabled = false; btn.innerHTML = '<i class="fas fa-check mr-2"></i>\uae30\ub85d \uc800\uc7a5'; }
           }
 
           // === LOGOUT ===

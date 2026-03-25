@@ -899,4 +899,172 @@ dashboard.get('/today-contacts', async (c) => {
   }
 });
 
+// ============================================
+// Report Analysis Endpoints (경로별/치료항목별)
+// ============================================
+
+// GET /api/dashboard/referral-roi - 내원경로별 ROI 분석
+dashboard.get('/referral-roi', async (c) => {
+  try {
+    const orgId = c.get('organizationId');
+    const userId = c.get('userId');
+    const db = c.env.DB;
+    const { period = 'month' } = c.req.query();
+
+    let daysBack = 30;
+    if (period === 'week') daysBack = 7;
+    if (period === 'quarter') daysBack = 90;
+
+    const result = await db.prepare(`
+      SELECT 
+        COALESCE(p.referral_source, '미분류') as referral_source,
+        COUNT(c.id) as total_consultations,
+        SUM(CASE WHEN c.status = 'paid' THEN 1 ELSE 0 END) as paid_consultations,
+        SUM(CASE WHEN c.status = 'undecided' THEN 1 ELSE 0 END) as undecided_consultations,
+        SUM(CASE WHEN c.status = 'lost' THEN 1 ELSE 0 END) as lost_consultations,
+        SUM(CASE WHEN c.status = 'paid' THEN c.amount ELSE 0 END) as paid_amount,
+        SUM(COALESCE(c.amount, 0)) as total_amount,
+        AVG(CASE WHEN c.ai_analysis_status = 'completed' THEN 
+          CAST(json_extract(c.feedback, '$.total_score') AS REAL) 
+        END) as avg_score,
+        AVG(c.decision_score) as avg_decision_score,
+        COUNT(DISTINCT p.id) as unique_patients
+      FROM consultations c
+      JOIN patients p ON c.patient_id = p.id
+      WHERE c.organization_id = ? AND c.user_id = ?
+        AND c.consultation_date >= datetime('now', '-${daysBack} days')
+      GROUP BY COALESCE(p.referral_source, '미분류')
+      ORDER BY paid_amount DESC
+    `).bind(orgId, userId).all();
+
+    const data = result.results.map(r => {
+      const total = (r.total_consultations as number) || 0;
+      const paid = (r.paid_consultations as number) || 0;
+      return {
+        referral_source: r.referral_source,
+        total_consultations: total,
+        paid_consultations: paid,
+        undecided_consultations: r.undecided_consultations || 0,
+        lost_consultations: r.lost_consultations || 0,
+        conversion_rate: total > 0 ? Math.round((paid / total) * 100) : 0,
+        paid_amount: r.paid_amount || 0,
+        total_amount: r.total_amount || 0,
+        avg_score: Math.round((r.avg_score as number) || 0),
+        avg_decision_score: Math.round(((r.avg_decision_score as number) || 0) * 10) / 10,
+        unique_patients: r.unique_patients || 0,
+        // ROI = paid_amount / total_consultations (단가)
+        revenue_per_consult: total > 0 ? Math.round(((r.paid_amount as number) || 0) / total) : 0
+      };
+    });
+
+    return c.json({ success: true, data, period });
+  } catch (error) {
+    console.error('Referral ROI error:', error);
+    return c.json({ success: false, error: '내원경로 분석에 실패했습니다.' }, 500);
+  }
+});
+
+// GET /api/dashboard/treatment-analysis - 치료항목별 전환율 분석
+dashboard.get('/treatment-analysis', async (c) => {
+  try {
+    const orgId = c.get('organizationId');
+    const userId = c.get('userId');
+    const db = c.env.DB;
+    const { period = 'month' } = c.req.query();
+
+    let daysBack = 30;
+    if (period === 'week') daysBack = 7;
+    if (period === 'quarter') daysBack = 90;
+
+    const result = await db.prepare(`
+      SELECT 
+        COALESCE(c.treatment_type, '미분류') as treatment_type,
+        COUNT(c.id) as total_consultations,
+        SUM(CASE WHEN c.status = 'paid' THEN 1 ELSE 0 END) as paid_consultations,
+        SUM(CASE WHEN c.status = 'undecided' THEN 1 ELSE 0 END) as undecided_consultations,
+        SUM(CASE WHEN c.status = 'lost' THEN 1 ELSE 0 END) as lost_consultations,
+        SUM(CASE WHEN c.status = 'paid' THEN c.amount ELSE 0 END) as paid_amount,
+        SUM(COALESCE(c.amount, 0)) as total_amount,
+        AVG(c.amount) as avg_amount,
+        AVG(CASE WHEN c.ai_analysis_status = 'completed' THEN 
+          CAST(json_extract(c.feedback, '$.total_score') AS REAL) 
+        END) as avg_score,
+        AVG(c.decision_score) as avg_decision_score
+      FROM consultations c
+      WHERE c.organization_id = ? AND c.user_id = ?
+        AND c.consultation_date >= datetime('now', '-${daysBack} days')
+      GROUP BY COALESCE(c.treatment_type, '미분류')
+      ORDER BY paid_amount DESC
+    `).bind(orgId, userId).all();
+
+    const data = result.results.map(r => {
+      const total = (r.total_consultations as number) || 0;
+      const paid = (r.paid_consultations as number) || 0;
+      return {
+        treatment_type: r.treatment_type,
+        total_consultations: total,
+        paid_consultations: paid,
+        undecided_consultations: r.undecided_consultations || 0,
+        lost_consultations: r.lost_consultations || 0,
+        conversion_rate: total > 0 ? Math.round((paid / total) * 100) : 0,
+        paid_amount: r.paid_amount || 0,
+        total_amount: r.total_amount || 0,
+        avg_amount: Math.round((r.avg_amount as number) || 0),
+        avg_score: Math.round((r.avg_score as number) || 0),
+        avg_decision_score: Math.round(((r.avg_decision_score as number) || 0) * 10) / 10
+      };
+    });
+
+    return c.json({ success: true, data, period });
+  } catch (error) {
+    console.error('Treatment analysis error:', error);
+    return c.json({ success: false, error: '치료항목 분석에 실패했습니다.' }, 500);
+  }
+});
+
+// GET /api/dashboard/revenue-trend - 매출 추이 (일별)
+dashboard.get('/revenue-trend', async (c) => {
+  try {
+    const orgId = c.get('organizationId');
+    const userId = c.get('userId');
+    const db = c.env.DB;
+    const { days = '30' } = c.req.query();
+
+    const result = await db.prepare(`
+      SELECT 
+        date(consultation_date) as date,
+        COUNT(*) as total_consultations,
+        SUM(CASE WHEN status = 'paid' THEN 1 ELSE 0 END) as paid_consultations,
+        SUM(CASE WHEN status = 'paid' THEN amount ELSE 0 END) as paid_amount,
+        SUM(COALESCE(amount, 0)) as total_amount,
+        AVG(CASE WHEN ai_analysis_status = 'completed' THEN 
+          CAST(json_extract(feedback, '$.total_score') AS REAL) 
+        END) as avg_score
+      FROM consultations
+      WHERE organization_id = ? AND user_id = ?
+        AND consultation_date >= datetime('now', '-${parseInt(days)} days')
+      GROUP BY date(consultation_date)
+      ORDER BY date ASC
+    `).bind(orgId, userId).all();
+
+    return c.json({
+      success: true,
+      data: result.results.map(r => ({
+        date: r.date,
+        total_consultations: r.total_consultations || 0,
+        paid_consultations: r.paid_consultations || 0,
+        paid_amount: r.paid_amount || 0,
+        total_amount: r.total_amount || 0,
+        avg_score: Math.round((r.avg_score as number) || 0),
+        conversion_rate: (r.total_consultations as number) > 0
+          ? Math.round(((r.paid_consultations as number) || 0) / (r.total_consultations as number) * 100)
+          : 0
+      }))
+    });
+  } catch (error) {
+    console.error('Revenue trend error:', error);
+    return c.json({ success: false, error: '매출 추이 조회에 실패했습니다.' }, 500);
+  }
+});
+
 export default dashboard;

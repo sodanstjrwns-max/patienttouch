@@ -40,8 +40,8 @@ patients.get('/', async (c) => {
     }
 
     if (search) {
-      query += ` AND (p.name LIKE ? OR p.phone LIKE ?)`;
-      params.push(`%${search}%`, `%${search}%`);
+      query += ` AND (p.name LIKE ? OR p.phone LIKE ? OR p.referral_source LIKE ? OR p.region LIKE ? OR p.tags LIKE ? OR p.memo LIKE ?)`;
+      params.push(`%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`);
     }
 
     query += ` ORDER BY p.updated_at DESC LIMIT ? OFFSET ?`;

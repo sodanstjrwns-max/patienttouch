@@ -225,6 +225,8 @@ export const RetentionPage: FC = () => {
                   html += '<a href="sms:' + c.patient_phone + '" class="flex-1 flex items-center justify-center gap-1.5 py-2 bg-surface-800 text-white rounded-lg text-xs font-semibold hover:bg-surface-900 transition-all active:scale-95"><i class="fas fa-comment text-[10px]"></i>문자</a>';
                 }
                 html += '<button onclick="openContactModal(\\'' + c.patient_id + '\\', \\'' + (treatments.length > 0 ? treatments[0].id : '') + '\\')" class="flex-1 flex items-center justify-center gap-1.5 py-2 bg-emerald-600 text-white rounded-lg text-xs font-semibold hover:bg-emerald-700 transition-all active:scale-95"><i class="fas fa-check text-[10px]"></i>기록</button>';
+                // KakaoTalk template button
+                html += '<button onclick="showKakaoTemplate(\\'' + c.patient_name + '\\', \\'' + (c.recommended_contact_script || '').replace(/'/g, "\\\\'") + '\\', \\'' + (c.patient_phone || '') + '\\')" class="w-10 flex items-center justify-center py-2 bg-yellow-400 text-yellow-900 rounded-lg text-xs font-bold hover:bg-yellow-500 transition-all active:scale-95" title="카카오톡 문구"><i class="fas fa-comment-dots text-[10px]"></i></button>';
                 html += '</div></div>';
               });
               html += '</div>';
@@ -395,7 +397,17 @@ export const RetentionPage: FC = () => {
                 })
               });
               var data = await res.json();
-              if (data.success) { closeContactModal(); loadDashboard(); }
+              if (data.success) {
+                closeContactModal();
+                // Smooth update: remove the contacted patient from the list and update KPIs
+                loadDashboard();
+                // Show success toast
+                var toast = document.createElement('div');
+                toast.className = 'fixed top-20 left-1/2 -translate-x-1/2 bg-emerald-600 text-white px-5 py-2.5 rounded-xl text-sm font-semibold shadow-lg z-[60] animate-fade-in';
+                toast.innerHTML = '<i class="fas fa-check-circle mr-2"></i>연락 기록이 저장되었습니다';
+                document.body.appendChild(toast);
+                setTimeout(function(){ toast.remove(); }, 2500);
+              }
               else { alert(data.error || '저장에 실패했습니다.'); }
             } catch (err) { alert('오류가 발생했습니다.'); }
           }
@@ -409,6 +421,54 @@ export const RetentionPage: FC = () => {
             } catch (err) { console.error(err); }
             btn.innerHTML = '<i class="fas fa-arrows-rotate text-sm"></i>';
           }
+
+          // ============================================
+          // KakaoTalk Message Templates
+          // ============================================
+          function showKakaoTemplate(patientName, script, phone) {
+            var templates = [
+              { label: '🔔 안부 인사', msg: patientName + '님, 안녕하세요! ' + (script || '치료 경과가 궁금하여 연락드립니다.') + '\\n\\n편하신 시간에 말씀 부탁드립니다 😊' },
+              { label: '📅 예약 권유', msg: patientName + '님, 안녕하세요!\\n지난번 상담해 주셨던 치료 진행에 대해 궁금하실 것 같아 연락드립니다.\\n\\n혹시 추가 상담이나 예약을 원하시면 편하게 연락 주세요!\\n📞 전화 or 이 메시지에 답장으로도 가능합니다.' },
+              { label: '⚠️ 치료 미완료', msg: patientName + '님, 안녕하세요!\\n진행 중이셨던 치료가 남아있어 안내드립니다.\\n\\n중단된 치료는 시간이 지날수록 추가 비용이나 더 큰 치료가 필요할 수 있습니다.\\n간단한 체크업만으로도 상태 확인이 가능하니, 부담 갖지 마시고 방문해 주세요 😊' },
+              { label: '🦷 리콜 정기검진', msg: patientName + '님, 안녕하세요!\\n정기 검진 시기가 되어 안내드립니다.\\n\\n6개월마다 정기 검진을 받으시면 큰 치료를 예방할 수 있어요.\\n예약을 원하시면 편하게 연락 주세요! 😊' },
+              { label: '💝 감사 & 소개', msg: patientName + '님, 안녕하세요!\\n치료 잘 마무리해 주셔서 감사합니다.\\n\\n혹시 주변에 치과 치료가 필요하신 분이 계시다면 소개해 주세요.\\n소개해 주신 분께도 특별 혜택을 드리겠습니다! 🎁' }
+            ];
+
+            window._kakaoTemplates = templates;
+            var html = '<div class="fixed inset-0 bg-surface-900/60 backdrop-blur-sm z-[60] flex items-end sm:items-center justify-center" id="kakaoModal" onclick="if(event.target.id===\\'kakaoModal\\')this.remove()">';
+            html += '<div class="bg-white rounded-t-3xl sm:rounded-3xl w-full sm:max-w-lg p-6 animate-slide-up max-h-[85vh] overflow-y-auto">';
+            html += '<div class="flex justify-between items-center mb-5"><h3 class="text-lg font-bold">💬 카카오톡 문구</h3><button onclick="document.getElementById(\\'kakaoModal\\').remove()" class="w-9 h-9 rounded-xl bg-surface-100 flex items-center justify-center text-surface-500"><i class="fas fa-xmark"></i></button></div>';
+            html += '<p class="text-xs text-surface-500 mb-4">템플릿을 선택하면 클립보드에 복사됩니다.</p>';
+            html += '<div class="space-y-3">';
+            templates.forEach(function(t, i) {
+              html += '<div class="p-4 bg-yellow-50 rounded-xl border border-yellow-200 cursor-pointer hover:bg-yellow-100 transition-all active:scale-[0.98]" onclick="copyKakaoMsg(' + i + ')">';
+              html += '<div class="flex items-center justify-between mb-2"><span class="text-sm font-bold text-surface-900">' + t.label + '</span><i class="fas fa-copy text-yellow-600 text-xs"></i></div>';
+              html += '<p class="text-xs text-surface-600 whitespace-pre-line leading-relaxed">' + t.msg.replace(/\\\\n/g, '<br>') + '</p>';
+              html += '</div>';
+            });
+            html += '</div></div></div>';
+            document.body.insertAdjacentHTML('beforeend', html);
+          }
+
+          window.copyKakaoMsg = function(idx) {
+            var msg = window._kakaoTemplates[idx].msg.replace(/\\\\n/g, '\\n');
+            if (navigator.clipboard) {
+              navigator.clipboard.writeText(msg).then(function() {
+                var toast = document.createElement('div');
+                toast.className = 'fixed top-20 left-1/2 -translate-x-1/2 bg-yellow-500 text-white px-5 py-2.5 rounded-xl text-sm font-semibold shadow-lg z-[70] animate-fade-in';
+                toast.innerHTML = '<i class="fas fa-check-circle mr-2"></i>문구가 복사되었습니다!';
+                document.body.appendChild(toast);
+                setTimeout(function(){ toast.remove(); }, 2000);
+              });
+            } else {
+              var ta = document.createElement('textarea');
+              ta.value = msg; document.body.appendChild(ta); ta.select();
+              document.execCommand('copy'); ta.remove();
+              alert('복사되었습니다!');
+            }
+            var modal = document.getElementById('kakaoModal');
+            if (modal) modal.remove();
+          };
 
           loadDashboard();
         `
