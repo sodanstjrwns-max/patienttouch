@@ -141,9 +141,9 @@ export const PatientsPage: FC = () => {
             document.getElementById('addPatientModal').classList.add('hidden');
           };
 
-          document.getElementById('searchInput').addEventListener('input', function(e) {
+          document.getElementById('searchInput').addEventListener('input', debounce(function(e) {
             filterAndRender();
-          });
+          }, 200));
 
           document.getElementById('sortSelect').addEventListener('change', function(e) {
             currentSort = e.target.value;

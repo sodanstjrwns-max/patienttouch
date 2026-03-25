@@ -500,6 +500,57 @@ export const renderer = jsxRenderer(({ children, title }) => {
             function fmtWon(n){ if(!n&&n!==0) return '0'; return Math.round(n/10000).toLocaleString(); }
             function fmtDate(d){ if(!d) return '-'; return new Date(d).toLocaleDateString('ko-KR',{month:'short',day:'numeric'}); }
             function fmtFullDate(d){ if(!d) return '-'; return new Date(d).toLocaleDateString('ko-KR',{year:'numeric',month:'2-digit',day:'2-digit'}); }
+
+            // === 8. Debounce utility ===
+            function debounce(fn, delay) {
+              var timer;
+              return function() {
+                var ctx = this, args = arguments;
+                clearTimeout(timer);
+                timer = setTimeout(function(){ fn.apply(ctx, args); }, delay);
+              };
+            }
+
+            // === 9. Request dedup / in-flight cache ===
+            var _fetchCache = {};
+            function fetchCached(url, ttlMs) {
+              ttlMs = ttlMs || 5000;
+              var now = Date.now();
+              if (_fetchCache[url] && (now - _fetchCache[url].t) < ttlMs) {
+                return Promise.resolve(_fetchCache[url].data);
+              }
+              return fetch(url).then(function(r){ return r.json(); }).then(function(d){
+                _fetchCache[url] = { data: d, t: Date.now() };
+                return d;
+              });
+            }
+
+            // === 10. Number format with animation ===
+            function animateValue(el, end, duration, suffix) {
+              if (!el) return;
+              suffix = suffix || '';
+              var start = 0;
+              var startTime = null;
+              function step(ts) {
+                if (!startTime) startTime = ts;
+                var progress = Math.min((ts - startTime) / duration, 1);
+                var ease = 1 - Math.pow(1 - progress, 3);
+                el.textContent = Math.round(ease * end).toLocaleString() + suffix;
+                if (progress < 1) requestAnimationFrame(step);
+              }
+              requestAnimationFrame(step);
+            }
+
+            // === 11. Lazy intersection observer ===
+            function lazyLoad(selector, callback) {
+              if (!('IntersectionObserver' in window)) { callback(); return; }
+              var observer = new IntersectionObserver(function(entries) {
+                entries.forEach(function(entry) {
+                  if (entry.isIntersecting) { callback(entry.target); observer.unobserve(entry.target); }
+                });
+              }, { rootMargin: '100px' });
+              document.querySelectorAll(selector).forEach(function(el) { observer.observe(el); });
+            }
           `
         }} />
 

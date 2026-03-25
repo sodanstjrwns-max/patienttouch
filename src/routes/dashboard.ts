@@ -2,6 +2,7 @@
 import { Hono } from 'hono';
 import { safeParseJSON } from '../lib/utils';
 import { authMiddleware } from '../lib/auth';
+import { safeInt, validatePeriod, validateAdminPeriod, periodToDays, setCacheHeaders } from '../lib/middleware';
 import type { Env, KPIData } from '../types';
 
 const dashboard = new Hono<{ Bindings: Env }>();
@@ -17,54 +18,40 @@ dashboard.get('/kpi', async (c) => {
     const db = c.env.DB;
 
     const { period = 'week' } = c.req.query();
+    const daysBack = periodToDays(validatePeriod(period));
 
-    // Calculate date range
-    let daysBack = 7;
-    if (period === 'month') daysBack = 30;
-    if (period === 'quarter') daysBack = 90;
-
-    const dateCondition = `datetime('now', '-${daysBack} days')`;
-
-    // Get consultation stats
-    const consultStats = await db.prepare(`
-      SELECT 
-        COUNT(*) as total_consultations,
-        SUM(CASE WHEN status = 'paid' THEN 1 ELSE 0 END) as paid_consultations,
-        SUM(CASE WHEN status = 'undecided' THEN 1 ELSE 0 END) as undecided_consultations,
-        AVG(CASE WHEN ai_analysis_status = 'completed' THEN 
-          CAST(json_extract(feedback, '$.total_score') AS INTEGER) 
-        END) as avg_score,
-        SUM(CASE WHEN status = 'paid' THEN amount ELSE 0 END) as total_amount
-      FROM consultations 
-      WHERE organization_id = ? AND user_id = ?
-        AND consultation_date >= ${dateCondition}
-    `).bind(orgId, userId).first();
-
-    // Get task stats
-    const taskStats = await db.prepare(`
-      SELECT 
-        COUNT(*) as total_tasks,
-        SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed_tasks,
-        SUM(CASE WHEN status = 'completed' AND result = 'booked' THEN 1 ELSE 0 END) as successful_tasks
-      FROM contact_tasks
-      WHERE organization_id = ? AND user_id = ?
-        AND created_at >= ${dateCondition}
-    `).bind(orgId, userId).first();
-
-    // Get re-consultation success (미결정 → 결제)
-    const reConsultStats = await db.prepare(`
-      SELECT COUNT(DISTINCT c.patient_id) as re_consultation_success
-      FROM consultations c
-      WHERE c.organization_id = ? AND c.user_id = ?
-        AND c.status = 'paid'
-        AND c.consultation_date >= ${dateCondition}
-        AND EXISTS (
-          SELECT 1 FROM consultations prev
-          WHERE prev.patient_id = c.patient_id
-            AND prev.status = 'undecided'
-            AND prev.consultation_date < c.consultation_date
-        )
-    `).bind(orgId, userId).first();
+    // Parallel KPI queries
+    const [consultStats, taskStats, reConsultStats] = await Promise.all([
+      db.prepare(`
+        SELECT COUNT(*) as total_consultations,
+          SUM(CASE WHEN status = 'paid' THEN 1 ELSE 0 END) as paid_consultations,
+          SUM(CASE WHEN status = 'undecided' THEN 1 ELSE 0 END) as undecided_consultations,
+          AVG(CASE WHEN ai_analysis_status = 'completed' THEN 
+            CAST(json_extract(feedback, '$.total_score') AS INTEGER) END) as avg_score,
+          SUM(CASE WHEN status = 'paid' THEN amount ELSE 0 END) as total_amount
+        FROM consultations 
+        WHERE organization_id = ? AND user_id = ?
+          AND consultation_date >= datetime('now', '-' || ? || ' days')
+      `).bind(orgId, userId, daysBack).first(),
+      db.prepare(`
+        SELECT COUNT(*) as total_tasks,
+          SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed_tasks,
+          SUM(CASE WHEN status = 'completed' AND result = 'booked' THEN 1 ELSE 0 END) as successful_tasks
+        FROM contact_tasks
+        WHERE organization_id = ? AND user_id = ?
+          AND created_at >= datetime('now', '-' || ? || ' days')
+      `).bind(orgId, userId, daysBack).first(),
+      db.prepare(`
+        SELECT COUNT(DISTINCT c.patient_id) as re_consultation_success
+        FROM consultations c
+        WHERE c.organization_id = ? AND c.user_id = ? AND c.status = 'paid'
+          AND c.consultation_date >= datetime('now', '-' || ? || ' days')
+          AND EXISTS (
+            SELECT 1 FROM consultations prev
+            WHERE prev.patient_id = c.patient_id AND prev.status = 'undecided' AND prev.consultation_date < c.consultation_date
+          )
+      `).bind(orgId, userId, daysBack).first()
+    ]);
 
     // Calculate KPIs
     const totalConsultations = (consultStats?.total_consultations as number) || 0;
@@ -114,266 +101,194 @@ dashboard.get('/kpi', async (c) => {
   }
 });
 
-// GET /api/dashboard/summary - Get home dashboard summary (ENHANCED v2)
+// GET /api/dashboard/summary - Get home dashboard summary (OPTIMIZED v3)
 dashboard.get('/summary', async (c) => {
   try {
     const orgId = c.get('organizationId');
     const userId = c.get('userId');
     const db = c.env.DB;
-
-    // Get user info
-    const user = await db.prepare(`
-      SELECT u.name, u.goals, o.name as organization_name
-      FROM users u
-      JOIN organizations o ON u.organization_id = o.id
-      WHERE u.id = ?
-    `).bind(userId).first();
-
-    // Get today's tasks count
     const today = new Date().toISOString().split('T')[0];
-    const todayTasks = await db.prepare(`
-      SELECT 
-        COUNT(*) as total,
-        SUM(CASE WHEN task_type = 'closing' THEN 1 ELSE 0 END) as closing,
-        SUM(CASE WHEN task_type = 'proactive' THEN 1 ELSE 0 END) as proactive
-      FROM contact_tasks
-      WHERE organization_id = ? AND user_id = ? 
-        AND status = 'pending'
-        AND recommended_date <= ?
-    `).bind(orgId, userId, today).first();
 
-    // ====== TODAY STATS ======
-    const todayConsults = await db.prepare(`
-      SELECT 
-        COUNT(*) as total,
-        SUM(CASE WHEN status = 'paid' THEN 1 ELSE 0 END) as paid,
-        SUM(CASE WHEN status = 'undecided' THEN 1 ELSE 0 END) as undecided,
-        SUM(CASE WHEN status = 'paid' THEN amount ELSE 0 END) as today_decided,
-        SUM(COALESCE(amount, 0)) as today_consulted
-      FROM consultations 
-      WHERE organization_id = ? AND user_id = ?
-        AND date(consultation_date) = date('now')
-    `).bind(orgId, userId).first();
+    // === BATCH ALL QUERIES IN PARALLEL (12→6 batched) ===
+    const [
+      user,
+      todayTasks,
+      todayConsults,
+      weekRevenue,
+      prevWeekRevenue,
+      dailySparkline,
+      weekTaskStats,
+      prevWeekTaskStats,
+      mvpCase,
+      recentConsults,
+      prevWeekKPI,
+      staleUndecided,
+      todayCompletedTasks
+    ] = await Promise.all([
+      // User info
+      db.prepare(`
+        SELECT u.name, u.goals, o.name as organization_name
+        FROM users u JOIN organizations o ON u.organization_id = o.id
+        WHERE u.id = ?
+      `).bind(userId).first(),
+      // Today's pending tasks
+      db.prepare(`
+        SELECT COUNT(*) as total,
+          SUM(CASE WHEN task_type = 'closing' THEN 1 ELSE 0 END) as closing,
+          SUM(CASE WHEN task_type = 'proactive' THEN 1 ELSE 0 END) as proactive
+        FROM contact_tasks
+        WHERE organization_id = ? AND user_id = ? AND status = 'pending' AND recommended_date <= ?
+      `).bind(orgId, userId, today).first(),
+      // Today's consultations
+      db.prepare(`
+        SELECT COUNT(*) as total,
+          SUM(CASE WHEN status = 'paid' THEN 1 ELSE 0 END) as paid,
+          SUM(CASE WHEN status = 'undecided' THEN 1 ELSE 0 END) as undecided,
+          SUM(CASE WHEN status = 'paid' THEN amount ELSE 0 END) as today_decided,
+          SUM(COALESCE(amount, 0)) as today_consulted
+        FROM consultations 
+        WHERE organization_id = ? AND user_id = ? AND date(consultation_date) = date('now')
+      `).bind(orgId, userId).first(),
+      // Week revenue & stats
+      db.prepare(`
+        SELECT SUM(CASE WHEN status = 'paid' THEN amount ELSE 0 END) as week_decided,
+          SUM(COALESCE(amount, 0)) as week_consulted,
+          COUNT(*) as total_consultations,
+          SUM(CASE WHEN status = 'paid' THEN 1 ELSE 0 END) as paid_consultations,
+          AVG(CASE WHEN ai_analysis_status = 'completed' THEN CAST(json_extract(feedback, '$.total_score') AS INTEGER) END) as avg_score
+        FROM consultations 
+        WHERE organization_id = ? AND user_id = ? AND consultation_date >= datetime('now', '-7 days')
+      `).bind(orgId, userId).first(),
+      // Previous week revenue
+      db.prepare(`
+        SELECT SUM(CASE WHEN status = 'paid' THEN amount ELSE 0 END) as prev_week_decided
+        FROM consultations WHERE organization_id = ? AND user_id = ?
+          AND consultation_date >= datetime('now', '-14 days') AND consultation_date < datetime('now', '-7 days')
+      `).bind(orgId, userId).first(),
+      // Sparkline (7 days)
+      db.prepare(`
+        SELECT date(consultation_date) as date, COUNT(*) as total,
+          SUM(CASE WHEN status = 'paid' THEN 1 ELSE 0 END) as paid,
+          SUM(CASE WHEN status = 'paid' THEN amount ELSE 0 END) as decided,
+          SUM(COALESCE(amount, 0)) as consulted
+        FROM consultations WHERE organization_id = ? AND user_id = ? AND consultation_date >= datetime('now', '-7 days')
+        GROUP BY date(consultation_date) ORDER BY date ASC
+      `).bind(orgId, userId).all(),
+      // Week task stats
+      db.prepare(`
+        SELECT COUNT(*) as total_tasks,
+          SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed_tasks
+        FROM contact_tasks WHERE organization_id = ? AND user_id = ? AND created_at >= datetime('now', '-7 days')
+      `).bind(orgId, userId).first(),
+      // Previous week task stats
+      db.prepare(`
+        SELECT COUNT(*) as total_tasks,
+          SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed_tasks
+        FROM contact_tasks WHERE organization_id = ? AND user_id = ?
+          AND created_at >= datetime('now', '-14 days') AND created_at < datetime('now', '-7 days')
+      `).bind(orgId, userId).first(),
+      // MVP case
+      db.prepare(`
+        SELECT c.id, c.treatment_type, c.amount, c.decision_score,
+          p.name as patient_name, json_extract(c.feedback, '$.total_score') as consult_score
+        FROM consultations c JOIN patients p ON c.patient_id = p.id
+        WHERE c.organization_id = ? AND c.user_id = ? AND c.status = 'paid' AND c.consultation_date >= datetime('now', '-7 days')
+        ORDER BY c.amount DESC LIMIT 1
+      `).bind(orgId, userId).first(),
+      // Recent consultations (today)
+      db.prepare(`
+        SELECT c.*, p.name as patient_name FROM consultations c
+        JOIN patients p ON c.patient_id = p.id
+        WHERE c.organization_id = ? AND c.user_id = ? AND date(c.consultation_date) = date('now')
+        ORDER BY c.consultation_date DESC LIMIT 5
+      `).bind(orgId, userId).all(),
+      // Previous week KPI
+      db.prepare(`
+        SELECT COUNT(*) as total_consultations,
+          SUM(CASE WHEN status = 'paid' THEN 1 ELSE 0 END) as paid_consultations,
+          AVG(CASE WHEN ai_analysis_status = 'completed' THEN CAST(json_extract(feedback, '$.total_score') AS INTEGER) END) as avg_score
+        FROM consultations WHERE organization_id = ? AND user_id = ?
+          AND consultation_date >= datetime('now', '-14 days') AND consultation_date < datetime('now', '-7 days')
+      `).bind(orgId, userId).first(),
+      // Stale undecided alert (3+ days without contact)
+      db.prepare(`
+        SELECT COUNT(*) as count, SUM(COALESCE(c.amount, 0)) as total_amount
+        FROM consultations c
+        WHERE c.organization_id = ? AND c.user_id = ? AND c.status = 'undecided'
+          AND julianday('now') - julianday(c.consultation_date) >= 3
+          AND NOT EXISTS (SELECT 1 FROM contact_tasks t WHERE t.consultation_id = c.id AND t.status = 'completed')
+      `).bind(orgId, userId).first(),
+      // Today completed tasks
+      db.prepare(`
+        SELECT COUNT(*) as done FROM contact_tasks
+        WHERE organization_id = ? AND user_id = ? AND status = 'completed' AND date(completed_at) = date('now')
+      `).bind(orgId, userId).first()
+    ]);
 
-    // ====== WEEK DECIDED & TARGET ======
-    const weekRevenue = await db.prepare(`
-      SELECT 
-        SUM(CASE WHEN status = 'paid' THEN amount ELSE 0 END) as week_decided,
-        SUM(COALESCE(amount, 0)) as week_consulted,
-        COUNT(*) as total_consultations,
-        SUM(CASE WHEN status = 'paid' THEN 1 ELSE 0 END) as paid_consultations,
-        AVG(CASE WHEN ai_analysis_status = 'completed' THEN 
-          CAST(json_extract(feedback, '$.total_score') AS INTEGER) 
-        END) as avg_score
-      FROM consultations 
-      WHERE organization_id = ? AND user_id = ?
-        AND consultation_date >= datetime('now', '-7 days')
-    `).bind(orgId, userId).first();
-
-    // ====== PREVIOUS WEEK (for comparison) ======
-    const prevWeekRevenue = await db.prepare(`
-      SELECT SUM(CASE WHEN status = 'paid' THEN amount ELSE 0 END) as prev_week_decided
-      FROM consultations 
-      WHERE organization_id = ? AND user_id = ?
-        AND consultation_date >= datetime('now', '-14 days')
-        AND consultation_date < datetime('now', '-7 days')
-    `).bind(orgId, userId).first();
-
-    // ====== DAILY SPARKLINE (last 7 days) ======
-    const dailySparkline = await db.prepare(`
-      SELECT 
-        date(consultation_date) as date,
-        COUNT(*) as total,
-        SUM(CASE WHEN status = 'paid' THEN 1 ELSE 0 END) as paid,
-        SUM(CASE WHEN status = 'paid' THEN amount ELSE 0 END) as decided,
-        SUM(COALESCE(amount, 0)) as consulted
-      FROM consultations
-      WHERE organization_id = ? AND user_id = ?
-        AND consultation_date >= datetime('now', '-7 days')
-      GROUP BY date(consultation_date)
-      ORDER BY date ASC
-    `).bind(orgId, userId).all();
-
-    // ====== WEEK TASK STATS ======
-    const weekTaskStats = await db.prepare(`
-      SELECT 
-        COUNT(*) as total_tasks,
-        SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed_tasks
-      FROM contact_tasks
-      WHERE organization_id = ? AND user_id = ?
-        AND created_at >= datetime('now', '-7 days')
-    `).bind(orgId, userId).first();
-
-    // ====== MVP CASE (best conversion this week) ======
-    const mvpCase = await db.prepare(`
-      SELECT c.id, c.treatment_type, c.amount, c.decision_score,
-             p.name as patient_name,
-             json_extract(c.feedback, '$.total_score') as consult_score
-      FROM consultations c
-      JOIN patients p ON c.patient_id = p.id
-      WHERE c.organization_id = ? AND c.user_id = ?
-        AND c.status = 'paid'
-        AND c.consultation_date >= datetime('now', '-7 days')
-      ORDER BY c.amount DESC
-      LIMIT 1
-    `).bind(orgId, userId).first();
-
-    // Get recent consultations (today)
-    const recentConsults = await db.prepare(`
-      SELECT c.*, p.name as patient_name
-      FROM consultations c
-      JOIN patients p ON c.patient_id = p.id
-      WHERE c.organization_id = ? AND c.user_id = ?
-        AND date(c.consultation_date) = date('now')
-      ORDER BY c.consultation_date DESC
-      LIMIT 5
-    `).bind(orgId, userId).all();
-
-    // ====== PREVIOUS WEEK KPI (for comparison arrows) ======
-    const prevWeekKPI = await db.prepare(`
-      SELECT 
-        COUNT(*) as total_consultations,
-        SUM(CASE WHEN status = 'paid' THEN 1 ELSE 0 END) as paid_consultations,
-        AVG(CASE WHEN ai_analysis_status = 'completed' THEN 
-          CAST(json_extract(feedback, '$.total_score') AS INTEGER) 
-        END) as avg_score
-      FROM consultations 
-      WHERE organization_id = ? AND user_id = ?
-        AND consultation_date >= datetime('now', '-14 days')
-        AND consultation_date < datetime('now', '-7 days')
-    `).bind(orgId, userId).first();
-
-    const prevWeekTaskStats = await db.prepare(`
-      SELECT 
-        COUNT(*) as total_tasks,
-        SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed_tasks
-      FROM contact_tasks
-      WHERE organization_id = ? AND user_id = ?
-        AND created_at >= datetime('now', '-14 days')
-        AND created_at < datetime('now', '-7 days')
-    `).bind(orgId, userId).first();
-
-    // ====== STALE UNDECIDED ALERT (3+ days without contact) ======
-    const staleUndecided = await db.prepare(`
-      SELECT COUNT(*) as count,
-             SUM(COALESCE(c.amount, 0)) as total_amount
-      FROM consultations c
-      WHERE c.organization_id = ? AND c.user_id = ?
-        AND c.status = 'undecided'
-        AND julianday('now') - julianday(c.consultation_date) >= 3
-        AND NOT EXISTS (
-          SELECT 1 FROM contact_tasks t 
-          WHERE t.consultation_id = c.id AND t.status = 'completed'
-        )
-    `).bind(orgId, userId).first();
-
-    // ====== TODAY MISSION PROGRESS ======
-    const todayCompletedTasks = await db.prepare(`
-      SELECT COUNT(*) as done
-      FROM contact_tasks
-      WHERE organization_id = ? AND user_id = ?
-        AND status = 'completed'
-        AND date(completed_at) = date('now')
-    `).bind(orgId, userId).first();
-
-    // ====== MONTHLY TARGET ======
+    // === COMPUTE ALL METRICS ===
     const goals = safeParseJSON(user?.goals as string, {});
-    const monthlyTarget = (goals as any).monthly_revenue_target || 200000000; // default 2억
+    const monthlyTarget = (goals as any).monthly_revenue_target || 200000000;
     const weeklyTarget = Math.round(monthlyTarget / 4);
 
     const currentWeekDecided = (weekRevenue?.week_decided as number) || 0;
     const currentWeekConsulted = (weekRevenue?.week_consulted as number) || 0;
     const previousWeekDecided = (prevWeekRevenue?.prev_week_decided as number) || 0;
     const decidedTrend = previousWeekDecided > 0 
-      ? Math.round(((currentWeekDecided - previousWeekDecided) / previousWeekDecided) * 100) 
-      : 0;
+      ? Math.round(((currentWeekDecided - previousWeekDecided) / previousWeekDecided) * 100) : 0;
 
     const totalConsultations = (weekRevenue?.total_consultations as number) || 0;
     const paidConsultations = (weekRevenue?.paid_consultations as number) || 0;
-
-    // Previous week comparison
     const prevTotalConsultations = (prevWeekKPI?.total_consultations as number) || 0;
     const prevPaidConsultations = (prevWeekKPI?.paid_consultations as number) || 0;
-    const prevConversionRate = prevTotalConsultations > 0
-      ? Math.round((prevPaidConsultations / prevTotalConsultations) * 100) : 0;
+    const prevConversionRate = prevTotalConsultations > 0 ? Math.round((prevPaidConsultations / prevTotalConsultations) * 100) : 0;
     const prevAvgScore = Math.round((prevWeekKPI?.avg_score as number) || 0);
     const prevTotalTasks = (prevWeekTaskStats?.total_tasks as number) || 0;
     const prevCompletedTasks = (prevWeekTaskStats?.completed_tasks as number) || 0;
-    const prevContactRate = prevTotalTasks > 0
-      ? Math.round((prevCompletedTasks / prevTotalTasks) * 100) : 0;
-
-    const currentConversionRate = totalConsultations > 0
-      ? Math.round((paidConsultations / totalConsultations) * 100) : 0;
+    const prevContactRate = prevTotalTasks > 0 ? Math.round((prevCompletedTasks / prevTotalTasks) * 100) : 0;
+    const currentConversionRate = totalConsultations > 0 ? Math.round((paidConsultations / totalConsultations) * 100) : 0;
     const currentAvgScore = Math.round((weekRevenue?.avg_score as number) || 0);
     const currentContactRate = (weekTaskStats?.total_tasks as number) > 0
       ? Math.round(((weekTaskStats?.completed_tasks as number) / (weekTaskStats?.total_tasks as number)) * 100) : 0;
 
+    const td = todayConsults || {} as any;
+    const tm = todayTasks || {} as any;
+
+    setCacheHeaders(c, 30); // Cache for 30s
     return c.json({
       success: true,
       data: {
-        user: {
-          name: user?.name,
-          organization_name: user?.organization_name,
-          goals
-        },
-        // today snapshot
+        user: { name: user?.name, organization_name: user?.organization_name, goals },
         today: {
-          total_consultations: (todayConsults?.total as number) || 0,
-          paid: (todayConsults?.paid as number) || 0,
-          undecided: (todayConsults?.undecided as number) || 0,
-          decided: (todayConsults?.today_decided as number) || 0,
-          consulted: (todayConsults?.today_consulted as number) || 0,
+          total_consultations: (td.total as number) || 0,
+          paid: (td.paid as number) || 0,
+          undecided: (td.undecided as number) || 0,
+          decided: (td.today_decided as number) || 0,
+          consulted: (td.today_consulted as number) || 0,
         },
-        today_tasks: {
-          total: todayTasks?.total || 0,
-          closing: todayTasks?.closing || 0,
-          proactive: todayTasks?.proactive || 0
-        },
-        // TODAY MISSION
+        today_tasks: { total: tm.total || 0, closing: tm.closing || 0, proactive: tm.proactive || 0 },
         today_mission: {
           contacts_done: (todayCompletedTasks?.done as number) || 0,
-          contacts_total: (todayTasks?.total as number) || 0,
-          consultations_done: (todayConsults?.total as number) || 0,
-          decisions_done: (todayConsults?.paid as number) || 0,
+          contacts_total: (tm.total as number) || 0,
+          consultations_done: (td.total as number) || 0,
+          decisions_done: (td.paid as number) || 0,
         },
-        // STALE UNDECIDED ALERT
-        stale_alert: {
-          count: (staleUndecided?.count as number) || 0,
-          amount: (staleUndecided?.total_amount as number) || 0,
-        },
-        // ENHANCED: week stats with revenue + prev week comparison
+        stale_alert: { count: (staleUndecided?.count as number) || 0, amount: (staleUndecided?.total_amount as number) || 0 },
         week_stats: {
-          total_consultations: totalConsultations,
-          paid_consultations: paidConsultations,
-          conversion_rate: currentConversionRate,
-          avg_score: currentAvgScore,
-          total_tasks: weekTaskStats?.total_tasks || 0,
-          completed_tasks: weekTaskStats?.completed_tasks || 0,
-          contact_rate: currentContactRate,
-          decided: currentWeekDecided,
-          consulted: currentWeekConsulted,
-          decided_target: weeklyTarget,
-          decided_trend: decidedTrend,
-          // Previous week for comparison arrows
-          prev_conversion_rate: prevConversionRate,
-          prev_avg_score: prevAvgScore,
-          prev_contact_rate: prevContactRate,
-          prev_total_consultations: prevTotalConsultations,
+          total_consultations: totalConsultations, paid_consultations: paidConsultations,
+          conversion_rate: currentConversionRate, avg_score: currentAvgScore,
+          total_tasks: weekTaskStats?.total_tasks || 0, completed_tasks: weekTaskStats?.completed_tasks || 0,
+          contact_rate: currentContactRate, decided: currentWeekDecided, consulted: currentWeekConsulted,
+          decided_target: weeklyTarget, decided_trend: decidedTrend,
+          prev_conversion_rate: prevConversionRate, prev_avg_score: prevAvgScore,
+          prev_contact_rate: prevContactRate, prev_total_consultations: prevTotalConsultations,
         },
-        // NEW: sparkline data (7 days)
         sparkline: dailySparkline.results,
-        // NEW: MVP case of the week
         mvp_case: mvpCase ? {
-          id: mvpCase.id,
-          patient_name: mvpCase.patient_name,
-          treatment_type: mvpCase.treatment_type,
-          amount: mvpCase.amount,
-          decision_score: mvpCase.decision_score,
-          consult_score: mvpCase.consult_score,
+          id: mvpCase.id, patient_name: mvpCase.patient_name, treatment_type: mvpCase.treatment_type,
+          amount: mvpCase.amount, decision_score: mvpCase.decision_score, consult_score: mvpCase.consult_score,
         } : null,
         recent_consultations: recentConsults.results.map(c => ({
-          ...c,
-          feedback: safeParseJSON(c.feedback as string, {})
+          ...c, feedback: safeParseJSON(c.feedback as string, {})
         })),
       }
     });
@@ -383,14 +298,15 @@ dashboard.get('/summary', async (c) => {
   }
 });
 
-// GET /api/dashboard/chart - Get chart data
+// GET /api/dashboard/chart - Get chart data (SAFE: uses validated days)
 dashboard.get('/chart', async (c) => {
   try {
     const orgId = c.get('organizationId');
     const userId = c.get('userId');
     const db = c.env.DB;
 
-    const { type = 'consultations', days = '30' } = c.req.query();
+    const { type = 'consultations', days: rawDays = '30' } = c.req.query();
+    const days = safeInt(rawDays, 30, 1, 365);
 
     if (type === 'consultations') {
       const result = await db.prepare(`
@@ -401,11 +317,10 @@ dashboard.get('/chart', async (c) => {
           SUM(CASE WHEN status = 'undecided' THEN 1 ELSE 0 END) as undecided
         FROM consultations
         WHERE organization_id = ? AND user_id = ?
-          AND consultation_date >= datetime('now', '-${parseInt(days)} days')
+          AND consultation_date >= datetime('now', '-' || ? || ' days')
         GROUP BY date(consultation_date)
         ORDER BY date ASC
-      `).bind(orgId, userId).all();
-
+      `).bind(orgId, userId, days).all();
       return c.json({ success: true, data: result.results });
     }
 
@@ -417,11 +332,10 @@ dashboard.get('/chart', async (c) => {
         FROM consultations
         WHERE organization_id = ? AND user_id = ?
           AND ai_analysis_status = 'completed'
-          AND consultation_date >= datetime('now', '-${parseInt(days)} days')
+          AND consultation_date >= datetime('now', '-' || ? || ' days')
         GROUP BY date(consultation_date)
         ORDER BY date ASC
-      `).bind(orgId, userId).all();
-
+      `).bind(orgId, userId, days).all();
       return c.json({ success: true, data: result.results });
     }
 
@@ -433,11 +347,10 @@ dashboard.get('/chart', async (c) => {
           SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed
         FROM contact_tasks
         WHERE organization_id = ? AND user_id = ?
-          AND created_at >= datetime('now', '-${parseInt(days)} days')
+          AND created_at >= datetime('now', '-' || ? || ' days')
         GROUP BY date(created_at)
         ORDER BY date ASC
-      `).bind(orgId, userId).all();
-
+      `).bind(orgId, userId, days).all();
       return c.json({ success: true, data: result.results });
     }
 
@@ -492,61 +405,49 @@ dashboard.get('/team', async (c) => {
 // Admin Dashboard Endpoints
 // ============================================
 
-// GET /api/dashboard/admin-summary - Admin overview
+// GET /api/dashboard/admin-summary - Admin overview (OPTIMIZED)
 dashboard.get('/admin-summary', async (c) => {
   try {
     const orgId = c.get('organizationId');
     const db = c.env.DB;
     const { period = 'weekly' } = c.req.query();
+    const daysBack = periodToDays(validateAdminPeriod(period));
 
-    let daysBack = 7;
-    if (period === 'daily') daysBack = 1;
-    if (period === 'monthly') daysBack = 30;
-
-    const dateCondition = `datetime('now', '-${daysBack} days')`;
-    const prevDateCondition = `datetime('now', '-${daysBack * 2} days')`;
-
-    // Current period stats
-    const currentStats = await db.prepare(`
-      SELECT 
-        COUNT(*) as total_consultations,
-        SUM(CASE WHEN status = 'paid' THEN 1 ELSE 0 END) as paid_consultations,
-        AVG(COALESCE(r.coaching_score, 0)) as avg_coaching_score
-      FROM consultations c
-      LEFT JOIN consultation_reports r ON c.id = r.consultation_id
-      WHERE c.organization_id = ? AND c.consultation_date >= ${dateCondition}
-    `).bind(orgId).first();
-
-    // Previous period stats (for trend)
-    const prevStats = await db.prepare(`
-      SELECT 
-        COUNT(*) as total_consultations,
-        SUM(CASE WHEN status = 'paid' THEN 1 ELSE 0 END) as paid_consultations,
-        AVG(COALESCE(r.coaching_score, 0)) as avg_coaching_score
-      FROM consultations c
-      LEFT JOIN consultation_reports r ON c.id = r.consultation_id
-      WHERE c.organization_id = ? 
-        AND c.consultation_date >= ${prevDateCondition}
-        AND c.consultation_date < ${dateCondition}
-    `).bind(orgId).first();
-
-    // Proposal stats
-    const proposalStats = await db.prepare(`
-      SELECT 
-        COUNT(*) as total_sent,
-        SUM(CASE WHEN status IN ('viewed', 'converted') THEN 1 ELSE 0 END) as viewed,
-        SUM(CASE WHEN status = 'converted' THEN 1 ELSE 0 END) as converted
-      FROM treatment_proposals
-      WHERE organization_id = ? AND sent_at >= ${dateCondition}
-    `).bind(orgId).first();
-
-    const prevProposalStats = await db.prepare(`
-      SELECT COUNT(*) as total_sent,
-             SUM(CASE WHEN status IN ('viewed', 'converted') THEN 1 ELSE 0 END) as viewed
-      FROM treatment_proposals
-      WHERE organization_id = ? 
-        AND sent_at >= ${prevDateCondition} AND sent_at < ${dateCondition}
-    `).bind(orgId).first();
+    // Parallel queries
+    const [currentStats, prevStats, proposalStats, prevProposalStats] = await Promise.all([
+      db.prepare(`
+        SELECT COUNT(*) as total_consultations,
+          SUM(CASE WHEN status = 'paid' THEN 1 ELSE 0 END) as paid_consultations,
+          AVG(COALESCE(r.coaching_score, 0)) as avg_coaching_score
+        FROM consultations c
+        LEFT JOIN consultation_reports r ON c.id = r.consultation_id
+        WHERE c.organization_id = ? AND c.consultation_date >= datetime('now', '-' || ? || ' days')
+      `).bind(orgId, daysBack).first(),
+      db.prepare(`
+        SELECT COUNT(*) as total_consultations,
+          SUM(CASE WHEN status = 'paid' THEN 1 ELSE 0 END) as paid_consultations,
+          AVG(COALESCE(r.coaching_score, 0)) as avg_coaching_score
+        FROM consultations c
+        LEFT JOIN consultation_reports r ON c.id = r.consultation_id
+        WHERE c.organization_id = ? 
+          AND c.consultation_date >= datetime('now', '-' || ? || ' days')
+          AND c.consultation_date < datetime('now', '-' || ? || ' days')
+      `).bind(orgId, daysBack * 2, daysBack).first(),
+      db.prepare(`
+        SELECT COUNT(*) as total_sent,
+          SUM(CASE WHEN status IN ('viewed', 'converted') THEN 1 ELSE 0 END) as viewed,
+          SUM(CASE WHEN status = 'converted' THEN 1 ELSE 0 END) as converted
+        FROM treatment_proposals
+        WHERE organization_id = ? AND sent_at >= datetime('now', '-' || ? || ' days')
+      `).bind(orgId, daysBack).first(),
+      db.prepare(`
+        SELECT COUNT(*) as total_sent,
+          SUM(CASE WHEN status IN ('viewed', 'converted') THEN 1 ELSE 0 END) as viewed
+        FROM treatment_proposals
+        WHERE organization_id = ? 
+          AND sent_at >= datetime('now', '-' || ? || ' days') AND sent_at < datetime('now', '-' || ? || ' days')
+      `).bind(orgId, daysBack * 2, daysBack).first()
+    ]);
 
     // Calculate metrics
     const totalConsults = (currentStats?.total_consultations as number) || 0;
@@ -595,10 +496,7 @@ dashboard.get('/staff-performance', async (c) => {
     const orgId = c.get('organizationId');
     const db = c.env.DB;
     const { period = 'weekly' } = c.req.query();
-
-    let daysBack = 7;
-    if (period === 'daily') daysBack = 1;
-    if (period === 'monthly') daysBack = 30;
+    const daysBack = periodToDays(validateAdminPeriod(period));
 
     const result = await db.prepare(`
       SELECT 
@@ -609,12 +507,12 @@ dashboard.get('/staff-performance', async (c) => {
         SUM(CASE WHEN c.status = 'paid' THEN c.amount ELSE 0 END) as total_amount
       FROM users u
       LEFT JOIN consultations c ON c.user_id = u.id 
-        AND c.consultation_date >= datetime('now', '-${daysBack} days')
+        AND c.consultation_date >= datetime('now', '-' || ? || ' days')
       LEFT JOIN consultation_reports r ON c.id = r.consultation_id
       WHERE u.organization_id = ?
       GROUP BY u.id, u.name
       ORDER BY paid_consultations DESC
-    `).bind(orgId).all();
+    `).bind(daysBack, orgId).all();
 
     return c.json({
       success: true,
@@ -642,10 +540,7 @@ dashboard.get('/coaching-breakdown', async (c) => {
     const orgId = c.get('organizationId');
     const db = c.env.DB;
     const { period = 'weekly' } = c.req.query();
-
-    let daysBack = 7;
-    if (period === 'daily') daysBack = 1;
-    if (period === 'monthly') daysBack = 30;
+    const daysBack = periodToDays(validateAdminPeriod(period));
 
     const result = await db.prepare(`
       SELECT 
@@ -658,8 +553,8 @@ dashboard.get('/coaching-breakdown', async (c) => {
       FROM consultation_reports r
       JOIN consultations c ON r.consultation_id = c.id
       WHERE r.organization_id = ? 
-        AND c.consultation_date >= datetime('now', '-${daysBack} days')
-    `).bind(orgId).first();
+        AND c.consultation_date >= datetime('now', '-' || ? || ' days')
+    `).bind(orgId, daysBack).first();
 
     return c.json({
       success: true,
@@ -718,10 +613,7 @@ dashboard.get('/proposal-analytics', async (c) => {
     const orgId = c.get('organizationId');
     const db = c.env.DB;
     const { period = 'weekly' } = c.req.query();
-
-    let daysBack = 7;
-    if (period === 'daily') daysBack = 1;
-    if (period === 'monthly') daysBack = 30;
+    const daysBack = periodToDays(validateAdminPeriod(period));
 
     const result = await db.prepare(`
       SELECT 
@@ -730,8 +622,8 @@ dashboard.get('/proposal-analytics', async (c) => {
         COUNT(CASE WHEN status = 'converted' THEN 1 END) as converted
       FROM treatment_proposals
       WHERE organization_id = ?
-        AND created_at >= datetime('now', '-${daysBack} days')
-    `).bind(orgId).first();
+        AND created_at >= datetime('now', '-' || ? || ' days')
+    `).bind(orgId, daysBack).first();
 
     return c.json({
       success: true,
@@ -910,10 +802,7 @@ dashboard.get('/referral-roi', async (c) => {
     const userId = c.get('userId');
     const db = c.env.DB;
     const { period = 'month' } = c.req.query();
-
-    let daysBack = 30;
-    if (period === 'week') daysBack = 7;
-    if (period === 'quarter') daysBack = 90;
+    const daysBack = periodToDays(validatePeriod(period));
 
     const result = await db.prepare(`
       SELECT 
@@ -932,10 +821,10 @@ dashboard.get('/referral-roi', async (c) => {
       FROM consultations c
       JOIN patients p ON c.patient_id = p.id
       WHERE c.organization_id = ? AND c.user_id = ?
-        AND c.consultation_date >= datetime('now', '-${daysBack} days')
+        AND c.consultation_date >= datetime('now', '-' || ? || ' days')
       GROUP BY COALESCE(p.referral_source, '미분류')
       ORDER BY paid_amount DESC
-    `).bind(orgId, userId).all();
+    `).bind(orgId, userId, daysBack).all();
 
     const data = result.results.map(r => {
       const total = (r.total_consultations as number) || 0;
@@ -971,10 +860,7 @@ dashboard.get('/treatment-analysis', async (c) => {
     const userId = c.get('userId');
     const db = c.env.DB;
     const { period = 'month' } = c.req.query();
-
-    let daysBack = 30;
-    if (period === 'week') daysBack = 7;
-    if (period === 'quarter') daysBack = 90;
+    const daysBack = periodToDays(validatePeriod(period));
 
     const result = await db.prepare(`
       SELECT 
@@ -992,10 +878,10 @@ dashboard.get('/treatment-analysis', async (c) => {
         AVG(c.decision_score) as avg_decision_score
       FROM consultations c
       WHERE c.organization_id = ? AND c.user_id = ?
-        AND c.consultation_date >= datetime('now', '-${daysBack} days')
+        AND c.consultation_date >= datetime('now', '-' || ? || ' days')
       GROUP BY COALESCE(c.treatment_type, '미분류')
       ORDER BY paid_amount DESC
-    `).bind(orgId, userId).all();
+    `).bind(orgId, userId, daysBack).all();
 
     const data = result.results.map(r => {
       const total = (r.total_consultations as number) || 0;
@@ -1028,7 +914,8 @@ dashboard.get('/revenue-trend', async (c) => {
     const orgId = c.get('organizationId');
     const userId = c.get('userId');
     const db = c.env.DB;
-    const { days = '30' } = c.req.query();
+    const { days: rawDays = '30' } = c.req.query();
+    const days = safeInt(rawDays, 30, 1, 365);
 
     const result = await db.prepare(`
       SELECT 
@@ -1042,10 +929,10 @@ dashboard.get('/revenue-trend', async (c) => {
         END) as avg_score
       FROM consultations
       WHERE organization_id = ? AND user_id = ?
-        AND consultation_date >= datetime('now', '-${parseInt(days)} days')
+        AND consultation_date >= datetime('now', '-' || ? || ' days')
       GROUP BY date(consultation_date)
       ORDER BY date ASC
-    `).bind(orgId, userId).all();
+    `).bind(orgId, userId, days).all();
 
     return c.json({
       success: true,
@@ -1076,14 +963,9 @@ dashboard.get('/period-compare', async (c) => {
     const userId = c.get('userId');
     const db = c.env.DB;
     const { period = 'week' } = c.req.query();
-
-    let daysBack = 7;
-    if (period === 'month') daysBack = 30;
-    if (period === 'quarter') daysBack = 90;
+    const daysBack = periodToDays(validatePeriod(period));
 
     const getStats = async (startDays: number, endDays: number) => {
-      const start = `datetime('now', '-${startDays} days')`;
-      const end = endDays === 0 ? `datetime('now')` : `datetime('now', '-${endDays} days')`;
       const r = await db.prepare(`
         SELECT 
           COUNT(*) as total, 
@@ -1091,8 +973,10 @@ dashboard.get('/period-compare', async (c) => {
           SUM(CASE WHEN status='paid' THEN amount ELSE 0 END) as revenue,
           AVG(CASE WHEN ai_analysis_status='completed' THEN CAST(json_extract(feedback,'$.total_score') AS REAL) END) as avg_score
         FROM consultations
-        WHERE organization_id=? AND user_id=? AND consultation_date >= ${start} AND consultation_date < ${end}
-      `).bind(orgId, userId).first();
+        WHERE organization_id=? AND user_id=? 
+          AND consultation_date >= datetime('now', '-' || ? || ' days') 
+          AND consultation_date < datetime('now', '-' || ? || ' days')
+      `).bind(orgId, userId, startDays, endDays).first();
       return {
         total: (r?.total as number) || 0,
         paid: (r?.paid as number) || 0,
@@ -1295,7 +1179,7 @@ dashboard.get('/export', async (c) => {
     const userId = c.get('userId');
     const db = c.env.DB;
     const { type = 'consultations', period = '30' } = c.req.query();
-    const days = parseInt(period);
+    const days = safeInt(period, 30, 1, 365);
 
     if (type === 'consultations') {
       const result = await db.prepare(`
@@ -1306,9 +1190,9 @@ dashboard.get('/export', async (c) => {
         FROM consultations c
         LEFT JOIN patients p ON c.patient_id = p.id
         JOIN users u ON c.user_id = u.id
-        WHERE c.organization_id=? AND c.consultation_date >= datetime('now', '-${days} days')
+        WHERE c.organization_id=? AND c.consultation_date >= datetime('now', '-' || ? || ' days')
         ORDER BY c.consultation_date DESC
-      `).bind(orgId).all();
+      `).bind(orgId, days).all();
 
       // BOM for Excel Korean support
       let csv = '\\uFEFF날짜,환자명,치료항목,금액,상태,결정도,상담점수,상담사\\n';

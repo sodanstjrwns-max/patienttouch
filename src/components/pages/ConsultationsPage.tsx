@@ -134,10 +134,10 @@ export const ConsultationsPage: FC = () => {
             });
           });
 
-          document.getElementById('consultSearch').addEventListener('input', function(e) {
+          document.getElementById('consultSearch').addEventListener('input', debounce(function(e) {
             searchQuery = (e.target.value || '').toLowerCase();
             filterAndRender();
-          });
+          }, 200));
 
           function filterAndRender() {
             var filtered = allConsultations.filter(function(c) {

@@ -1,7 +1,8 @@
 // Authentication Routes
 import { Hono } from 'hono';
-import { generateId, hashPassword, verifyPassword } from '../lib/utils';
+import { generateId, hashPassword, verifyPassword, safeParseJSON } from '../lib/utils';
 import { setAuthCookie, clearAuthCookie, authMiddleware } from '../lib/auth';
+import { sanitize, isValidEmail } from '../lib/middleware';
 import type { Env, User, Organization } from '../types';
 
 const auth = new Hono<{ Bindings: Env }>();
@@ -9,10 +10,23 @@ const auth = new Hono<{ Bindings: Env }>();
 // POST /api/auth/register - Register new organization and admin user
 auth.post('/register', async (c) => {
   try {
-    const { email, password, name, organization_name, phone } = await c.req.json();
+    const body = await c.req.json();
+    const email = sanitize(body.email, 254).toLowerCase();
+    const password = body.password;
+    const name = sanitize(body.name, 50);
+    const organization_name = sanitize(body.organization_name, 100);
+    const phone = sanitize(body.phone, 20);
 
     if (!email || !password || !name || !organization_name) {
       return c.json({ success: false, error: '필수 정보를 모두 입력해주세요.' }, 400);
+    }
+
+    if (!isValidEmail(email)) {
+      return c.json({ success: false, error: '올바른 이메일 형식을 입력해주세요.' }, 400);
+    }
+
+    if (password.length < 6) {
+      return c.json({ success: false, error: '비밀번호는 6자 이상이어야 합니다.' }, 400);
     }
 
     const db = c.env.DB;
@@ -297,8 +311,8 @@ auth.get('/me', authMiddleware, async (c) => {
       success: true,
       data: {
         ...user,
-        goals: JSON.parse(user.goals as string || '{}'),
-        settings: JSON.parse(user.settings as string || '{}')
+        goals: safeParseJSON(user.goals as string, {}),
+        settings: safeParseJSON(user.settings as string, {})
       }
     });
   } catch (error) {

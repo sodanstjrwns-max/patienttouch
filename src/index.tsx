@@ -2,6 +2,7 @@ import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { logger } from 'hono/logger'
 import { renderer } from './renderer'
+import { securityHeaders, authRateLimit, apiRateLimit } from './lib/middleware'
 
 // Import routes
 import authRoutes from './routes/auth'
@@ -34,7 +35,11 @@ const app = new Hono<{ Bindings: Env }>()
 
 // Middleware
 app.use('*', logger())
+app.use('*', securityHeaders)
 app.use('/api/*', cors())
+app.use('/api/auth/login', authRateLimit)
+app.use('/api/auth/register', authRateLimit)
+app.use('/api/*', apiRateLimit)
 app.use(renderer)
 
 // API Routes
