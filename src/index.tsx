@@ -12,6 +12,7 @@ import taskRoutes from './routes/tasks'
 import dashboardRoutes from './routes/dashboard'
 import reportRoutes from './routes/reports'
 import retentionRoutes from './routes/retention'
+import kakaoRoutes from './routes/kakao'
 
 // Import pages
 import { LoginPage } from './components/pages/LoginPage'
@@ -50,6 +51,7 @@ app.route('/api/tasks', taskRoutes)
 app.route('/api/dashboard', dashboardRoutes)
 app.route('/api/reports', reportRoutes)
 app.route('/api/retention', retentionRoutes)
+app.route('/api/kakao', kakaoRoutes)
 
 // Page Routes
 app.get('/login', (c) => c.render(<LoginPage />, { title: '로그인 - 페이션트 터치' }))

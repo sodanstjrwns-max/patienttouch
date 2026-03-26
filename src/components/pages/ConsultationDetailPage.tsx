@@ -236,7 +236,7 @@ export const ConsultationDetailPage: FC<Props> = ({ id }) => {
               '</div>';
             }
 
-            // Emotion Flow
+            // Emotion Flow + Chart
             if (emotionFlow.overall_tone || emotionFlow.summary) {
               var toneEmoji = { positive: '😊', neutral: '😐', negative: '😔' };
               var toneName = { positive: '긍정적', neutral: '중립', negative: '부정적' };
@@ -249,16 +249,24 @@ export const ConsultationDetailPage: FC<Props> = ({ id }) => {
                 '</div>' +
                 '<div class="flex items-center gap-4 p-3 bg-' + tc + '-50/50 rounded-xl mb-3">' +
                   '<div class="text-4xl">' + (toneEmoji[emotionFlow.overall_tone] || '😐') + '</div>' +
-                  '<div>' +
+                  '<div class="flex-1">' +
                     '<p class="font-bold text-surface-900">' + (toneName[emotionFlow.overall_tone] || '중립') + '</p>' +
                     '<p class="text-xs text-surface-500">전반적 분위기</p>' +
                   '</div>' +
-                '</div>' +
-                (emotionFlow.summary ? '<p class="text-sm text-surface-600 leading-relaxed bg-surface-50 p-3 rounded-xl">' + emotionFlow.summary + '</p>' : '') +
-                (c.decision_score ? '<div class="mt-3">' +
+                  (c.decision_score ? '<div class="text-center"><p class="text-2xl font-black text-brand-600">' + c.decision_score + '<span class="text-xs font-semibold text-surface-400">/10</span></p><p class="text-[9px] text-surface-400">결정도</p></div>' : '') +
+                '</div>';
+              // Emotion flow timeline chart
+              if (emotionFlow.phases && emotionFlow.phases.length > 0) {
+                html += '<div class="mb-3"><p class="text-[10px] font-bold text-surface-500 uppercase tracking-wider mb-2">감정 변화 흐름</p>' +
+                  '<canvas id="emotionFlowChart" height="120"></canvas></div>';
+              } else {
+                // Simple bar representation of decision score
+                html += (c.decision_score ? '<div class="mb-3">' +
                   '<div class="flex justify-between text-xs mb-1.5"><span class="font-semibold text-surface-500">결정 근접도</span><span class="font-black text-brand-600">' + c.decision_score + '/10</span></div>' +
-                  '<div class="w-full bg-surface-100 rounded-full h-2 overflow-hidden"><div class="bg-gradient-to-r from-brand-500 to-brand-400 h-2 rounded-full transition-all duration-1000" style="width: ' + c.decision_score * 10 + '%"></div></div>' +
-                '</div>' : '') +
+                  '<div class="w-full bg-surface-100 rounded-full h-2.5 overflow-hidden"><div class="bg-gradient-to-r from-brand-500 to-brand-400 h-2.5 rounded-full transition-all duration-1000" style="width: ' + c.decision_score * 10 + '%"></div></div>' +
+                '</div>' : '');
+              }
+              html += (emotionFlow.summary ? '<p class="text-sm text-surface-600 leading-relaxed bg-surface-50 p-3 rounded-xl">' + emotionFlow.summary + '</p>' : '') +
               '</div>';
             }
 
@@ -277,24 +285,52 @@ export const ConsultationDetailPage: FC<Props> = ({ id }) => {
               '</div>';
             }
 
-            // Feedback
+            // Coaching Feedback with Radar Chart
             if (feedback.good_points || feedback.improve_points || feedback.total_score) {
               var scores = feedback.scores || {};
               html += '<div class="card-premium p-5">' +
                 '<div class="flex items-center gap-2 mb-3">' +
                   '<div class="w-7 h-7 rounded-lg bg-emerald-50 flex items-center justify-center"><i class="fas fa-lightbulb text-xs text-emerald-600"></i></div>' +
-                  '<h3 class="font-bold text-sm text-surface-900">상담 피드백</h3>' +
+                  '<h3 class="font-bold text-sm text-surface-900">AI 코칭 피드백</h3>' +
                   (feedback.total_score ? '<span class="ml-auto text-xl font-black text-brand-600">' + feedback.total_score + '<span class="text-xs font-semibold text-surface-400">/100</span></span>' : '') +
                 '</div>';
 
+              // Radar Chart + Score Grid side by side
               if (feedback.total_score) {
-                html += '<div class="grid grid-cols-4 gap-2 mb-4">' +
-                  ['니즈파악', '가치전달', '이의처리', '클로징'].map(function(name, i) {
-                    var keys = ['needs_identification', 'value_delivery', 'objection_handling', 'closing'];
-                    var s = scores[keys[i]] || 0;
-                    var colors = ['sky', 'emerald', 'amber', 'rose'];
-                    return '<div class="text-center p-2 bg-' + colors[i] + '-50/50 rounded-xl"><p class="text-lg font-black text-surface-800">' + s + '</p><p class="text-[9px] font-semibold text-surface-400 mt-0.5">' + name + '</p></div>';
-                  }).join('') +
+                html += '<div class="flex gap-3 mb-4">';
+                // Radar chart (left)
+                html += '<div class="w-1/2"><canvas id="coachingRadarChart" height="160"></canvas></div>';
+                // Score grid (right)
+                html += '<div class="w-1/2 flex flex-col justify-center space-y-2">';
+                var areaItems = [
+                  {key:'needs_identification', name:'니즈 파악', icon:'fa-magnifying-glass', max:25, color:'sky'},
+                  {key:'value_delivery', name:'가치 전달', icon:'fa-gem', max:25, color:'emerald'},
+                  {key:'objection_handling', name:'이의 처리', icon:'fa-shield', max:25, color:'amber'},
+                  {key:'closing', name:'클로징', icon:'fa-handshake', max:25, color:'rose'}
+                ];
+                areaItems.forEach(function(a) {
+                  var s = scores[a.key] || 0;
+                  var pct = Math.round(s / a.max * 100);
+                  html += '<div class="flex items-center gap-2">' +
+                    '<i class="fas ' + a.icon + ' text-[9px] text-' + a.color + '-500 w-3"></i>' +
+                    '<div class="flex-1">' +
+                      '<div class="flex justify-between mb-0.5"><span class="text-[10px] font-semibold text-surface-600">' + a.name + '</span><span class="text-[10px] font-black text-surface-800">' + s + '</span></div>' +
+                      '<div class="h-1.5 bg-surface-100 rounded-full overflow-hidden"><div class="h-full bg-' + a.color + '-500 rounded-full transition-all duration-1000" style="width:' + pct + '%"></div></div>' +
+                    '</div></div>';
+                });
+                html += '</div></div>';
+              }
+
+              // Score grade badge
+              if (feedback.total_score) {
+                var grade = feedback.total_score >= 90 ? {label:'S',color:'emerald',desc:'탁월한 상담!'} : 
+                            feedback.total_score >= 80 ? {label:'A',color:'brand',desc:'훌륭한 상담'} : 
+                            feedback.total_score >= 70 ? {label:'B',color:'sky',desc:'좋은 상담'} :
+                            feedback.total_score >= 60 ? {label:'C',color:'amber',desc:'개선 필요'} : 
+                            {label:'D',color:'rose',desc:'코칭 권장'};
+                html += '<div class="flex items-center justify-center gap-3 p-3 bg-' + grade.color + '-50/50 rounded-xl mb-4 border border-' + grade.color + '-200/30">' +
+                  '<div class="w-10 h-10 rounded-xl bg-' + grade.color + '-100 flex items-center justify-center"><span class="text-xl font-black text-' + grade.color + '-700">' + grade.label + '</span></div>' +
+                  '<div><p class="text-sm font-bold text-' + grade.color + '-700">' + grade.desc + '</p><p class="text-[10px] text-surface-500">종합 ' + feedback.total_score + '점</p></div>' +
                 '</div>';
               }
 
@@ -334,6 +370,94 @@ export const ConsultationDetailPage: FC<Props> = ({ id }) => {
             html += '</div></div>';
 
             container.innerHTML = html;
+
+            // Render Charts after DOM update
+            setTimeout(function() {
+              // Coaching Radar Chart
+              var radarCanvas = document.getElementById('coachingRadarChart');
+              if (radarCanvas && window.Chart && feedback.total_score) {
+                var sc = feedback.scores || {};
+                new Chart(radarCanvas.getContext('2d'), {
+                  type: 'radar',
+                  data: {
+                    labels: ['니즈 파악', '가치 전달', '이의 처리', '클로징'],
+                    datasets: [{
+                      label: '이번 상담',
+                      data: [sc.needs_identification||0, sc.value_delivery||0, sc.objection_handling||0, sc.closing||0],
+                      backgroundColor: 'rgba(99,102,241,0.15)',
+                      borderColor: 'rgba(99,102,241,0.8)',
+                      borderWidth: 2,
+                      pointBackgroundColor: '#6366f1',
+                      pointRadius: 4,
+                      pointHoverRadius: 6
+                    }, {
+                      label: '목표 (25)',
+                      data: [25, 25, 25, 25],
+                      backgroundColor: 'rgba(148,163,184,0.05)',
+                      borderColor: 'rgba(148,163,184,0.3)',
+                      borderWidth: 1,
+                      borderDash: [4,4],
+                      pointRadius: 0
+                    }]
+                  },
+                  options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    scales: { r: { beginAtZero: true, max: 25, ticks: { display: false, stepSize: 5 }, grid: { color: 'rgba(148,163,184,0.15)' }, pointLabels: { font: { size: 9, family: 'Pretendard Variable', weight: '600' }, color: '#64748b' } } },
+                    plugins: { legend: { display: false } }
+                  }
+                });
+              }
+
+              // Emotion Flow Chart
+              var emotionCanvas = document.getElementById('emotionFlowChart');
+              if (emotionCanvas && window.Chart && emotionFlow.phases) {
+                var phases = emotionFlow.phases;
+                var phaseLabels = phases.map(function(p) { return p.label || p.phase || ''; });
+                var phaseScores = phases.map(function(p) {
+                  if (p.sentiment === 'positive' || p.tone === 'positive') return 3;
+                  if (p.sentiment === 'neutral' || p.tone === 'neutral') return 2;
+                  if (p.sentiment === 'negative' || p.tone === 'negative') return 1;
+                  return p.score || 2;
+                });
+                var phaseColors = phaseScores.map(function(s) {
+                  return s >= 3 ? '#10b981' : s >= 2 ? '#f59e0b' : '#ef4444';
+                });
+                new Chart(emotionCanvas.getContext('2d'), {
+                  type: 'line',
+                  data: {
+                    labels: phaseLabels,
+                    datasets: [{
+                      data: phaseScores,
+                      borderColor: '#8b5cf6',
+                      backgroundColor: 'rgba(139,92,246,0.1)',
+                      fill: true,
+                      tension: 0.4,
+                      pointBackgroundColor: phaseColors,
+                      pointBorderColor: phaseColors,
+                      pointRadius: 6,
+                      pointHoverRadius: 8,
+                      borderWidth: 2.5
+                    }]
+                  },
+                  options: {
+                    responsive: true, maintainAspectRatio: false,
+                    scales: {
+                      y: { min: 0, max: 4, ticks: { display: false }, grid: { color: 'rgba(148,163,184,0.1)' } },
+                      x: { grid: { display: false }, ticks: { font: { size: 9 } } }
+                    },
+                    plugins: { legend: { display: false }, tooltip: {
+                      callbacks: {
+                        label: function(ctx) {
+                          var s = ctx.raw;
+                          return s >= 3 ? '긍정' : s >= 2 ? '중립' : '부정';
+                        }
+                      }
+                    } }
+                  }
+                });
+              }
+            }, 100);
           }
 
           async function showLinkModal() {

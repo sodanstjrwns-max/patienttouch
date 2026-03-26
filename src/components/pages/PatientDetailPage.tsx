@@ -42,6 +42,33 @@ export const PatientDetailPage: FC<Props> = ({ id }) => {
 
       {/* Feature 6: Timeline View */}
       <div id="timelineDetail" class="px-4 py-3 space-y-3 pb-24 hidden">
+        {/* Consultation Amount Chart */}
+        <div id="consultChartSection" class="card-premium p-4 hidden">
+          <div class="flex items-center gap-2 mb-3">
+            <div class="w-7 h-7 rounded-lg bg-brand-50 flex items-center justify-center">
+              <i class="fas fa-chart-bar text-brand-600 text-xs"></i>
+            </div>
+            <h3 class="text-sm font-bold text-surface-900">상담 금액 추이</h3>
+          </div>
+          <canvas id="patientConsultChart" height="140"></canvas>
+        </div>
+
+        {/* Summary Stats */}
+        <div id="timelineSummary" class="grid grid-cols-3 gap-2 hidden">
+          <div class="card-premium p-3 text-center">
+            <p id="tlTotalConsult" class="text-lg font-black text-brand-600">0</p>
+            <p class="text-[9px] font-semibold text-surface-400">총 상담</p>
+          </div>
+          <div class="card-premium p-3 text-center">
+            <p id="tlTotalAmount" class="text-lg font-black text-emerald-600">0</p>
+            <p class="text-[9px] font-semibold text-surface-400">총 금액</p>
+          </div>
+          <div class="card-premium p-3 text-center">
+            <p id="tlAvgScore" class="text-lg font-black text-purple-600">-</p>
+            <p class="text-[9px] font-semibold text-surface-400">평균 점수</p>
+          </div>
+        </div>
+
         <div class="card-premium p-4">
           <div class="flex items-center justify-between mb-4">
             <h3 class="text-sm font-bold text-surface-900"><i class="fas fa-timeline text-brand-500 mr-2 text-xs"></i>환자 여정 타임라인</h3>
@@ -392,6 +419,48 @@ export const PatientDetailPage: FC<Props> = ({ id }) => {
               }
 
               timelineLoaded = true;
+
+              // Render consultation chart + summary stats
+              setTimeout(function() {
+                var consultItems = timeline.filter(function(e) { return e.event_type === 'consultation'; });
+                if (consultItems.length >= 1) {
+                  // Summary stats
+                  document.getElementById('timelineSummary').classList.remove('hidden');
+                  var totalAmt = consultItems.reduce(function(s,c){ return s + (c.amount||0); }, 0);
+                  var scores = consultItems.filter(function(c){ return c.decision_score; }).map(function(c){ return c.decision_score; });
+                  var avgSc = scores.length > 0 ? Math.round(scores.reduce(function(a,b){return a+b;},0)/scores.length) : 0;
+                  document.getElementById('tlTotalConsult').textContent = consultItems.length + '회';
+                  document.getElementById('tlTotalAmount').textContent = fmtWon(totalAmt) + '만';
+                  document.getElementById('tlAvgScore').textContent = avgSc > 0 ? avgSc + '/10' : '-';
+                }
+
+                if (consultItems.length >= 2 && window.Chart) {
+                  document.getElementById('consultChartSection').classList.remove('hidden');
+                  var cLabels = consultItems.map(function(c) { return fmtDate(c.date); }).reverse();
+                  var cAmounts = consultItems.map(function(c) { return Math.round((c.amount||0)/10000); }).reverse();
+                  var cScores = consultItems.map(function(c) { return (c.decision_score||0); }).reverse();
+                  var stColors = consultItems.map(function(c) { return c.status==='paid'?'#10b981':c.status==='undecided'?'#f59e0b':'#ef4444'; }).reverse();
+                  new Chart(document.getElementById('patientConsultChart').getContext('2d'), {
+                    type: 'bar',
+                    data: {
+                      labels: cLabels,
+                      datasets: [
+                        { label: '금액(만)', data: cAmounts, backgroundColor: stColors, borderRadius: 4, order: 2 },
+                        { type: 'line', label: '결정도', data: cScores, borderColor: '#6366f1', backgroundColor: 'transparent', borderWidth: 2, pointRadius: 4, pointBackgroundColor: '#6366f1', tension: 0.3, yAxisID: 'y1', order: 1 }
+                      ]
+                    },
+                    options: {
+                      responsive: true,
+                      plugins: { legend: { display: true, position: 'bottom', labels: { font: {size:9}, usePointStyle: true, pointStyleWidth: 6, padding: 8 } } },
+                      scales: {
+                        x: { grid: {display:false}, ticks: {font:{size:9}} },
+                        y: { beginAtZero: true, ticks: {font:{size:9}, callback: function(v){return v+'만';}}, grid: {color:'#f1f5f9'} },
+                        y1: { beginAtZero: true, max: 10, position: 'right', ticks: {font:{size:9}}, grid: {display:false} }
+                      }
+                    }
+                  });
+                }
+              }, 100);
             } catch (err) {
               console.error('Timeline error:', err);
               showErrorState('timelineContent', '타임라인을 불러올 수 없습니다', loadTimeline);

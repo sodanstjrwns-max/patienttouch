@@ -233,26 +233,47 @@ export const RetentionPage: FC = () => {
             }
             html += '</div>';
 
-            // Chart
+            // Chart - Status Distribution + Daily Trend
             html += '<div class="card-premium p-5">';
             html += '<div class="flex items-center gap-2 mb-4"><div class="w-7 h-7 rounded-lg bg-purple-50 flex items-center justify-center"><i class="fas fa-chart-pie text-xs text-purple-600"></i></div><h3 class="font-bold text-sm text-surface-900">리텐션 현황</h3></div>';
-            html += '<canvas id="retentionChart" height="200"></canvas>';
+            html += '<div class="grid grid-cols-2 gap-3">';
+            html += '<div><canvas id="retentionChart" height="180"></canvas></div>';
+            html += '<div class="flex flex-col justify-center space-y-1.5">';
+            for (var key in d.status_distribution) {
+              var stInfo = statusMap[key] || { label: key, color: 'surface' };
+              var count = d.status_distribution[key];
+              if (count > 0) {
+                html += '<div class="flex items-center gap-2">' +
+                  '<span class="w-2.5 h-2.5 rounded-sm shrink-0" style="background:' + (colorMap[key]||'#94a3b8') + '"></span>' +
+                  '<span class="text-[10px] text-surface-600 flex-1">' + stInfo.label + '</span>' +
+                  '<span class="text-[10px] font-bold text-surface-800">' + count + '</span></div>';
+              }
+            }
+            html += '</div></div>';
+            html += '</div>';
+
+            // Daily contact trend chart
+            html += '<div class="card-premium p-5">';
+            html += '<div class="flex items-center gap-2 mb-4"><div class="w-7 h-7 rounded-lg bg-sky-50 flex items-center justify-center"><i class="fas fa-chart-line text-xs text-sky-600"></i></div><h3 class="font-bold text-sm text-surface-900">일별 연락 추이</h3></div>';
+            html += '<canvas id="retDailyChart" height="140"></canvas>';
             html += '</div>';
 
             html += '</div>';
             container.innerHTML = html;
             renderChart(d.status_distribution);
+            loadDailyTrend();
           }
+
+          var colorMap = {
+            in_treatment: '#10b981', unscheduled_urgent: '#f43f5e', unscheduled_warning: '#f59e0b',
+            recall_6m: '#0ea5e9', recall_12m: '#0284c7', at_risk: '#dc2626',
+            consulted_unconverted: '#d97706', active: '#94a3b8', completed: '#059669'
+          };
 
           function renderChart(dist) {
             var canvas = document.getElementById('retentionChart');
             if (!canvas || !window.Chart) return;
             var labels = []; var data = []; var colors = [];
-            var colorMap = {
-              in_treatment: '#10b981', unscheduled_urgent: '#f43f5e', unscheduled_warning: '#f59e0b',
-              recall_6m: '#0ea5e9', recall_12m: '#0284c7', at_risk: '#dc2626',
-              consulted_unconverted: '#d97706', active: '#94a3b8', completed: '#059669'
-            };
             for (var key in dist) {
               var st = statusMap[key] || { label: key };
               labels.push(st.label);
@@ -264,10 +285,43 @@ export const RetentionPage: FC = () => {
               data: { labels: labels, datasets: [{ data: data, backgroundColor: colors, borderWidth: 2, borderColor: '#fff' }] },
               options: {
                 responsive: true,
-                plugins: { legend: { position: 'bottom', labels: { font: { size: 11, family: 'Pretendard Variable' }, padding: 12, usePointStyle: true, pointStyleWidth: 10 } } },
+                plugins: { legend: { display: false } },
                 cutout: '65%'
               }
             });
+          }
+
+          async function loadDailyTrend() {
+            try {
+              var res = await fetch('/api/retention/report?period=week');
+              var data = await res.json();
+              if (!data.success || !data.data.daily_trend) return;
+              var trend = data.data.daily_trend;
+              if (!trend || trend.length === 0) return;
+              var canvas = document.getElementById('retDailyChart');
+              if (!canvas || !window.Chart) return;
+              var labels = trend.map(function(d) { var dt=new Date(d.date); return (dt.getMonth()+1)+'/'+dt.getDate(); });
+              var contacts = trend.map(function(d) { return d.total||0; });
+              var booked = trend.map(function(d) { return d.booked||0; });
+              new Chart(canvas.getContext('2d'), {
+                type: 'bar',
+                data: {
+                  labels: labels,
+                  datasets: [
+                    { label: '총 연락', data: contacts, backgroundColor: 'rgba(99,102,241,0.5)', borderRadius: 4 },
+                    { label: '예약 전환', data: booked, backgroundColor: 'rgba(16,185,129,0.7)', borderRadius: 4 }
+                  ]
+                },
+                options: {
+                  responsive: true,
+                  plugins: { legend: { position: 'bottom', labels: { font: {size:10}, usePointStyle: true, pointStyleWidth: 8, padding: 10 } } },
+                  scales: {
+                    x: { grid: {display:false}, ticks: {font:{size:9}} },
+                    y: { beginAtZero: true, ticks: {font:{size:9}, stepSize:1}, grid: {color:'#f1f5f9'} }
+                  }
+                }
+              });
+            } catch(e) { console.error('Daily trend error:', e); }
           }
 
           // ============================================

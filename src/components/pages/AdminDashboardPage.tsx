@@ -101,6 +101,33 @@ export const AdminDashboardPage: FC = () => {
             </div>
           </div>
         </div>
+
+        {/* Revenue Trend Chart */}
+        <div class="card-premium p-5">
+          <div class="flex items-center gap-2 mb-4">
+            <div class="w-7 h-7 rounded-lg bg-emerald-50 flex items-center justify-center"><i class="fas fa-chart-line text-xs text-emerald-600"></i></div>
+            <h3 class="font-bold text-sm text-surface-900">매출 트렌드</h3>
+          </div>
+          <canvas id="adminRevenueChart" height="180"></canvas>
+        </div>
+
+        {/* Team Performance Radar */}
+        <div class="card-premium p-5">
+          <div class="flex items-center gap-2 mb-4">
+            <div class="w-7 h-7 rounded-lg bg-violet-50 flex items-center justify-center"><i class="fas fa-chart-radar text-xs text-violet-600"></i></div>
+            <h3 class="font-bold text-sm text-surface-900">팀 역량 분석</h3>
+          </div>
+          <canvas id="teamRadarChart" height="220"></canvas>
+        </div>
+
+        {/* Coaching Score Trend */}
+        <div class="card-premium p-5">
+          <div class="flex items-center gap-2 mb-4">
+            <div class="w-7 h-7 rounded-lg bg-amber-50 flex items-center justify-center"><i class="fas fa-chart-area text-xs text-amber-600"></i></div>
+            <h3 class="font-bold text-sm text-surface-900">코칭 점수 추이</h3>
+          </div>
+          <canvas id="coachingTrendChart" height="180"></canvas>
+        </div>
       </div>
 
       <script dangerouslySetInnerHTML={{
@@ -113,8 +140,138 @@ export const AdminDashboardPage: FC = () => {
               if (!authRes.ok) { window.location.href = '/login'; return; }
               var userData = await authRes.json();
               if (userData.data.role !== 'admin') { showToast('관리자만 접근할 수 있습니다.','error'); window.location.href = '/'; return; }
-              await Promise.all([loadSummary(), loadStaffPerformance(), loadCoachingBreakdown(), loadLowScoreConsultations(), loadProposalAnalytics()]);
+              await Promise.all([loadSummary(), loadStaffPerformance(), loadCoachingBreakdown(), loadLowScoreConsultations(), loadProposalAnalytics(), loadAdminCharts()]);
             } catch (err) { console.error('Failed to load dashboard:', err); }
+          }
+
+          var adminRevenueChartInstance = null;
+          var teamRadarChartInstance = null;
+          var coachingTrendChartInstance = null;
+
+          async function loadAdminCharts() {
+            try {
+              // Revenue trend
+              var revRes = await fetch('/api/dashboard/revenue-trend?days=14');
+              var revData = await revRes.json();
+              if (revData.success && revData.data.length > 0) renderAdminRevenueChart(revData.data);
+
+              // Coaching trend
+              var ctRes = await fetch('/api/dashboard/coaching-trend');
+              var ctData = await ctRes.json();
+              if (ctData.success && ctData.data.weeks && ctData.data.weeks.length > 0) renderCoachingTrendChart(ctData.data);
+
+              // Team radar
+              var teamRes = await fetch('/api/dashboard/staff-performance?period=' + currentPeriod);
+              var teamData = await teamRes.json();
+              if (teamData.success && teamData.data.length > 0) renderTeamRadarChart(teamData.data);
+            } catch(e) { console.error('Admin charts error:', e); }
+          }
+
+          function renderAdminRevenueChart(data) {
+            if (!window.Chart) return;
+            var labels = data.map(function(d) { var dt=new Date(d.date); return (dt.getMonth()+1)+'/'+dt.getDate(); });
+            var paid = data.map(function(d) { return Math.round((d.paid_amount||0)/10000); });
+            var total = data.map(function(d) { return Math.round((d.total_amount||0)/10000); });
+            var counts = data.map(function(d) { return d.total_consultations||0; });
+            if (adminRevenueChartInstance) adminRevenueChartInstance.destroy();
+            var canvas = document.getElementById('adminRevenueChart');
+            if (!canvas) return;
+            adminRevenueChartInstance = new Chart(canvas.getContext('2d'), {
+              type: 'bar',
+              data: {
+                labels: labels,
+                datasets: [
+                  { label: '결정 매출(만)', data: paid, backgroundColor: 'rgba(16,185,129,0.7)', borderRadius: 5, order: 2 },
+                  { label: '상담 매출(만)', data: total, backgroundColor: 'rgba(99,102,241,0.15)', borderRadius: 5, order: 3 },
+                  { type: 'line', label: '상담 수', data: counts, borderColor: '#f59e0b', backgroundColor: 'transparent', borderWidth: 2, pointRadius: 3, pointBackgroundColor: '#f59e0b', yAxisID: 'y1', order: 1, tension: 0.3 }
+                ]
+              },
+              options: {
+                responsive: true,
+                interaction: { mode: 'index', intersect: false },
+                plugins: { legend: { position: 'bottom', labels: { font: { size: 10 }, usePointStyle: true, pointStyleWidth: 8, padding: 10 } } },
+                scales: {
+                  x: { grid: {display:false}, ticks: {font:{size:9}} },
+                  y: { beginAtZero: true, ticks: { font:{size:9}, callback: function(v){return v+'만';} }, grid: {color:'#f1f5f9'} },
+                  y1: { beginAtZero: true, position: 'right', ticks: { font:{size:9}, callback: function(v){return v+'건';} }, grid: {display:false} }
+                }
+              }
+            });
+          }
+
+          function renderTeamRadarChart(staff) {
+            if (!window.Chart || staff.length === 0) return;
+            if (teamRadarChartInstance) teamRadarChartInstance.destroy();
+            var canvas = document.getElementById('teamRadarChart');
+            if (!canvas) return;
+            var colors = ['rgba(99,102,241,0.8)','rgba(16,185,129,0.8)','rgba(245,158,11,0.8)','rgba(236,72,153,0.8)','rgba(14,165,233,0.8)'];
+            var bgColors = ['rgba(99,102,241,0.1)','rgba(16,185,129,0.1)','rgba(245,158,11,0.1)','rgba(236,72,153,0.1)','rgba(14,165,233,0.1)'];
+            var datasets = staff.slice(0,5).map(function(s, i) {
+              return {
+                label: s.name,
+                data: [s.total_consultations||0, s.conversion_rate||0, s.avg_coaching_score||0, Math.round((s.revenue||0)/100000), (s.paid_consultations||0)*10],
+                borderColor: colors[i],
+                backgroundColor: bgColors[i],
+                borderWidth: 2,
+                pointRadius: 3,
+                pointBackgroundColor: colors[i]
+              };
+            });
+            teamRadarChartInstance = new Chart(canvas.getContext('2d'), {
+              type: 'radar',
+              data: { labels: ['상담 수', '전환율(%)', '코칭 점수', '매출(십만)', '결정 건수(x10)'], datasets: datasets },
+              options: {
+                responsive: true,
+                scales: { r: { beginAtZero: true, ticks: { display: false }, grid: { color:'rgba(148,163,184,0.15)' }, pointLabels: { font: { size: 10, weight: '600' } } } },
+                plugins: { legend: { position: 'bottom', labels: { font: { size: 10 }, usePointStyle: true, pointStyleWidth: 8, padding: 10 } } }
+              }
+            });
+          }
+
+          function renderCoachingTrendChart(data) {
+            if (!window.Chart || !data.weeks || data.weeks.length === 0) return;
+            if (coachingTrendChartInstance) coachingTrendChartInstance.destroy();
+            var canvas = document.getElementById('coachingTrendChart');
+            if (!canvas) return;
+            var labels = data.weeks.map(function(w) { return w.week_label || w.week; });
+            var avgScores = data.weeks.map(function(w) { return w.avg_score || 0; });
+            var areas = ['rapport','spin','objection','pricing','closing','structure'];
+            var areaNames = ['라포','SPIN','반론','가격','클로징','구조'];
+            var areaColors = ['#f43f5e','#8b5cf6','#0ea5e9','#10b981','#f59e0b','#f97316'];
+            var datasets = [{
+              label: '종합 점수',
+              data: avgScores,
+              borderColor: '#6366f1',
+              backgroundColor: 'rgba(99,102,241,0.08)',
+              fill: true, tension: 0.3, borderWidth: 3,
+              pointRadius: 4, pointBackgroundColor: '#6366f1'
+            }];
+            areas.forEach(function(area, i) {
+              var areaData = data.weeks.map(function(w) { return w[area] || 0; });
+              if (areaData.some(function(v){ return v > 0; })) {
+                datasets.push({
+                  label: areaNames[i],
+                  data: areaData,
+                  borderColor: areaColors[i],
+                  backgroundColor: 'transparent',
+                  tension: 0.3, borderWidth: 1.5, borderDash: [3,3],
+                  pointRadius: 2, pointBackgroundColor: areaColors[i]
+                });
+              }
+            });
+            coachingTrendChartInstance = new Chart(canvas.getContext('2d'), {
+              type: 'line',
+              data: { labels: labels, datasets: datasets },
+              options: {
+                responsive: true,
+                interaction: { mode: 'index', intersect: false },
+                plugins: { legend: { position: 'bottom', labels: { font: { size: 9 }, usePointStyle: true, pointStyleWidth: 6, padding: 8 } } },
+                scales: {
+                  x: { grid: {display:false}, ticks: {font:{size:9}} },
+                  y: { beginAtZero: true, ticks: { font:{size:9} }, grid: {color:'#f1f5f9'} }
+                }
+              }
+            });
           }
 
           async function loadSummary() {
