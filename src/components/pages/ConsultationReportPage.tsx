@@ -104,7 +104,7 @@ export const ConsultationReportPage: FC<Props> = ({ id }) => {
                   '<i class="fas fa-brain text-4xl text-brand-600"></i>' +
                 '</div>' +
                 '<h3 class="text-xl font-bold text-surface-900 mb-2">AI 분석 중...</h3>' +
-                '<p class="text-surface-500 text-sm leading-relaxed">상담 내용을 분석하고 있습니다<br/>약 30초~1분 소요됩니다</p>' +
+                '<p class="text-surface-500 text-sm leading-relaxed">상담 내용을 분석하고 있습니다<br/>GPT-5 심층 분석 중 · 약 1~2분 소요됩니다</p>' +
                 '<div class="flex justify-center gap-1 mt-6">' +
                   '<div class="w-2 h-2 rounded-full bg-brand-400 animate-wave" style="animation-delay:0s"></div>' +
                   '<div class="w-2 h-2 rounded-full bg-brand-400 animate-wave" style="animation-delay:0.2s"></div>' +
@@ -114,7 +114,7 @@ export const ConsultationReportPage: FC<Props> = ({ id }) => {
               '</div>';
             try {
               var controller = new AbortController();
-              var timeoutId = setTimeout(function() { controller.abort(); }, 90000);
+              var timeoutId = setTimeout(function() { controller.abort(); }, 180000);
               const res = await fetch('/api/reports/' + consultationId + '/generate', { method: 'POST', signal: controller.signal });
               clearTimeout(timeoutId);
               if (res.status === 401) { window.location.href = '/login'; return; }

@@ -85,13 +85,13 @@ export async function callOpenAI(params: {
     body.response_format = { type: 'json_object' };
   }
 
-  if (maxTokens) {
-    // GPT-5 계열: max_tokens 대신 max_completion_tokens 사용
-    if (isGpt5) {
-      body.max_completion_tokens = maxTokens;
-    } else {
-      body.max_tokens = maxTokens;
-    }
+  if (isGpt5) {
+    // GPT-5 계열: reasoning_tokens가 많이 소비되므로 max_completion_tokens를 넉넉히 설정
+    // reasoning_tokens + output_tokens 합계가 max_completion_tokens 이내여야 함
+    // 기본 16384 (reasoning ~8K + output ~8K), 명시적 지정 시 그 값 사용
+    body.max_completion_tokens = maxTokens ? Math.max(maxTokens, 16384) : 16384;
+  } else if (maxTokens) {
+    body.max_tokens = maxTokens;
   }
 
   console.log(`[AI Call] Model: ${model}, JSON mode: ${jsonMode}, GPT-5: ${isGpt5}, Messages: ${messages.length}`);
@@ -124,10 +124,16 @@ export async function callOpenAI(params: {
 
   let content = message?.content;
 
-  // content가 null이면 다른 필드에서 추출 시도
-  if (!content) {
-    // 일부 모델은 function_call이나 tool_calls로 응답할 수 있음
-    console.error(`[AI Error] Empty content from ${model}. Full response:`, JSON.stringify(result).substring(0, 500));
+  // content가 null 또는 빈 문자열이면 에러 처리
+  // GPT-5는 reasoning_tokens를 많이 쓰고 content가 ""(빈 문자열)일 수 있음
+  if (!content || content.trim() === '') {
+    const reasoningTokens = result.usage?.completion_tokens_details?.reasoning_tokens || 0;
+    console.error(`[AI Error] Empty content from ${model}. reasoning_tokens: ${reasoningTokens}, finish_reason: ${choice?.finish_reason}. Full response:`, JSON.stringify(result).substring(0, 500));
+    
+    // finish_reason이 'length'이면 토큰 부족
+    if (choice?.finish_reason === 'length') {
+      throw new Error(`GPT-5 응답 토큰 부족 (reasoning에 ${reasoningTokens}토큰 소비). 다시 시도해주세요.`);
+    }
     throw new Error(`Empty response from OpenAI (${model}). finish_reason: ${choice?.finish_reason}`);
   }
 
