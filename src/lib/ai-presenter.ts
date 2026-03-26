@@ -153,7 +153,7 @@ export async function transcribeWithTimestamps(
     model: config.transcriptionAdvancedModel,
     audioData,
     language: 'ko',
-    responseFormat: 'verbose_json',
+    responseFormat: 'json',
     prompt: DENTAL_TERMINOLOGY_HINT,
   });
 

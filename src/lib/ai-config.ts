@@ -147,7 +147,7 @@ export async function callTranscription(params: {
     throw new Error(`Transcription failed (${model}): ${error}`);
   }
 
-  if (responseFormat === 'verbose_json') {
+  if (responseFormat === 'verbose_json' || responseFormat === 'json') {
     return await response.json();
   }
 
