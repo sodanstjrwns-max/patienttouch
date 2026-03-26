@@ -147,6 +147,11 @@ export const ConsultationReportPage: FC<Props> = ({ id }) => {
               '<h3 class="font-bold text-sm text-surface-900">' + title + '</h3></div>';
           }
 
+          function gradeStyle(grade) {
+            var m = { S:'bg-gradient-to-r from-amber-400 to-yellow-300 text-amber-900', A:'bg-emerald-100 text-emerald-700', B:'bg-sky-100 text-sky-700', C:'bg-amber-100 text-amber-700', D:'bg-rose-100 text-rose-700' };
+            return m[grade] || m['C'];
+          }
+
           function renderReport(report) {
             var container = document.getElementById('reportContent');
             document.getElementById('bottomActions').classList.remove('hidden');
@@ -251,8 +256,15 @@ export const ConsultationReportPage: FC<Props> = ({ id }) => {
                 '<div class="flex items-center gap-2 mb-4">' +
                   '<div class="w-7 h-7 rounded-lg bg-purple-50 flex items-center justify-center"><i class="fas fa-graduation-cap text-xs text-purple-600"></i></div>' +
                   '<h3 class="font-bold text-sm text-surface-900">코칭 피드백</h3>' +
+                  (cf.grade ? '<span class="ml-1 text-xs font-black px-2 py-0.5 rounded-lg ' + gradeStyle(cf.grade) + '">' + cf.grade + '</span>' : '') +
                   '<span class="ml-auto text-2xl font-black text-purple-600">' + (cf.total_score || 0) + '<span class="text-xs font-semibold text-surface-400">점</span></span>' +
                 '</div>';
+              // 한줄 코칭
+              if (cf.one_line_coaching) {
+                html += '<div class="mb-4 p-3 bg-gradient-to-r from-brand-50 to-purple-50 rounded-xl border border-brand-200/50">' +
+                  '<div class="flex items-center gap-2"><i class="fas fa-bullseye text-brand-500 text-xs"></i><span class="text-[10px] font-bold text-brand-600 uppercase tracking-wider">핵심 코칭</span></div>' +
+                  '<p class="text-sm font-semibold text-brand-800 mt-1.5">"' + cf.one_line_coaching + '"</p></div>';
+              }
               if (cf.scores) {
                 var areas = [
                   {k:'rapport',n:'라포',m:20,c:'pink'}, {k:'spin',n:'SPIN',m:25,c:'purple'}, {k:'objection_handling',n:'반론처리',m:20,c:'sky'},
@@ -287,6 +299,21 @@ export const ConsultationReportPage: FC<Props> = ({ id }) => {
               html += '</div>';
             }
 
+            // Decision Factors 
+            if (report.decision_factors && report.decision_factors.length > 0) {
+              html += '<div class="card-premium p-5">' +
+                sec('결정 요인 분석', 'fas fa-scale-balanced text-indigo-600', 'bg-indigo-50') +
+                '<div class="grid grid-cols-2 gap-2">';
+              report.decision_factors.forEach(function(f) {
+                var isPos = f.impact === 'positive' || f.type === 'positive';
+                html += '<div class="p-2.5 rounded-xl ' + (isPos ? 'bg-emerald-50/50 border border-emerald-200/30' : 'bg-rose-50/50 border border-rose-200/30') + '">' +
+                  '<div class="flex items-center gap-1 mb-1"><i class="fas ' + (isPos ? 'fa-plus text-emerald-500' : 'fa-minus text-rose-500') + ' text-[8px]"></i>' +
+                  '<span class="text-[10px] font-bold ' + (isPos ? 'text-emerald-600' : 'text-rose-600') + '">' + (isPos ? '긍정' : '부정') + '</span></div>' +
+                  '<p class="text-xs text-surface-700">' + (f.factor || f.description || f) + '</p></div>';
+              });
+              html += '</div></div>';
+            }
+
             // Next Actions
             if (report.next_actions && report.next_actions.length > 0) {
               html += '<div class="card-premium p-5">' +
@@ -312,6 +339,18 @@ export const ConsultationReportPage: FC<Props> = ({ id }) => {
             }
 
             html += '</div>';
+
+            // AI Model Badge (dynamic)
+            var modelName = report.generation_model || 'GPT-5';
+            var genTime = report.created_at ? new Date(report.created_at).toLocaleString('ko-KR', {month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}) : '';
+            html += '<div class="flex items-center justify-center gap-2 py-4">' +
+              '<div class="flex items-center gap-1.5 px-3 py-1.5 bg-surface-50 rounded-full border border-surface-200">' +
+                '<div class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></div>' +
+                '<span class="text-[10px] font-semibold text-surface-500">Powered by ' + modelName + ' &bull; Patient Funnel AI</span>' +
+                (genTime ? '<span class="text-[9px] text-surface-400">&bull; ' + genTime + '</span>' : '') +
+              '</div>' +
+            '</div>';
+
             container.innerHTML = html;
           }
 

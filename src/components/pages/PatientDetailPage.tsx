@@ -581,6 +581,76 @@ export const PatientDetailPage: FC<Props> = ({ id }) => {
               '</a>' +
             '</div>';
 
+            // AI 추천 넥스트 액션 카드
+            var latestConsult = consultations.length > 0 ? consultations[0] : null;
+            if (latestConsult) {
+              var lPsy = latestConsult.patient_psychology || {};
+              var lFb = latestConsult.feedback || {};
+              var lScore = latestConsult.decision_score || 0;
+              var aiActions = [];
+              
+              // 상담이력 기반 AI 분석 요약
+              var consultSummary = '';
+              if (consultations.length >= 2) {
+                var scores = consultations.filter(function(c){return c.decision_score;}).map(function(c){return c.decision_score;});
+                if (scores.length >= 2) {
+                  var trend = scores[0] - scores[scores.length-1];
+                  if (trend > 0) consultSummary = '결정도가 ' + Math.abs(trend).toFixed(1) + '점 상승 추세입니다. 긍정 신호!';
+                  else if (trend < 0) consultSummary = '결정도가 ' + Math.abs(trend).toFixed(1) + '점 하락 추세. 접근 방식을 바꿔보세요.';
+                }
+              }
+              
+              // 미결정 환자 전략
+              if (latestConsult.status === 'undecided') {
+                if (lScore >= 7) aiActions.push({icon:'🔥', text:'결정도 높음(' + lScore + '/10)! 24시간 내 팔로업 필수', priority: 'critical'});
+                else if (lScore >= 4) aiActions.push({icon:'📞', text:'3일 내 안부 연락 + 상담시 관심사 언급', priority: 'high'});
+                else aiActions.push({icon:'💡', text:'가치 재설명 필요. 성공사례 준비 후 재연락', priority: 'medium'});
+                
+                if (lPsy.fear) aiActions.push({icon:'😰', text:'두려움("' + lPsy.fear + '") 해소할 성공사례 공유'});
+                if (lPsy.hidden_needs) aiActions.push({icon:'🔮', text:'숨겨진 니즈: ' + lPsy.hidden_needs});
+                if (lPsy.personality_type) aiActions.push({icon:'🧬', text:'환자 성향(' + lPsy.personality_type + ')에 맞춘 어프로치'});
+                if (lPsy.decision_maker && lPsy.decision_maker !== '본인') aiActions.push({icon:'👥', text:lPsy.decision_maker + ' 동반 내원 유도'});
+              }
+              
+              // 결제 완료 환자 - 크로스셀
+              if (latestConsult.status === 'paid') {
+                aiActions.push({icon:'🎉', text:'결정 완료! 정기검진 리마인더 설정 권장'});
+                if (totalPaid > 0) aiActions.push({icon:'💎', text:'신뢰 형성됨. 추가 치료 니즈 탐색 기회'});
+              }
+              
+              // 코칭 점수 기반
+              if (lFb.total_score && lFb.total_score < 60) {
+                aiActions.push({icon:'📈', text:'상담 점수 ' + lFb.total_score + '점. AI 레포트에서 개선점 확인하세요'});
+              }
+              
+              if (aiActions.length > 0) {
+                html += '<div class="card-premium p-5 bg-gradient-to-br from-brand-50/60 to-purple-50/40 border border-brand-200/30">' +
+                  '<div class="flex items-center gap-2 mb-3">' +
+                    '<div class="w-7 h-7 rounded-lg bg-gradient-to-br from-brand-500 to-purple-500 flex items-center justify-center shadow-sm shadow-brand-400/30">' +
+                      '<i class="fas fa-wand-magic-sparkles text-[10px] text-white"></i>' +
+                    '</div>' +
+                    '<div><h3 class="font-bold text-sm text-surface-900">AI 추천 넥스트 액션</h3>' +
+                    '<p class="text-[9px] text-surface-400">GPT-5 · Patient Funnel AI 분석</p></div>' +
+                  '</div>';
+                
+                if (consultSummary) {
+                  html += '<div class="p-2.5 mb-2.5 bg-white/60 rounded-xl border border-brand-100/50">' +
+                    '<p class="text-[10px] font-bold text-brand-600 mb-0.5"><i class="fas fa-chart-line mr-1"></i>상담이력 요약</p>' +
+                    '<p class="text-xs text-surface-700">' + consultSummary + '</p></div>';
+                }
+                
+                html += '<div class="space-y-1.5">';
+                aiActions.forEach(function(a) {
+                  var borderColor = a.priority === 'critical' ? 'border-l-rose-500' : a.priority === 'high' ? 'border-l-amber-500' : 'border-l-brand-300';
+                  html += '<div class="flex items-start gap-2 p-2 bg-white/60 rounded-lg border-l-[3px] ' + borderColor + '">' +
+                    '<span class="text-sm shrink-0">' + a.icon + '</span>' +
+                    '<p class="text-xs text-surface-700 leading-relaxed">' + a.text + '</p>' +
+                  '</div>';
+                });
+                html += '</div></div>';
+              }
+            }
+
             // Pending Tasks
             if (pendingTasks.length > 0) {
               html += '<div class="card-premium p-5 border-l-4 border-l-amber-400">' +

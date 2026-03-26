@@ -152,6 +152,44 @@ export const SettingsPage: FC = () => {
           </div>
         </div>
 
+        {/* AI Model Settings */}
+        <div class="card-premium p-5">
+          <div class="flex items-center gap-2 mb-4">
+            <div class="w-7 h-7 rounded-lg bg-gradient-to-br from-brand-500 to-purple-500 flex items-center justify-center shadow-sm shadow-brand-400/30"><i class="fas fa-brain text-[10px] text-white"></i></div>
+            <div>
+              <h3 class="font-bold text-sm text-surface-900">AI 모델 설정</h3>
+              <p class="text-[9px] text-surface-400">GPT-5 · Patient Funnel AI Engine</p>
+            </div>
+          </div>
+          <div class="space-y-3">
+            <div class="p-3 bg-surface-50 rounded-xl">
+              <div class="flex justify-between items-center mb-1">
+                <span class="text-xs font-semibold text-surface-700">핵심 분석 모델</span>
+                <span id="aiPrimaryModel" class="text-xs font-bold text-brand-600">GPT-5</span>
+              </div>
+              <p class="text-[10px] text-surface-400">상담 분석, 화자 분리, 코칭 리포트</p>
+            </div>
+            <div class="p-3 bg-surface-50 rounded-xl">
+              <div class="flex justify-between items-center mb-1">
+                <span class="text-xs font-semibold text-surface-700">보조 모델</span>
+                <span id="aiSecondaryModel" class="text-xs font-bold text-emerald-600">GPT-5-mini</span>
+              </div>
+              <p class="text-[10px] text-surface-400">NER, SPIN 분석, 실시간 힌트, 연락 멘트</p>
+            </div>
+            <div class="p-3 bg-surface-50 rounded-xl">
+              <div class="flex justify-between items-center mb-1">
+                <span class="text-xs font-semibold text-surface-700">음성 인식</span>
+                <span id="aiSttModel" class="text-xs font-bold text-purple-600">gpt-4o-transcribe</span>
+              </div>
+              <p class="text-[10px] text-surface-400">한국어 음성 → 텍스트 변환</p>
+            </div>
+            <div class="flex items-center gap-2 p-2.5 bg-brand-50/50 rounded-xl border border-brand-100/50">
+              <i class="fas fa-shield-check text-brand-500 text-xs"></i>
+              <p class="text-[10px] text-brand-700">모델은 환경변수로 관리됩니다. 관리자에게 문의하세요.</p>
+            </div>
+          </div>
+        </div>
+
         {/* App Info */}
         <div class="card-premium p-5">
           <div class="flex items-center gap-2 mb-4">
@@ -161,7 +199,11 @@ export const SettingsPage: FC = () => {
           <div class="space-y-2 text-sm">
             <div class="flex justify-between items-center p-2 bg-surface-50 rounded-lg">
               <span class="text-surface-500 text-xs">버전</span>
-              <span class="font-bold text-surface-800 text-xs">v2.0.0</span>
+              <span class="font-bold text-surface-800 text-xs">v6.0.0</span>
+            </div>
+            <div class="flex justify-between items-center p-2 bg-surface-50 rounded-lg">
+              <span class="text-surface-500 text-xs">AI 엔진</span>
+              <span class="font-bold text-brand-600 text-xs">GPT-5 기반</span>
             </div>
             <div class="flex justify-between items-center p-2 bg-surface-50 rounded-lg">
               <span class="text-surface-500 text-xs">문의</span>
