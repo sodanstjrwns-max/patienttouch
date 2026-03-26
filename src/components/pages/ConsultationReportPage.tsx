@@ -227,7 +227,7 @@ export const ConsultationReportPage: FC<Props> = ({ id }) => {
                   '<div class="flex justify-between items-start mb-2">' +
                     '<div class="flex items-center gap-2"><span class="font-bold text-sm ' + (isRec ? 'text-brand-700' : 'text-surface-900') + '">' + opt.name + '</span>' +
                     (isRec ? '<span class="text-[10px] font-bold bg-brand-600 text-white px-2 py-0.5 rounded-md">추천</span>' : '') + '</div>' +
-                    '<span class="text-lg font-black text-surface-900">' + (opt.price / 10000).toFixed(0) + '<span class="text-xs font-semibold text-surface-400">만</span></span>' +
+                    '<span class="text-lg font-black text-surface-900">' + (opt.price > 0 ? (opt.price / 10000).toFixed(0) + '<span class="text-xs font-semibold text-surface-400">만</span>' : '<span class="text-xs font-semibold text-surface-400">미정</span>') + '</span>' +
                   '</div>' +
                   (opt.duration ? '<p class="text-xs text-surface-500 mb-2 flex items-center gap-1"><i class="fas fa-clock text-[10px]"></i>' + opt.duration + '</p>' : '') +
                   '<div class="space-y-1">' +
@@ -302,11 +302,18 @@ export const ConsultationReportPage: FC<Props> = ({ id }) => {
             // Coaching Feedback
             if (report.coaching_feedback) {
               var cf = report.coaching_feedback;
+              // Extract grade from patient_code_evaluation (e.g., "등급: D" or "종합 등급: D")
+              var extractedGrade = '';
+              if (cf.patient_code_evaluation) {
+                var gradeMatch = cf.patient_code_evaluation.match(/등급[：:]\\s*([SABCD])/i);
+                if (gradeMatch) extractedGrade = gradeMatch[1].toUpperCase();
+              }
+              var displayGrade = cf.grade || extractedGrade || '';
               html += '<div class="card-premium p-5 bg-gradient-to-br from-purple-50/50 to-pink-50/30">' +
                 '<div class="flex items-center gap-2 mb-4">' +
                   '<div class="w-7 h-7 rounded-lg bg-purple-50 flex items-center justify-center"><i class="fas fa-graduation-cap text-xs text-purple-600"></i></div>' +
                   '<h3 class="font-bold text-sm text-surface-900">코칭 피드백</h3>' +
-                  (cf.grade ? '<span class="ml-1 text-xs font-black px-2 py-0.5 rounded-lg ' + gradeStyle(cf.grade) + '">' + cf.grade + '</span>' : '') +
+                  (displayGrade ? '<span class="ml-1 text-xs font-black px-2 py-0.5 rounded-lg ' + gradeStyle(displayGrade) + '">' + displayGrade + '</span>' : '') +
                   '<span class="ml-auto text-2xl font-black text-purple-600">' + (cf.total_score || 0) + '<span class="text-xs font-semibold text-surface-400">점</span></span>' +
                 '</div>';
               // 한줄 코칭
@@ -349,19 +356,26 @@ export const ConsultationReportPage: FC<Props> = ({ id }) => {
               html += '</div>';
             }
 
-            // Decision Factors 
-            if (report.decision_factors && report.decision_factors.length > 0) {
-              html += '<div class="card-premium p-5">' +
-                sec('결정 요인 분석', 'fas fa-scale-balanced text-indigo-600', 'bg-indigo-50') +
-                '<div class="grid grid-cols-2 gap-2">';
-              report.decision_factors.forEach(function(f) {
-                var isPos = f.impact === 'positive' || f.type === 'positive';
-                html += '<div class="p-2.5 rounded-xl ' + (isPos ? 'bg-emerald-50/50 border border-emerald-200/30' : 'bg-rose-50/50 border border-rose-200/30') + '">' +
-                  '<div class="flex items-center gap-1 mb-1"><i class="fas ' + (isPos ? 'fa-plus text-emerald-500' : 'fa-minus text-rose-500') + ' text-[8px]"></i>' +
-                  '<span class="text-[10px] font-bold ' + (isPos ? 'text-emerald-600' : 'text-rose-600') + '">' + (isPos ? '긍정' : '부정') + '</span></div>' +
-                  '<p class="text-xs text-surface-700">' + (f.factor || f.description || f) + '</p></div>';
-              });
-              html += '</div></div>';
+            // Decision Factors (object, not array)
+            if (report.decision_factors && typeof report.decision_factors === 'object') {
+              var df = report.decision_factors;
+              var dfItems = [];
+              if (df.main_concern) dfItems.push({icon:'fa-triangle-exclamation', color:'rose', label:'핵심 장벽', val: df.main_concern});
+              if (df.decision_maker) dfItems.push({icon:'fa-user-check', color:'brand', label:'결정권자', val: df.decision_maker});
+              if (df.budget_range) dfItems.push({icon:'fa-wallet', color:'emerald', label:'예산 범위', val: df.budget_range});
+              if (df.timeline) dfItems.push({icon:'fa-clock', color:'amber', label:'결정 시기', val: df.timeline});
+              if (dfItems.length > 0) {
+                html += '<div class="card-premium p-5">' +
+                  sec('결정 요인 분석', 'fas fa-scale-balanced text-indigo-600', 'bg-indigo-50') +
+                  '<div class="space-y-2">';
+                dfItems.forEach(function(item) {
+                  html += '<div class="p-3 rounded-xl bg-' + item.color + '-50/50 border border-' + item.color + '-200/30">' +
+                    '<div class="flex items-center gap-1.5 mb-1"><i class="fas ' + item.icon + ' text-' + item.color + '-500 text-[10px]"></i>' +
+                    '<span class="text-[10px] font-bold text-' + item.color + '-600 uppercase tracking-wider">' + item.label + '</span></div>' +
+                    '<p class="text-sm text-surface-700">' + item.val + '</p></div>';
+                });
+                html += '</div></div>';
+              }
             }
 
             // Next Actions
