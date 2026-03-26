@@ -65,7 +65,7 @@ export async function callOpenAI(params: {
 }): Promise<any> {
   const { apiKey, model, messages, temperature = 0.3, maxTokens, jsonMode = true } = params;
 
-  // GPT-5 계열은 temperature를 지원하지 않음 (기본값 1만 허용)
+  // GPT-5 계열 감지 (gpt-5, gpt-5-mini, gpt-5.4 등)
   const isGpt5 = model.includes('gpt-5');
 
   const body: any = {
@@ -73,23 +73,28 @@ export async function callOpenAI(params: {
     messages,
   };
 
-  // GPT-5가 아닌 모델에만 temperature 설정
+  // GPT-5 계열: temperature 미지원 (기본값 1만 허용)
   if (!isGpt5 && temperature !== undefined) {
     body.temperature = temperature;
   }
 
-  if (jsonMode) {
+  // GPT-5 계열: response_format json_object 대신 json_schema 사용하거나 생략
+  // → GPT-5는 프롬프트에서 JSON을 요청하면 JSON으로 응답하므로, response_format 없이도 작동
+  // → json_object가 지원되지 않을 수 있으므로 GPT-5에서는 생략
+  if (jsonMode && !isGpt5) {
     body.response_format = { type: 'json_object' };
   }
 
   if (maxTokens) {
-    // GPT-5 계열은 max_tokens 대신 max_completion_tokens 사용
+    // GPT-5 계열: max_tokens 대신 max_completion_tokens 사용
     if (isGpt5) {
       body.max_completion_tokens = maxTokens;
     } else {
       body.max_tokens = maxTokens;
     }
   }
+
+  console.log(`[AI Call] Model: ${model}, JSON mode: ${jsonMode}, GPT-5: ${isGpt5}, Messages: ${messages.length}`);
 
   const response = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
@@ -105,11 +110,25 @@ export async function callOpenAI(params: {
     throw new Error(`OpenAI API error (${model}): ${response.status} - ${error}`);
   }
 
-  const result = await response.json();
-  const content = result.choices?.[0]?.message?.content;
+  const result: any = await response.json();
+  
+  // 디버그: 전체 응답 구조 로깅
+  const choice = result.choices?.[0];
+  const message = choice?.message;
+  console.log(`[AI Response] Model: ${model}, finish_reason: ${choice?.finish_reason}, has_content: ${!!message?.content}, has_refusal: ${!!message?.refusal}, content_length: ${message?.content?.length || 0}`);
 
+  // GPT-5 refusal 체크 (거부 응답 처리)
+  if (message?.refusal) {
+    throw new Error(`OpenAI refused request (${model}): ${message.refusal}`);
+  }
+
+  let content = message?.content;
+
+  // content가 null이면 다른 필드에서 추출 시도
   if (!content) {
-    throw new Error(`Empty response from OpenAI (${model})`);
+    // 일부 모델은 function_call이나 tool_calls로 응답할 수 있음
+    console.error(`[AI Error] Empty content from ${model}. Full response:`, JSON.stringify(result).substring(0, 500));
+    throw new Error(`Empty response from OpenAI (${model}). finish_reason: ${choice?.finish_reason}`);
   }
 
   // 사용량 로깅
@@ -118,7 +137,28 @@ export async function callOpenAI(params: {
     console.log(`[AI Usage] ${model}: ${usage.prompt_tokens} in → ${usage.completion_tokens} out (${usage.total_tokens} total)`);
   }
 
-  return jsonMode ? JSON.parse(content) : content;
+  if (jsonMode) {
+    // JSON 파싱 시 content에서 마크다운 코드블록 제거 (GPT-5가 가끔 ```json ... ``` 으로 감쌈)
+    let jsonStr = content.trim();
+    if (jsonStr.startsWith('```json')) {
+      jsonStr = jsonStr.slice(7);
+    } else if (jsonStr.startsWith('```')) {
+      jsonStr = jsonStr.slice(3);
+    }
+    if (jsonStr.endsWith('```')) {
+      jsonStr = jsonStr.slice(0, -3);
+    }
+    jsonStr = jsonStr.trim();
+    
+    try {
+      return JSON.parse(jsonStr);
+    } catch (parseError) {
+      console.error(`[AI Parse Error] Failed to parse JSON from ${model}. Content (first 300 chars):`, content.substring(0, 300));
+      throw new Error(`Failed to parse JSON response from ${model}: ${(parseError as Error).message}`);
+    }
+  }
+  
+  return content;
 }
 
 /**
