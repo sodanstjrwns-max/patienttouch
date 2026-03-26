@@ -487,4 +487,8 @@ export interface Env {
   DEEPGRAM_API_KEY?: string;
   GOOGLE_CLIENT_ID: string;
   GOOGLE_CLIENT_SECRET: string;
+  // AI Model Configuration (환경변수로 모델 교체 가능)
+  AI_PRIMARY_MODEL?: string;     // 핵심 분석 모델 (기본: gpt-5)
+  AI_SECONDARY_MODEL?: string;   // 보조 기능 모델 (기본: gpt-5-mini)
+  AI_TRANSCRIPTION_MODEL?: string; // STT 모델 (기본: gpt-4o-transcribe)
 }

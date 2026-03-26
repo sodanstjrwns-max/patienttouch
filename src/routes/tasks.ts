@@ -187,7 +187,8 @@ tasks.post('/generate', async (c) => {
             consult.summary as string || '',
             'closing',
             safeParseJSON(consult.patient_psychology as string, {}),
-            apiKey
+            apiKey,
+            c.env as any
           );
           message = result.message;
           points = result.points;

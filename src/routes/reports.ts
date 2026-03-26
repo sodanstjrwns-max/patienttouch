@@ -102,7 +102,7 @@ reports.post('/:consultationId/generate', async (c) => {
 
     const audioData = await audioObject.arrayBuffer();
 
-    // Run full analysis pipeline
+    // Run full analysis pipeline (env 전달로 모델 설정 적용)
     const analysis = await runFullAnalysisPipeline(
       audioData,
       {
@@ -110,7 +110,8 @@ reports.post('/:consultationId/generate', async (c) => {
         age: consultation.patient_age as number,
         gender: consultation.patient_gender as string
       },
-      apiKey
+      apiKey,
+      c.env as any
     );
 
     // Safely convert any value to string for D1 TEXT columns
@@ -344,7 +345,8 @@ reports.post('/:consultationId/proposal', async (c) => {
         report.patient_name as string,
         report.hospital_name as string,
         report.consultant_name as string,
-        apiKey
+        apiKey,
+        c.env as any
       );
     } else {
       // Fallback without AI

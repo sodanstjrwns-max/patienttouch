@@ -299,7 +299,8 @@ consultations.post('/:id/upload-audio', async (c) => {
       }
 
       // Run full AI analysis pipeline (includes report generation)
-      const fullAnalysis = await runFullAnalysisPipeline(audioData, patientInfo, apiKey);
+      // env를 전달하여 AI_PRIMARY_MODEL, AI_SECONDARY_MODEL 등 환경변수 기반 모델 선택
+      const fullAnalysis = await runFullAnalysisPipeline(audioData, patientInfo, apiKey, c.env as any);
 
       // Safely convert any value to string for D1 TEXT columns
       const toStr = (v: any): string => {
@@ -426,7 +427,7 @@ consultations.post('/:id/analyze', async (c) => {
       return c.json({ success: false, error: 'OpenAI API 키가 설정되지 않았습니다.' }, 500);
     }
 
-    const analysis = await analyzeConsultation(transcript, apiKey);
+    const analysis = await analyzeConsultation(transcript, apiKey, c.env as any);
 
     // Update consultation
     await db.prepare(`
