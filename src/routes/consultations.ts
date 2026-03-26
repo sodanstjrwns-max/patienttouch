@@ -4,6 +4,7 @@ import { generateId, safeParseJSON } from '../lib/utils';
 import { authMiddleware } from '../lib/auth';
 import { analyzeAudio, analyzeConsultation } from '../lib/ai';
 import { runFullAnalysisPipeline } from '../lib/ai-presenter';
+import { safeInt } from '../lib/middleware';
 import type { Env, Consultation } from '../types';
 
 const consultations = new Hono<{ Bindings: Env }>();
@@ -11,17 +12,24 @@ const consultations = new Hono<{ Bindings: Env }>();
 // Apply auth middleware to all routes
 consultations.use('*', authMiddleware);
 
-// GET /api/consultations - List consultations
+// GET /api/consultations - List consultations (ENHANCED: date/amount/score filters, multi-sort)
 consultations.get('/', async (c) => {
   try {
     const orgId = c.get('organizationId');
     const userId = c.get('userId');
     const db = c.env.DB;
 
-    const { status, patient_id, my_only, search, limit = '50', offset = '0' } = c.req.query();
+    const { 
+      status, patient_id, my_only, search, 
+      date_from, date_to, amount_min, amount_max,
+      score_min, score_max, treatment_type,
+      sort = 'date_desc',
+      limit = '50', offset = '0' 
+    } = c.req.query();
 
     let query = `
-      SELECT c.*, p.name as patient_name, u.name as user_name
+      SELECT c.*, p.name as patient_name, u.name as user_name,
+        json_extract(c.feedback, '$.total_score') as consult_score
       FROM consultations c
       LEFT JOIN patients p ON c.patient_id = p.id
       JOIN users u ON c.user_id = u.id
@@ -45,12 +53,59 @@ consultations.get('/', async (c) => {
     }
 
     if (search) {
-      query += ` AND (p.name LIKE ? OR c.treatment_type LIKE ? OR u.name LIKE ?)`;
-      params.push(`%${search}%`, `%${search}%`, `%${search}%`);
+      query += ` AND (p.name LIKE ? OR c.treatment_type LIKE ? OR u.name LIKE ? OR c.summary LIKE ?)`;
+      params.push(`%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`);
     }
 
-    query += ` ORDER BY c.consultation_date DESC LIMIT ? OFFSET ?`;
-    params.push(parseInt(limit), parseInt(offset));
+    // Date range filter
+    if (date_from) {
+      query += ` AND date(c.consultation_date) >= date(?)`;
+      params.push(date_from);
+    }
+    if (date_to) {
+      query += ` AND date(c.consultation_date) <= date(?)`;
+      params.push(date_to);
+    }
+
+    // Amount range filter
+    if (amount_min) {
+      query += ` AND c.amount >= ?`;
+      params.push(safeInt(amount_min, 0, 0, 999999999));
+    }
+    if (amount_max) {
+      query += ` AND c.amount <= ?`;
+      params.push(safeInt(amount_max, 999999999, 0, 999999999));
+    }
+
+    // Coaching score filter
+    if (score_min) {
+      query += ` AND CAST(json_extract(c.feedback, '$.total_score') AS INTEGER) >= ?`;
+      params.push(safeInt(score_min, 0, 0, 100));
+    }
+    if (score_max) {
+      query += ` AND CAST(json_extract(c.feedback, '$.total_score') AS INTEGER) <= ?`;
+      params.push(safeInt(score_max, 100, 0, 100));
+    }
+
+    // Treatment type filter
+    if (treatment_type) {
+      query += ` AND c.treatment_type = ?`;
+      params.push(treatment_type);
+    }
+
+    // Multi-sort
+    const sortMap: Record<string, string> = {
+      'date_desc': 'c.consultation_date DESC',
+      'date_asc': 'c.consultation_date ASC',
+      'amount_desc': 'c.amount DESC',
+      'amount_asc': 'c.amount ASC',
+      'score_desc': 'CAST(json_extract(c.feedback, \'$.total_score\') AS INTEGER) DESC',
+      'score_asc': 'CAST(json_extract(c.feedback, \'$.total_score\') AS INTEGER) ASC',
+      'decision_desc': 'c.decision_score DESC',
+    };
+    const orderBy = sortMap[sort] || sortMap['date_desc'];
+    query += ` ORDER BY ${orderBy} LIMIT ? OFFSET ?`;
+    params.push(safeInt(limit, 50, 1, 200), safeInt(offset, 0, 0, 100000));
 
     const result = await db.prepare(query).bind(...params).all();
 
@@ -463,6 +518,42 @@ consultations.put('/:id', async (c) => {
           `).bind(consult.patient_id).run();
         }
       } catch (e) { console.error('Auto retention trigger error:', e); }
+    }
+
+    // === AUTO TASK GENERATION TRIGGER ===
+    // When a new consultation is created as 'undecided', schedule a closing task for 2 days later
+    if (status === 'undecided') {
+      try {
+        const consult = await db.prepare('SELECT patient_id, user_id, treatment_type, amount, summary FROM consultations WHERE id = ?')
+          .bind(consultId).first();
+        if (consult?.patient_id) {
+          // Check no pending closing task exists for this consultation
+          const existingTask = await db.prepare(`
+            SELECT id FROM contact_tasks WHERE consultation_id = ? AND task_type = 'closing' AND status = 'pending'
+          `).bind(consultId).first();
+          
+          if (!existingTask) {
+            const taskDate = new Date();
+            taskDate.setDate(taskDate.getDate() + 2);
+            const taskDateStr = taskDate.toISOString().split('T')[0];
+            const taskId = 'task_' + generateId().slice(0, 8);
+
+            // Get patient name for the message
+            const patient = await db.prepare('SELECT name FROM patients WHERE id = ?').bind(consult.patient_id).first();
+            const pName = (patient?.name || '환자') as string;
+            const treatType = (consult.treatment_type || '치료') as string;
+            
+            await db.prepare(`
+              INSERT INTO contact_tasks (id, organization_id, consultation_id, user_id, patient_id, task_type, recommended_date, recommended_message, points)
+              VALUES (?, ?, ?, ?, ?, 'closing', ?, ?, ?)
+            `).bind(
+              taskId, orgId, consultId, userId, consult.patient_id, taskDateStr,
+              `${pName}님, 지난번 ${treatType} 상담 후 고민은 좀 정리되셨나요? 궁금하신 점이 있으시면 편하게 말씀해주세요.`,
+              JSON.stringify(['상담 후 고민 포인트 확인', '추가 질문 응대', '결정 유도 (부드럽게)'])
+            ).run();
+          }
+        }
+      } catch (e) { console.error('Auto task generation error:', e); }
     }
 
     return c.json({ success: true });

@@ -61,14 +61,14 @@ patients.get('/', async (c) => {
   }
 });
 
-// GET /api/patients/:id - Get patient detail with history
+// GET /api/patients/:id - Get patient detail with full history (OPTIMIZED: parallel queries)
 patients.get('/:id', async (c) => {
   try {
     const patientId = c.req.param('id');
     const orgId = c.get('organizationId');
     const db = c.env.DB;
 
-    // Get patient
+    // Get patient first (needed for 404 check)
     const patient = await db.prepare(`
       SELECT * FROM patients WHERE id = ? AND organization_id = ?
     `).bind(patientId, orgId).first();
@@ -77,37 +77,113 @@ patients.get('/:id', async (c) => {
       return c.json({ success: false, error: '환자를 찾을 수 없습니다.' }, 404);
     }
 
-    // Get consultations
-    const consultations = await db.prepare(`
-      SELECT c.*, u.name as user_name
-      FROM consultations c
-      JOIN users u ON c.user_id = u.id
-      WHERE c.patient_id = ? AND c.organization_id = ?
-      ORDER BY c.consultation_date DESC
-    `).bind(patientId, orgId).all();
+    // === PARALLEL: All sub-queries at once ===
+    const [consultations, contactLogs, pendingTasks, retentionStatus, treatments, retentionContacts, consultStats] = await Promise.all([
+      // Consultations
+      db.prepare(`
+        SELECT c.*, u.name as user_name,
+          json_extract(c.feedback, '$.total_score') as consult_score
+        FROM consultations c
+        JOIN users u ON c.user_id = u.id
+        WHERE c.patient_id = ? AND c.organization_id = ?
+        ORDER BY c.consultation_date DESC
+      `).bind(patientId, orgId).all(),
+      // Contact logs
+      db.prepare(`
+        SELECT cl.*, u.name as user_name
+        FROM contact_logs cl
+        JOIN users u ON cl.user_id = u.id
+        WHERE cl.patient_id = ? AND cl.organization_id = ?
+        ORDER BY cl.created_at DESC LIMIT 20
+      `).bind(patientId, orgId).all(),
+      // Pending tasks
+      db.prepare(`
+        SELECT * FROM contact_tasks 
+        WHERE patient_id = ? AND organization_id = ? AND status = 'pending'
+        ORDER BY recommended_date ASC
+      `).bind(patientId, orgId).all(),
+      // Retention status
+      db.prepare(`
+        SELECT * FROM patient_retention_status WHERE patient_id = ? AND organization_id = ?
+      `).bind(patientId, orgId).first(),
+      // Treatments
+      db.prepare(`
+        SELECT * FROM patient_treatments WHERE patient_id = ? AND organization_id = ? ORDER BY created_at DESC
+      `).bind(patientId, orgId).all(),
+      // Retention contacts
+      db.prepare(`
+        SELECT rc.*, u.name as staff_name FROM retention_contacts rc
+        LEFT JOIN users u ON rc.staff_id = u.id
+        WHERE rc.patient_id = ? AND rc.organization_id = ?
+        ORDER BY rc.contacted_at DESC LIMIT 10
+      `).bind(patientId, orgId).all(),
+      // Summary statistics
+      db.prepare(`
+        SELECT 
+          COUNT(*) as total_consultations,
+          SUM(CASE WHEN status = 'paid' THEN 1 ELSE 0 END) as paid_consultations,
+          SUM(CASE WHEN status = 'undecided' THEN 1 ELSE 0 END) as undecided_count,
+          SUM(CASE WHEN status = 'paid' THEN amount ELSE 0 END) as total_paid,
+          SUM(COALESCE(amount, 0)) as total_consulted,
+          AVG(decision_score) as avg_decision_score,
+          AVG(CASE WHEN ai_analysis_status = 'completed' THEN CAST(json_extract(feedback, '$.total_score') AS REAL) END) as avg_consult_score,
+          MIN(consultation_date) as first_visit,
+          MAX(consultation_date) as last_visit
+        FROM consultations WHERE patient_id = ? AND organization_id = ?
+      `).bind(patientId, orgId).first()
+    ]);
 
-    // Get contact logs
-    const contactLogs = await db.prepare(`
-      SELECT cl.*, u.name as user_name
-      FROM contact_logs cl
-      JOIN users u ON cl.user_id = u.id
-      WHERE cl.patient_id = ? AND cl.organization_id = ?
-      ORDER BY cl.created_at DESC
-      LIMIT 20
-    `).bind(patientId, orgId).all();
+    // Build unified timeline (consultations + treatments + contacts)
+    const timeline = [
+      ...consultations.results.map(e => ({
+        date: e.consultation_date, type: 'consultation', id: e.id,
+        treatment_type: e.treatment_type, amount: e.amount, status: e.status,
+        score: e.consult_score, user_name: e.user_name
+      })),
+      ...treatments.results.map(e => ({
+        date: e.started_at || e.created_at, type: 'treatment', id: e.id,
+        treatment_type: e.treatment_type, treatment_name: e.treatment_name,
+        amount: e.total_amount, status: e.status
+      })),
+      ...retentionContacts.results.map(e => ({
+        date: e.contacted_at, type: 'contact', id: e.id,
+        contact_type: e.contact_type, result: e.result, notes: e.notes,
+        staff_name: e.staff_name
+      })),
+      ...contactLogs.results.map(e => ({
+        date: e.created_at, type: 'contact_log', id: e.id,
+        contact_type: e.contact_type, outcome: e.outcome, content: e.content,
+        user_name: e.user_name
+      }))
+    ].sort((a: any, b: any) => (b.date || '').localeCompare(a.date || '')).slice(0, 50);
 
-    // Get pending tasks
-    const pendingTasks = await db.prepare(`
-      SELECT * FROM contact_tasks 
-      WHERE patient_id = ? AND organization_id = ? AND status = 'pending'
-      ORDER BY recommended_date ASC
-    `).bind(patientId, orgId).all();
+    // Remaining treatment value
+    const remainingValue = treatments.results
+      .filter((t: any) => !['completed', 'abandoned'].includes(t.status as string))
+      .reduce((sum: number, t: any) => sum + ((t.remaining_amount as number) || 0), 0);
 
     return c.json({
       success: true,
       data: {
         ...patient,
         tags: safeParseJSON(patient.tags as string, []),
+        // Summary stats
+        summary_stats: {
+          total_consultations: consultStats?.total_consultations || 0,
+          paid_consultations: consultStats?.paid_consultations || 0,
+          undecided_count: consultStats?.undecided_count || 0,
+          conversion_rate: (consultStats?.total_consultations as number) > 0
+            ? Math.round(((consultStats?.paid_consultations as number) || 0) / (consultStats?.total_consultations as number) * 100)
+            : 0,
+          total_paid: consultStats?.total_paid || 0,
+          total_consulted: consultStats?.total_consulted || 0,
+          avg_decision_score: Math.round(((consultStats?.avg_decision_score as number) || 0) * 10) / 10,
+          avg_consult_score: Math.round((consultStats?.avg_consult_score as number) || 0),
+          first_visit: consultStats?.first_visit,
+          last_visit: consultStats?.last_visit,
+          remaining_treatment_value: remainingValue,
+        },
+        // Detailed data
         consultations: consultations.results.map(c => ({
           ...c,
           patient_psychology: safeParseJSON(c.patient_psychology as string, {}),
@@ -119,7 +195,10 @@ patients.get('/:id', async (c) => {
         pending_tasks: pendingTasks.results.map(t => ({
           ...t,
           points: safeParseJSON(t.points as string, [])
-        }))
+        })),
+        retention_status: retentionStatus,
+        treatments: treatments.results,
+        timeline
       }
     });
   } catch (error) {

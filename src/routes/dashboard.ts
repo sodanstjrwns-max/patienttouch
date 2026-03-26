@@ -639,7 +639,7 @@ dashboard.get('/proposal-analytics', async (c) => {
   }
 });
 
-// GET /api/dashboard/today-contacts - 오늘 연락해야 할 환자 통합 리스트
+// GET /api/dashboard/today-contacts - 오늘 연락해야 할 환자 통합 리스트 (OPTIMIZED: parallel queries)
 dashboard.get('/today-contacts', async (c) => {
   try {
     const orgId = c.get('organizationId');
@@ -649,21 +649,57 @@ dashboard.get('/today-contacts', async (c) => {
     const today = new Date().toISOString().split('T')[0];
     const contacts: any[] = [];
 
-    // 1. contact_tasks: 오늘 이전까지 pending인 클로징/안부 태스크
-    const pendingTasks = await db.prepare(`
-      SELECT t.id as task_id, t.task_type, t.recommended_date, t.recommended_message, t.points,
-             p.id as patient_id, p.name as patient_name, p.phone as patient_phone, p.referral_source, p.region,
-             c.treatment_type, c.amount, c.decision_score, c.consultation_date,
-             (SELECT MAX(ct2.completed_at) FROM contact_tasks ct2 
-              WHERE ct2.patient_id = p.id AND ct2.status = 'completed') as last_contact_date
-      FROM contact_tasks t
-      JOIN patients p ON t.patient_id = p.id
-      LEFT JOIN consultations c ON t.consultation_id = c.id
-      WHERE t.organization_id = ? AND t.user_id = ?
-        AND t.status = 'pending'
-        AND t.recommended_date <= ?
-      ORDER BY t.task_type = 'closing' DESC, t.recommended_date ASC
-    `).bind(orgId, userId, today).all();
+    // === PARALLEL: Run all 3 source queries at once ===
+    const [pendingTasks, noTaskUndecided, retentionNeed] = await Promise.all([
+      // 1. contact_tasks: 오늘 이전까지 pending인 클로징/안부 태스크
+      db.prepare(`
+        SELECT t.id as task_id, t.task_type, t.recommended_date, t.recommended_message, t.points,
+               p.id as patient_id, p.name as patient_name, p.phone as patient_phone, p.referral_source, p.region,
+               c.treatment_type, c.amount, c.decision_score, c.consultation_date,
+               (SELECT MAX(ct2.completed_at) FROM contact_tasks ct2 
+                WHERE ct2.patient_id = p.id AND ct2.status = 'completed') as last_contact_date
+        FROM contact_tasks t
+        JOIN patients p ON t.patient_id = p.id
+        LEFT JOIN consultations c ON t.consultation_id = c.id
+        WHERE t.organization_id = ? AND t.user_id = ?
+          AND t.status = 'pending'
+          AND t.recommended_date <= ?
+        ORDER BY t.task_type = 'closing' DESC, t.recommended_date ASC
+      `).bind(orgId, userId, today).all(),
+      // 2. 미결정 상담인데 아직 태스크가 없는 환자 (1일 이상 경과)
+      db.prepare(`
+        SELECT c.id as consultation_id, c.treatment_type, c.amount, c.decision_score, c.consultation_date,
+               p.id as patient_id, p.name as patient_name, p.phone as patient_phone, p.referral_source, p.region,
+               CAST(julianday('now') - julianday(c.consultation_date) AS INTEGER) as days_passed
+        FROM consultations c
+        JOIN patients p ON c.patient_id = p.id
+        WHERE c.organization_id = ? AND c.user_id = ?
+          AND c.status = 'undecided'
+          AND julianday('now') - julianday(c.consultation_date) >= 1
+          AND NOT EXISTS (
+            SELECT 1 FROM contact_tasks t 
+            WHERE t.consultation_id = c.id AND t.status = 'pending'
+          )
+        ORDER BY c.decision_score DESC, days_passed DESC
+        LIMIT 10
+      `).bind(orgId, userId).all(),
+      // 3. 리텐션 연락 필요 환자 (이탈위험, 미예약 등)
+      db.prepare(`
+        SELECT r.status as retention_status, r.days_since_visit, r.risk_score, r.remaining_treatment_value,
+               r.recommended_contact_script,
+               p.id as patient_id, p.name as patient_name, p.phone as patient_phone, p.referral_source, p.region
+        FROM patient_retention_status r
+        JOIN patients p ON r.patient_id = p.id
+        WHERE r.organization_id = ?
+          AND r.status IN ('unscheduled_urgent', 'unscheduled_warning', 'at_risk', 'consulted_unconverted')
+          AND NOT EXISTS (
+            SELECT 1 FROM retention_contacts rc 
+            WHERE rc.patient_id = p.id AND date(rc.contacted_at) >= date('now', '-3 days')
+          )
+        ORDER BY r.priority_score DESC
+        LIMIT 10
+      `).bind(orgId).all()
+    ]);
 
     for (const t of pendingTasks.results) {
       const daysPassed = Math.floor((Date.now() - new Date(t.recommended_date as string).getTime()) / 86400000);
@@ -690,23 +726,7 @@ dashboard.get('/today-contacts', async (c) => {
       });
     }
 
-    // 2. 미결정 상담인데 아직 태스크가 없는 환자 (2일 이상 경과)
-    const noTaskUndecided = await db.prepare(`
-      SELECT c.id as consultation_id, c.treatment_type, c.amount, c.decision_score, c.consultation_date,
-             p.id as patient_id, p.name as patient_name, p.phone as patient_phone, p.referral_source, p.region,
-             CAST(julianday('now') - julianday(c.consultation_date) AS INTEGER) as days_passed
-      FROM consultations c
-      JOIN patients p ON c.patient_id = p.id
-      WHERE c.organization_id = ? AND c.user_id = ?
-        AND c.status = 'undecided'
-        AND julianday('now') - julianday(c.consultation_date) >= 1
-        AND NOT EXISTS (
-          SELECT 1 FROM contact_tasks t 
-          WHERE t.consultation_id = c.id AND t.status = 'pending'
-        )
-      ORDER BY c.decision_score DESC, days_passed DESC
-      LIMIT 10
-    `).bind(orgId, userId).all();
+    // === PROCESS SOURCE 2: Undecided without tasks ===
 
     for (const c of noTaskUndecided.results) {
       const dp = c.days_passed as number;
@@ -727,22 +747,7 @@ dashboard.get('/today-contacts', async (c) => {
       });
     }
 
-    // 3. 리텐션 연락 필요 환자 (이탈위험, 미예약 등)
-    const retentionNeed = await db.prepare(`
-      SELECT r.status as retention_status, r.days_since_visit, r.risk_score, r.remaining_treatment_value,
-             r.recommended_contact_script,
-             p.id as patient_id, p.name as patient_name, p.phone as patient_phone, p.referral_source, p.region
-      FROM patient_retention_status r
-      JOIN patients p ON r.patient_id = p.id
-      WHERE r.organization_id = ?
-        AND r.status IN ('unscheduled_urgent', 'unscheduled_warning', 'at_risk', 'consulted_unconverted')
-        AND NOT EXISTS (
-          SELECT 1 FROM retention_contacts rc 
-          WHERE rc.patient_id = p.id AND date(rc.contacted_at) >= date('now', '-3 days')
-        )
-      ORDER BY r.priority_score DESC
-      LIMIT 10
-    `).bind(orgId).all();
+    // === PROCESS SOURCE 3: Retention contacts ===
 
     const retStatusLabel: Record<string, string> = {
       unscheduled_urgent: '미예약 긴급',
@@ -1173,6 +1178,163 @@ dashboard.get('/consultation-compare/:patientId', async (c) => {
 // ============================================
 // FEATURE 11: Data Export (CSV format for Excel)
 // ============================================
+// ============================================
+// FEATURE 11: Data Export (CSV format for Excel)
+// ============================================
+
+// ============================================
+// FEATURE 13: Coaching Score Trend (Weekly per-staff)
+// ============================================
+dashboard.get('/coaching-trend', async (c) => {
+  try {
+    const orgId = c.get('organizationId');
+    const db = c.env.DB;
+    const { weeks: rawWeeks = '8', user_id } = c.req.query();
+    const weeks = safeInt(rawWeeks, 8, 1, 52);
+
+    let userFilter = '';
+    const params: (string | number)[] = [orgId, weeks * 7];
+    if (user_id) {
+      userFilter = 'AND c.user_id = ?';
+      params.push(user_id);
+    }
+
+    // Weekly coaching scores by area
+    const result = await db.prepare(`
+      SELECT 
+        strftime('%Y-W%W', c.consultation_date) as week_label,
+        MIN(date(c.consultation_date, 'weekday 1', '-6 days')) as week_start,
+        COUNT(c.id) as consultation_count,
+        ROUND(AVG(r.coaching_score), 1) as avg_total_score,
+        ROUND(AVG(CAST(json_extract(r.coaching_feedback, '$.scores.rapport') AS REAL)), 1) as rapport,
+        ROUND(AVG(CAST(json_extract(r.coaching_feedback, '$.scores.spin') AS REAL)), 1) as spin,
+        ROUND(AVG(CAST(json_extract(r.coaching_feedback, '$.scores.objection_handling') AS REAL)), 1) as objection,
+        ROUND(AVG(CAST(json_extract(r.coaching_feedback, '$.scores.pricing_framing') AS REAL)), 1) as pricing,
+        ROUND(AVG(CAST(json_extract(r.coaching_feedback, '$.scores.closing') AS REAL)), 1) as closing,
+        ROUND(AVG(CAST(json_extract(r.coaching_feedback, '$.scores.structure') AS REAL)), 1) as structure
+      FROM consultations c
+      JOIN consultation_reports r ON c.id = r.consultation_id
+      WHERE c.organization_id = ? 
+        AND c.consultation_date >= datetime('now', '-' || ? || ' days')
+        ${userFilter}
+      GROUP BY week_label
+      ORDER BY week_start ASC
+    `).bind(...params).all();
+
+    // Find biggest improvement and weakest area
+    const weeks_data = result.results;
+    let biggestImprovement = null;
+    let weakestArea = null;
+
+    if (weeks_data.length >= 2) {
+      const first = weeks_data[0] as any;
+      const last = weeks_data[weeks_data.length - 1] as any;
+      const areas = ['rapport', 'spin', 'objection', 'pricing', 'closing', 'structure'];
+      const areaLabels: Record<string, string> = {
+        rapport: '라포형성', spin: 'SPIN질문', objection: '반론처리',
+        pricing: '가격프레이밍', closing: '클로징', structure: '상담구조'
+      };
+
+      let maxGain = -100, maxGainArea = '';
+      let minScore = 101, minScoreArea = '';
+      for (const a of areas) {
+        const diff = (last[a] || 0) - (first[a] || 0);
+        if (diff > maxGain) { maxGain = diff; maxGainArea = a; }
+        if ((last[a] || 0) < minScore) { minScore = last[a] || 0; minScoreArea = a; }
+      }
+      biggestImprovement = { area: maxGainArea, label: areaLabels[maxGainArea], change: maxGain };
+      weakestArea = { area: minScoreArea, label: areaLabels[minScoreArea], score: minScore };
+    }
+
+    return c.json({
+      success: true,
+      data: {
+        weeks: weeks_data,
+        insights: { biggest_improvement: biggestImprovement, weakest_area: weakestArea }
+      }
+    });
+  } catch (error) {
+    console.error('Coaching trend error:', error);
+    return c.json({ success: false, error: '코칭 트렌드 조회에 실패했습니다.' }, 500);
+  }
+});
+
+// ============================================
+// FEATURE 14: Achievement & Alert Summary (for HomePage banners)
+// ============================================
+dashboard.get('/achievements', async (c) => {
+  try {
+    const orgId = c.get('organizationId');
+    const userId = c.get('userId');
+    const db = c.env.DB;
+
+    const [todayDecided, weekBest, consecutiveWins, upcomingAppointments] = await Promise.all([
+      // Today's decided amount for milestone check
+      db.prepare(`
+        SELECT SUM(CASE WHEN status = 'paid' THEN amount ELSE 0 END) as today_decided,
+          COUNT(CASE WHEN status = 'paid' THEN 1 END) as today_paid_count
+        FROM consultations WHERE organization_id = ? AND user_id = ? AND date(consultation_date) = date('now')
+      `).bind(orgId, userId).first(),
+      // Best day this week
+      db.prepare(`
+        SELECT date(consultation_date) as best_date,
+          SUM(CASE WHEN status = 'paid' THEN amount ELSE 0 END) as amount
+        FROM consultations WHERE organization_id = ? AND user_id = ? AND consultation_date >= datetime('now', '-7 days')
+        GROUP BY date(consultation_date) ORDER BY amount DESC LIMIT 1
+      `).bind(orgId, userId).first(),
+      // Consecutive paid consultations streak
+      db.prepare(`
+        SELECT COUNT(*) as streak FROM (
+          SELECT status, ROW_NUMBER() OVER (ORDER BY consultation_date DESC) as rn
+          FROM consultations WHERE organization_id = ? AND user_id = ? AND status IN ('paid', 'undecided', 'lost')
+          ORDER BY consultation_date DESC LIMIT 20
+        ) WHERE status = 'paid' AND rn <= (
+          SELECT MIN(rn) - 1 FROM (
+            SELECT status, ROW_NUMBER() OVER (ORDER BY consultation_date DESC) as rn
+            FROM consultations WHERE organization_id = ? AND user_id = ? AND status != 'paid'
+            ORDER BY consultation_date DESC LIMIT 20
+          )
+        )
+      `).bind(orgId, userId, orgId, userId).first(),
+      // Today's appointments (treatments with next_appointment = today)
+      db.prepare(`
+        SELECT COUNT(*) as cnt FROM patient_treatments pt
+        JOIN patients p ON pt.patient_id = p.id
+        WHERE p.organization_id = ? AND date(pt.next_appointment) = date('now') AND pt.status NOT IN ('completed', 'abandoned')
+      `).bind(orgId).first()
+    ]);
+
+    const achievements: any[] = [];
+    const todayAmount = (todayDecided?.today_decided as number) || 0;
+    const todayCount = (todayDecided?.today_paid_count as number) || 0;
+
+    // Milestones
+    if (todayAmount >= 10000000) achievements.push({ type: 'milestone', icon: 'fa-crown', color: 'amber', message: `오늘 결정 1천만원 돌파!`, level: 'gold' });
+    else if (todayAmount >= 5000000) achievements.push({ type: 'milestone', icon: 'fa-star', color: 'brand', message: `오늘 결정 5백만원 달성!`, level: 'silver' });
+    if (todayCount >= 5) achievements.push({ type: 'streak', icon: 'fa-fire', color: 'rose', message: `오늘 ${todayCount}건 연속 결정!`, level: 'hot' });
+
+    // Streak
+    const streak = (consecutiveWins?.streak as number) || 0;
+    if (streak >= 3) achievements.push({ type: 'streak', icon: 'fa-bolt', color: 'amber', message: `${streak}연속 결제 달성 중!` });
+
+    // Appointments
+    const apptCount = (upcomingAppointments?.cnt as number) || 0;
+    
+    return c.json({
+      success: true,
+      data: {
+        achievements,
+        today_appointments: apptCount,
+        best_day_this_week: weekBest ? { date: weekBest.best_date, amount: weekBest.amount } : null,
+        consecutive_wins: streak
+      }
+    });
+  } catch (error) {
+    console.error('Achievements error:', error);
+    return c.json({ success: false, error: '실적 조회에 실패했습니다.' }, 500);
+  }
+});
+
 dashboard.get('/export', async (c) => {
   try {
     const orgId = c.get('organizationId');

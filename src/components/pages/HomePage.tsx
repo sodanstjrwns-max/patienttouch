@@ -44,6 +44,9 @@ export const HomePage: FC = () => {
       {/* MAIN CONTENT */}
       <div class="px-4 pt-4 space-y-5">
 
+        {/* ====== ACHIEVEMENT BANNERS ====== */}
+        <div id="achievementBanners" class="space-y-2"></div>
+
         {/* ====== STALE UNDECIDED ALERT BANNER ====== */}
         <div id="staleAlertBanner" class="hidden"></div>
 
@@ -318,12 +321,14 @@ export const HomePage: FC = () => {
                 '<p class="text-surface-500 text-xs font-medium tracking-wide mb-0.5">'+em+' '+gr+', '+authData.data.name+'님</p>' +
                 '<h1 class="text-lg font-extrabold text-surface-900 tracking-tight">'+authData.data.organization_name+'</h1>';
 
-              var [sRes, cRes] = await Promise.all([
+              var [sRes, cRes, achRes] = await Promise.all([
                 fetch('/api/dashboard/summary'),
-                fetch('/api/dashboard/today-contacts')
+                fetch('/api/dashboard/today-contacts'),
+                fetch('/api/dashboard/achievements')
               ]);
               var sData = await sRes.json();
               var cData = await cRes.json();
+              var achData = await achRes.json();
               
               if (!sData.success) { console.error('Summary failed', sData); return; }
               
@@ -342,6 +347,33 @@ export const HomePage: FC = () => {
                 '<span class="inline-flex items-center gap-1.5 text-xs font-semibold text-white/60">' +
                   '<span class="w-1.5 h-1.5 rounded-full bg-amber-400"></span>미결정 '+(td.undecided||0)+'건</span>' +
                 '<span class="text-xs text-white/40">총 '+(td.total_consultations||0)+'건</span>';
+
+              // === ACHIEVEMENT BANNERS ===
+              if (achData && achData.success && achData.data) {
+                var achEl = document.getElementById('achievementBanners');
+                var achHtml = '';
+                var achs = achData.data.achievements || [];
+                if (achs.length > 0) {
+                  achs.forEach(function(a) {
+                    var colors = {
+                      amber: 'from-amber-400 to-orange-500 shadow-amber-400/30',
+                      brand: 'from-brand-500 to-indigo-600 shadow-brand-500/30',
+                      rose: 'from-rose-500 to-pink-600 shadow-rose-500/30'
+                    };
+                    achHtml += '<div class="bg-gradient-to-r '+(colors[a.color]||colors.brand)+' rounded-xl p-3.5 flex items-center gap-3 shadow-md animate-slide-up">' +
+                      '<div class="w-9 h-9 bg-white/20 rounded-xl flex items-center justify-center shrink-0"><i class="fas '+a.icon+' text-white text-sm"></i></div>' +
+                      '<div class="flex-1"><p class="text-white font-bold text-xs">'+a.message+'</p></div>' +
+                      '<div class="text-white/60 text-lg">🎉</div></div>';
+                  });
+                }
+                // Today appointments alert
+                if (achData.data.today_appointments > 0) {
+                  achHtml += '<div class="bg-gradient-to-r from-sky-500 to-cyan-600 rounded-xl p-3 flex items-center gap-3 shadow-md shadow-sky-500/20">' +
+                    '<div class="w-8 h-8 bg-white/20 rounded-lg flex items-center justify-center"><i class="fas fa-calendar-check text-white text-xs"></i></div>' +
+                    '<div class="flex-1"><p class="text-white font-bold text-xs">오늘 예약 환자 '+achData.data.today_appointments+'명</p><p class="text-white/60 text-[10px]">치료 일정을 확인하세요</p></div></div>';
+                }
+                if (achHtml) achEl.innerHTML = achHtml;
+              }
 
               // === STALE UNDECIDED ALERT ===
               if (sa.count > 0) {

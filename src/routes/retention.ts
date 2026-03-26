@@ -18,40 +18,40 @@ retention.get('/dashboard', async (c) => {
     const db = c.env.DB;
     const { filter } = c.req.query(); // all, urgent, recall, at_risk, unconverted
 
-    // 1. 치료 미완료 환자 수
-    const incomplete = await db.prepare(`
-      SELECT COUNT(DISTINCT patient_id) as cnt FROM patient_retention_status 
-      WHERE organization_id = ? AND status IN ('unscheduled_urgent', 'unscheduled_warning')
-    `).bind(orgId).first<{cnt: number}>();
-
-    // 2. 이번 달 리콜 대상 수
-    const recall = await db.prepare(`
-      SELECT COUNT(DISTINCT patient_id) as cnt FROM patient_retention_status
-      WHERE organization_id = ? AND status IN ('recall_6m', 'recall_12m')
-    `).bind(orgId).first<{cnt: number}>();
-
-    // 3. 이번 주 연락 완료율
+    // === PARALLEL BATCH: All dashboard metrics at once ===
     const weekStart = new Date();
     weekStart.setDate(weekStart.getDate() - weekStart.getDay());
     const weekStartStr = weekStart.toISOString().split('T')[0];
-    
-    const totalNeedContact = await db.prepare(`
-      SELECT COUNT(*) as cnt FROM patient_retention_status
-      WHERE organization_id = ? AND status NOT IN ('active', 'completed', 'in_treatment')
-    `).bind(orgId).first<{cnt: number}>();
 
-    const completedContacts = await db.prepare(`
-      SELECT COUNT(DISTINCT patient_id) as cnt FROM retention_contacts
-      WHERE organization_id = ? AND contacted_at >= ?
-    `).bind(orgId, weekStartStr).first<{cnt: number}>();
+    const [incomplete, recall, totalNeedContact, completedContacts, lostRevenue] = await Promise.all([
+      // 1. 치료 미완료 환자 수
+      db.prepare(`
+        SELECT COUNT(DISTINCT patient_id) as cnt FROM patient_retention_status 
+        WHERE organization_id = ? AND status IN ('unscheduled_urgent', 'unscheduled_warning')
+      `).bind(orgId).first<{cnt: number}>(),
+      // 2. 이번 달 리콜 대상 수
+      db.prepare(`
+        SELECT COUNT(DISTINCT patient_id) as cnt FROM patient_retention_status
+        WHERE organization_id = ? AND status IN ('recall_6m', 'recall_12m')
+      `).bind(orgId).first<{cnt: number}>(),
+      // 3a. 연락 필요 총 수
+      db.prepare(`
+        SELECT COUNT(*) as cnt FROM patient_retention_status
+        WHERE organization_id = ? AND status NOT IN ('active', 'completed', 'in_treatment')
+      `).bind(orgId).first<{cnt: number}>(),
+      // 3b. 이번 주 연락 완료 수
+      db.prepare(`
+        SELECT COUNT(DISTINCT patient_id) as cnt FROM retention_contacts
+        WHERE organization_id = ? AND contacted_at >= ?
+      `).bind(orgId, weekStartStr).first<{cnt: number}>(),
+      // 4. 예상 이탈 매출
+      db.prepare(`
+        SELECT COALESCE(SUM(remaining_treatment_value), 0) as total FROM patient_retention_status
+        WHERE organization_id = ? AND status IN ('unscheduled_urgent', 'unscheduled_warning', 'at_risk', 'consulted_unconverted')
+      `).bind(orgId).first<{total: number}>()
+    ]);
 
     const contactRate = totalNeedContact?.cnt ? Math.round((completedContacts?.cnt || 0) / totalNeedContact.cnt * 100) : 0;
-
-    // 4. 예상 이탈 매출
-    const lostRevenue = await db.prepare(`
-      SELECT COALESCE(SUM(remaining_treatment_value), 0) as total FROM patient_retention_status
-      WHERE organization_id = ? AND status IN ('unscheduled_urgent', 'unscheduled_warning', 'at_risk', 'consulted_unconverted')
-    `).bind(orgId).first<{total: number}>();
 
     // 5. 오늘의 리텐션 연락 리스트 (우선순위 순, 필터 적용)
     let statusFilter = `AND r.status NOT IN ('active', 'completed', 'in_treatment')`;
@@ -70,34 +70,75 @@ retention.get('/dashboard', async (c) => {
       LIMIT 30
     `).bind(orgId).all();
 
-    // 각 연락 대상에 치료 정보 추가
-    const contactsWithTreatments = [];
-    for (const contact of todayContacts.results) {
-      const treatments = await db.prepare(`
-        SELECT * FROM patient_treatments 
-        WHERE patient_id = ? AND status NOT IN ('completed', 'abandoned')
-        ORDER BY created_at DESC
-      `).bind(contact.patient_id).all();
+    // === BATCH QUERIES: Replace N+1 loop with 3 batch queries ===
+    const patientIds = todayContacts.results.map(c => c.patient_id as string);
+    
+    let allTreatments: any[] = [];
+    let allRecentContacts: any[] = [];
+    let allLastConsults: any[] = [];
 
-      const recentContacts = await db.prepare(`
-        SELECT * FROM retention_contacts
-        WHERE patient_id = ? ORDER BY contacted_at DESC LIMIT 3
-      `).bind(contact.patient_id).all();
+    if (patientIds.length > 0) {
+      const placeholders = patientIds.map(() => '?').join(',');
+      
+      [allTreatments, allRecentContacts, allLastConsults] = await Promise.all([
+        // Batch: all active treatments for all contact patients
+        db.prepare(`
+          SELECT * FROM patient_treatments 
+          WHERE patient_id IN (${placeholders}) AND status NOT IN ('completed', 'abandoned')
+          ORDER BY created_at DESC
+        `).bind(...patientIds).all().then(r => r.results),
+        // Batch: recent contacts for all patients (top 3 per patient via window)
+        db.prepare(`
+          SELECT * FROM (
+            SELECT rc.*, ROW_NUMBER() OVER (PARTITION BY rc.patient_id ORDER BY rc.contacted_at DESC) as rn
+            FROM retention_contacts rc
+            WHERE rc.patient_id IN (${placeholders})
+          ) WHERE rn <= 3
+        `).bind(...patientIds).all().then(r => r.results),
+        // Batch: last consultation feedback for all patients
+        db.prepare(`
+          SELECT * FROM (
+            SELECT c.patient_id, c.feedback, ROW_NUMBER() OVER (PARTITION BY c.patient_id ORDER BY c.consultation_date DESC) as rn
+            FROM consultations c
+            WHERE c.patient_id IN (${placeholders})
+          ) WHERE rn = 1
+        `).bind(...patientIds).all().then(r => r.results)
+      ]);
+    }
 
-      // 마지막 상담 피드백 점수
-      const lastConsult = await db.prepare(`
-        SELECT feedback FROM consultations
-        WHERE patient_id = ? ORDER BY consultation_date DESC LIMIT 1
-      `).bind(contact.patient_id).first<{feedback: string}>();
+    // Build lookup maps for O(1) access
+    const treatmentsByPatient = new Map<string, any[]>();
+    for (const t of allTreatments) {
+      const pid = t.patient_id as string;
+      if (!treatmentsByPatient.has(pid)) treatmentsByPatient.set(pid, []);
+      treatmentsByPatient.get(pid)!.push(t);
+    }
+
+    const contactsByPatient = new Map<string, any[]>();
+    for (const rc of allRecentContacts) {
+      const pid = rc.patient_id as string;
+      if (!contactsByPatient.has(pid)) contactsByPatient.set(pid, []);
+      contactsByPatient.get(pid)!.push(rc);
+    }
+
+    const consultByPatient = new Map<string, any>();
+    for (const lc of allLastConsults) {
+      consultByPatient.set(lc.patient_id as string, lc);
+    }
+
+    // Map results using batch data
+    const contactsWithTreatments = todayContacts.results.map(contact => {
+      const pid = contact.patient_id as string;
+      const lastConsult = consultByPatient.get(pid);
       const feedback = safeParseJSON(lastConsult?.feedback || '{}', {});
 
-      contactsWithTreatments.push({
+      return {
         ...contact,
-        treatments: treatments.results,
-        recent_contacts: recentContacts.results,
+        treatments: treatmentsByPatient.get(pid) || [],
+        recent_contacts: contactsByPatient.get(pid) || [],
         satisfaction_score: (feedback as any)?.total_score || null
-      });
-    }
+      };
+    });
 
     // 6. 상태 분포
     const distribution = await db.prepare(`
