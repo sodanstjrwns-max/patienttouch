@@ -83,7 +83,12 @@ export async function callOpenAI(params: {
   }
 
   if (maxTokens) {
-    body.max_tokens = maxTokens;
+    // GPT-5 계열은 max_tokens 대신 max_completion_tokens 사용
+    if (isGpt5) {
+      body.max_completion_tokens = maxTokens;
+    } else {
+      body.max_tokens = maxTokens;
+    }
   }
 
   const response = await fetch('https://api.openai.com/v1/chat/completions', {
