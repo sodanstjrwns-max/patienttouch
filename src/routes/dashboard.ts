@@ -414,7 +414,7 @@ dashboard.get('/admin-summary', async (c) => {
     const daysBack = periodToDays(validateAdminPeriod(period));
 
     // Parallel queries
-    const [currentStats, prevStats, proposalStats, prevProposalStats] = await Promise.all([
+    const [currentStats, prevStats, proposalStats, prevProposalStats, contactStats] = await Promise.all([
       db.prepare(`
         SELECT COUNT(*) as total_consultations,
           SUM(CASE WHEN status = 'paid' THEN 1 ELSE 0 END) as paid_consultations,
@@ -446,7 +446,13 @@ dashboard.get('/admin-summary', async (c) => {
         FROM treatment_proposals
         WHERE organization_id = ? 
           AND sent_at >= datetime('now', '-' || ? || ' days') AND sent_at < datetime('now', '-' || ? || ' days')
-      `).bind(orgId, daysBack * 2, daysBack).first()
+      `).bind(orgId, daysBack * 2, daysBack).first(),
+      // Contact rate query
+      db.prepare(`
+        SELECT 
+          (SELECT COUNT(DISTINCT patient_id) FROM retention_contacts WHERE organization_id = ? AND contacted_at >= datetime('now', '-' || ? || ' days')) as contacted,
+          (SELECT COUNT(*) FROM patient_retention_status WHERE organization_id = ? AND status NOT IN ('active', 'completed', 'in_treatment')) as need_contact
+      `).bind(orgId, daysBack, orgId).first()
     ]);
 
     // Calculate metrics
@@ -466,6 +472,10 @@ dashboard.get('/admin-summary', async (c) => {
     const prevViewedProposals = (prevProposalStats?.viewed as number) || 0;
     const prevProposalViewRate = prevTotalProposals > 0 ? (prevViewedProposals / prevTotalProposals) * 100 : 0;
 
+    const needContact = (contactStats?.need_contact as number) || 0;
+    const contacted = (contactStats?.contacted as number) || 0;
+    const contactRate = needContact > 0 ? Math.round(contacted / needContact * 100) : 0;
+
     return c.json({
       success: true,
       data: {
@@ -473,6 +483,7 @@ dashboard.get('/admin-summary', async (c) => {
         conversion_rate: conversionRate,
         avg_coaching_score: (currentStats?.avg_coaching_score as number) || 0,
         proposal_view_rate: proposalViewRate,
+        contact_rate: contactRate,
         // Trends (percentage change)
         consultation_trend: prevTotalConsults > 0 
           ? ((totalConsults - prevTotalConsults) / prevTotalConsults) * 100 : 0,

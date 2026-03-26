@@ -541,6 +541,34 @@ export const PatientDetailPage: FC<Props> = ({ id }) => {
               (p.memo ? '<p class="mt-3 text-sm text-surface-600 bg-surface-50 p-3 rounded-xl leading-relaxed">' + p.memo + '</p>' : '') +
             '</div>';
 
+            // Patient Value Summary (LTV)
+            var totalPaid = consultations.reduce(function(s,c){ return s + (c.status === 'paid' ? (c.amount || 0) : 0); }, 0);
+            var totalConsultAmt = consultations.reduce(function(s,c){ return s + (c.amount || 0); }, 0);
+            var paidCount = consultations.filter(function(c){ return c.status === 'paid'; }).length;
+            var convRate = consultations.length > 0 ? Math.round(paidCount / consultations.length * 100) : 0;
+            var avgDecision = consultations.filter(function(c){ return c.decision_score; }).reduce(function(s,c,_,a){ return s + c.decision_score / a.length; }, 0);
+            
+            html += '<div class="grid grid-cols-4 gap-1.5">' +
+              '<div class="card-premium p-2.5 text-center"><p class="text-base font-black text-brand-600">' + consultations.length + '</p><p class="text-[8px] font-bold text-surface-400">총 상담</p></div>' +
+              '<div class="card-premium p-2.5 text-center"><p class="text-base font-black text-emerald-600">' + convRate + '%</p><p class="text-[8px] font-bold text-surface-400">전환율</p></div>' +
+              '<div class="card-premium p-2.5 text-center"><p class="text-base font-black text-purple-600">' + (totalPaid > 0 ? Math.round(totalPaid/10000) + '만' : '-') + '</p><p class="text-[8px] font-bold text-surface-400">총 수납</p></div>' +
+              '<div class="card-premium p-2.5 text-center"><p class="text-base font-black text-amber-600">' + (avgDecision > 0 ? avgDecision.toFixed(1) : '-') + '</p><p class="text-[8px] font-bold text-surface-400">평균 결정도</p></div>' +
+            '</div>';
+
+            // Patient Value Grade Card
+            var pvGrade = totalPaid >= 10000000 ? {label:'VIP', color:'amber', icon:'fa-crown', desc:'1천만원 이상 수납'} :
+                          totalPaid >= 5000000 ? {label:'Gold', color:'emerald', icon:'fa-gem', desc:'5백만원 이상 수납'} :
+                          totalPaid >= 1000000 ? {label:'Silver', color:'sky', icon:'fa-medal', desc:'1백만원 이상 수납'} :
+                          {label:'New', color:'surface', icon:'fa-seedling', desc:'신규/육성 환자'};
+            
+            if (totalPaid > 0 || consultations.length >= 2) {
+              html += '<div class="card-premium p-3 flex items-center gap-3 bg-gradient-to-r from-' + pvGrade.color + '-50/50 to-transparent border-l-4 border-l-' + pvGrade.color + '-400">' +
+                '<div class="w-10 h-10 rounded-xl bg-' + pvGrade.color + '-100 flex items-center justify-center"><i class="fas ' + pvGrade.icon + ' text-' + pvGrade.color + '-600"></i></div>' +
+                '<div class="flex-1"><p class="font-bold text-sm text-' + pvGrade.color + '-700">' + pvGrade.label + ' 등급</p><p class="text-[10px] text-surface-500">' + pvGrade.desc + '</p></div>' +
+                (totalConsultAmt > totalPaid && totalConsultAmt > 0 ? '<div class="text-right"><p class="text-xs font-bold text-amber-600">잠재 매출</p><p class="text-sm font-black text-amber-700">' + Math.round((totalConsultAmt-totalPaid)/10000) + '만원</p></div>' : '') +
+              '</div>';
+            }
+
             // Quick Actions
             html += '<div class="grid grid-cols-2 gap-2">' +
               '<a href="tel:' + (p.phone || '') + '" class="card-premium p-3.5 flex items-center justify-center gap-2 font-semibold text-sm ' + (!p.phone ? 'opacity-40 pointer-events-none' : 'active:scale-[0.98]') + '">' +
@@ -690,11 +718,33 @@ export const PatientDetailPage: FC<Props> = ({ id }) => {
             }
 
             // 잔여 치료비 요약
+            // 잔여 치료비 요약 + Payment Progress
+            var totalTreatAmt = treatments.reduce(function(s,t){ return s + (t.total_amount||0); }, 0);
+            var totalPaidAmt = treatments.reduce(function(s,t){ return s + (t.paid_amount||0); }, 0);
+            var paymentRate = totalTreatAmt > 0 ? Math.round(totalPaidAmt / totalTreatAmt * 100) : 0;
+            var completedTreats = treatments.filter(function(t){ return t.status === 'completed'; }).length;
+            var treatProgressRate = treatments.length > 0 ? Math.round(completedTreats / treatments.length * 100) : 0;
+            
             html += '<div class="card-premium p-5">' +
               '<div class="flex items-center justify-between mb-3">' +
                 sec('잔여 치료비', 'fas fa-coins text-amber-600', 'bg-amber-50') +
               '</div>' +
               '<p class="text-3xl font-black text-surface-900">' + Math.round((d.remaining_treatment_value || 0) / 10000) + '<span class="text-sm font-semibold text-surface-400 ml-1">만원</span></p>';
+
+            // Payment Progress Bar
+            if (totalTreatAmt > 0) {
+              html += '<div class="mt-3 space-y-2">' +
+                '<div><div class="flex justify-between text-[10px] mb-1"><span class="font-semibold text-surface-500">수납율</span><span class="font-black text-emerald-600">' + paymentRate + '%</span></div>' +
+                '<div class="h-2 bg-surface-100 rounded-full overflow-hidden"><div class="h-full bg-gradient-to-r from-emerald-500 to-emerald-400 rounded-full transition-all duration-1000" style="width:' + paymentRate + '%"></div></div></div>' +
+                '<div><div class="flex justify-between text-[10px] mb-1"><span class="font-semibold text-surface-500">치료 진행율</span><span class="font-black text-brand-600">' + treatProgressRate + '% (' + completedTreats + '/' + treatments.length + ')</span></div>' +
+                '<div class="h-2 bg-surface-100 rounded-full overflow-hidden"><div class="h-full bg-gradient-to-r from-brand-500 to-brand-400 rounded-full transition-all duration-1000" style="width:' + treatProgressRate + '%"></div></div></div>' +
+                '<div class="grid grid-cols-3 gap-2 mt-2">' +
+                  '<div class="text-center p-2 bg-surface-50 rounded-lg"><p class="text-xs font-black text-surface-800">' + Math.round(totalTreatAmt/10000) + '만</p><p class="text-[8px] text-surface-400">총 치료비</p></div>' +
+                  '<div class="text-center p-2 bg-emerald-50 rounded-lg"><p class="text-xs font-black text-emerald-600">' + Math.round(totalPaidAmt/10000) + '만</p><p class="text-[8px] text-surface-400">수납 완료</p></div>' +
+                  '<div class="text-center p-2 bg-rose-50 rounded-lg"><p class="text-xs font-black text-rose-600">' + Math.round((d.remaining_treatment_value||0)/10000) + '만</p><p class="text-[8px] text-surface-400">미수납</p></div>' +
+                '</div></div>';
+            }
+
             if (d.next_recall_date) {
               html += '<p class="text-xs text-sky-600 mt-2"><i class="fas fa-calendar-check mr-1"></i>다음 리콜 예정: ' + d.next_recall_date + '</p>';
             }

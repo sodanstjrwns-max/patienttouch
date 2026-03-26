@@ -354,6 +354,93 @@ export const ConsultationDetailPage: FC<Props> = ({ id }) => {
               html += '</div>';
             }
 
+            // SPIN Analysis Card (from coaching feedback scores)
+            if (feedback.total_score) {
+              var spinData = {
+                situation: { label: '상황 질문', desc: '환자의 현재 상태 파악', score: scores.needs_identification || 0, max: 25, icon: '🔍' },
+                problem: { label: '문제 인식', desc: '환자의 불편/필요 탐색', score: Math.round((scores.needs_identification || 0) * 0.6 + (scores.objection_handling || 0) * 0.4), max: 25, icon: '⚡' },
+                implication: { label: '시사 제시', desc: '방치 시 결과 안내', score: scores.value_delivery || 0, max: 25, icon: '💡' },
+                needPayoff: { label: '해결 가치', desc: '치료 후 기대 효과', score: scores.closing || 0, max: 25, icon: '🎯' }
+              };
+              html += '<div class="card-premium p-5">' +
+                '<div class="flex items-center gap-2 mb-3">' +
+                  '<div class="w-7 h-7 rounded-lg bg-violet-50 flex items-center justify-center"><i class="fas fa-chess-knight text-xs text-violet-600"></i></div>' +
+                  '<h3 class="font-bold text-sm text-surface-900">SPIN 상담 전략 분석</h3>' +
+                  '<span class="ml-auto text-[10px] font-semibold text-violet-600 bg-violet-50 px-2 py-0.5 rounded-lg">Patient Funnel</span>' +
+                '</div>';
+              
+              // SPIN Progress Bars
+              html += '<div class="space-y-3">';
+              ['situation','problem','implication','needPayoff'].forEach(function(key) {
+                var sp = spinData[key];
+                var pct = Math.round(sp.score / sp.max * 100);
+                var barColor = pct >= 80 ? 'from-emerald-500 to-emerald-400' : pct >= 60 ? 'from-brand-500 to-brand-400' : pct >= 40 ? 'from-amber-500 to-amber-400' : 'from-rose-500 to-rose-400';
+                html += '<div>' +
+                  '<div class="flex items-center justify-between mb-1">' +
+                    '<div class="flex items-center gap-1.5"><span class="text-sm">' + sp.icon + '</span><span class="text-xs font-bold text-surface-800">' + sp.label + '</span></div>' +
+                    '<span class="text-xs font-black text-surface-700">' + sp.score + '<span class="text-surface-400 font-semibold">/' + sp.max + '</span></span>' +
+                  '</div>' +
+                  '<div class="h-2 bg-surface-100 rounded-full overflow-hidden"><div class="h-full bg-gradient-to-r ' + barColor + ' rounded-full transition-all duration-1000" style="width:' + pct + '%"></div></div>' +
+                  '<p class="text-[10px] text-surface-400 mt-0.5">' + sp.desc + '</p>' +
+                '</div>';
+              });
+              html += '</div>';
+
+              // SPIN Strategy Tip
+              var weakest = ['situation','problem','implication','needPayoff'].sort(function(a,b) { return spinData[a].score - spinData[b].score; })[0];
+              var tipMap = {
+                situation: '현재 환자의 생활 습관, 통증 빈도, 이전 치과 경험을 더 깊이 물어보세요.',
+                problem: '환자가 겪는 불편함을 구체적으로 표현하도록 유도하세요. "어떤 점이 가장 불편하세요?"',
+                implication: '치료를 미루면 어떤 결과가 생기는지 시각화하여 설명하세요.',
+                needPayoff: '치료 후 달라지는 일상의 변화를 구체적으로 그려주세요.'
+              };
+              html += '<div class="mt-3 p-3 bg-gradient-to-r from-violet-50 to-purple-50/30 rounded-xl border border-violet-100/50">' +
+                '<p class="text-[10px] font-bold text-violet-600 mb-1"><i class="fas fa-lightbulb mr-1"></i>AI 전략 코칭 — ' + spinData[weakest].label + ' 강화 필요</p>' +
+                '<p class="text-xs text-surface-700 leading-relaxed">' + tipMap[weakest] + '</p>' +
+              '</div></div>';
+            }
+
+            // Next Step Strategy Card (for undecided patients)
+            if (c.status === 'undecided') {
+              var nextSteps = [];
+              if (psychology.fear) nextSteps.push({icon:'😰', text:'두려움 해소: "' + psychology.fear + '" → 성공 사례 공유 권장'});
+              if (psychology.hesitation_reason) nextSteps.push({icon:'🤔', text:'미결정 사유 대응: "' + psychology.hesitation_reason + '" → 맞춤 해결책 준비'});
+              if (psychology.decision_maker && psychology.decision_maker !== '본인') nextSteps.push({icon:'👥', text:'결정권자(' + psychology.decision_maker + ') 동반 내원 유도'});
+              if (psychology.budget) nextSteps.push({icon:'💰', text:'예산(' + psychology.budget + ') 맞춤 분납/할인 플랜 제시'});
+              if (c.decision_score && c.decision_score >= 7) nextSteps.push({icon:'🔥', text:'결정도 높음! 48시간 내 팔로업 전화 필수'});
+              else if (c.decision_score) nextSteps.push({icon:'📞', text:'3일 내 안부 연락 후 상담 시 나온 관심사 언급'});
+              
+              if (nextSteps.length > 0) {
+                html += '<div class="card-premium p-5 border-l-4 border-l-brand-400 bg-gradient-to-r from-brand-50/30 to-transparent">' +
+                  '<div class="flex items-center gap-2 mb-3">' +
+                    '<div class="w-7 h-7 rounded-lg bg-brand-50 flex items-center justify-center"><i class="fas fa-route text-xs text-brand-600"></i></div>' +
+                    '<h3 class="font-bold text-sm text-surface-900">다음 단계 전략</h3>' +
+                    '<span class="ml-auto text-[10px] font-bold text-brand-600 bg-brand-50 px-2 py-0.5 rounded-lg animate-pulse">ACTION</span>' +
+                  '</div>' +
+                  '<div class="space-y-2">';
+                nextSteps.forEach(function(step) {
+                  html += '<div class="flex items-start gap-2.5 p-2.5 bg-white/60 rounded-lg">' +
+                    '<span class="text-base shrink-0">' + step.icon + '</span>' +
+                    '<p class="text-xs text-surface-700 leading-relaxed">' + step.text + '</p>' +
+                  '</div>';
+                });
+                html += '</div></div>';
+              }
+            }
+
+            // Companion Info
+            if (c.companion && c.companion.present) {
+              html += '<div class="card-premium p-4">' +
+                '<div class="flex items-center gap-3">' +
+                  '<div class="w-10 h-10 rounded-xl bg-sky-50 flex items-center justify-center"><span class="text-lg">👥</span></div>' +
+                  '<div class="flex-1">' +
+                    '<p class="font-bold text-sm text-surface-900">동반인 정보</p>' +
+                    '<p class="text-xs text-surface-500">' + (c.companion.relationship || '관계 미상') + (c.companion.reaction ? ' · 반응: ' + c.companion.reaction : '') + '</p>' +
+                  '</div>' +
+                '</div>' +
+              '</div>';
+            }
+
             // Actions
             html += '<div class="space-y-2 pt-2">';
             if (isUnlinked) {

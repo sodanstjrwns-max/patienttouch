@@ -252,6 +252,62 @@ export const RetentionPage: FC = () => {
             html += '</div></div>';
             html += '</div>';
 
+            // Risk Heatmap
+            html += '<div class="card-premium p-5">';
+            html += '<div class="flex items-center gap-2 mb-4"><div class="w-7 h-7 rounded-lg bg-rose-50 flex items-center justify-center"><i class="fas fa-fire text-xs text-rose-600"></i></div><h3 class="font-bold text-sm text-surface-900">이탈 위험 히트맵</h3></div>';
+            
+            // Group patients by risk level
+            var riskGroups = { critical: [], high: [], medium: [], low: [] };
+            d.today_contacts.forEach(function(c) {
+              if (c.risk_score >= 80) riskGroups.critical.push(c);
+              else if (c.risk_score >= 60) riskGroups.high.push(c);
+              else if (c.risk_score >= 40) riskGroups.medium.push(c);
+              else riskGroups.low.push(c);
+            });
+            
+            var riskLevels = [
+              { key: 'critical', label: '긴급', color: 'rose', icon: '🔴', count: riskGroups.critical.length },
+              { key: 'high', label: '높음', color: 'amber', icon: '🟠', count: riskGroups.high.length },
+              { key: 'medium', label: '보통', color: 'sky', icon: '🟡', count: riskGroups.medium.length },
+              { key: 'low', label: '낮음', color: 'emerald', icon: '🟢', count: riskGroups.low.length }
+            ];
+            
+            html += '<div class="space-y-2">';
+            riskLevels.forEach(function(rl) {
+              var totalContacts = d.today_contacts.length || 1;
+              var pct = Math.round(rl.count / totalContacts * 100);
+              html += '<div class="flex items-center gap-2.5">' +
+                '<span class="text-sm">' + rl.icon + '</span>' +
+                '<span class="text-[10px] font-semibold text-surface-600 w-8">' + rl.label + '</span>' +
+                '<div class="flex-1 h-3 bg-surface-100 rounded-full overflow-hidden">' +
+                  '<div class="h-full bg-' + rl.color + '-500 rounded-full transition-all duration-700" style="width:' + pct + '%"></div>' +
+                '</div>' +
+                '<span class="text-[10px] font-black text-surface-800 w-6 text-right">' + rl.count + '</span>' +
+              '</div>';
+            });
+            // Top 3 critical patients mini-cards
+            if (riskGroups.critical.length > 0) {
+              html += '<div class="mt-3 p-3 bg-rose-50 rounded-xl border border-rose-100">' +
+                '<p class="text-[10px] font-bold text-rose-700 mb-2"><i class="fas fa-exclamation-triangle mr-1"></i>긴급 이탈 위험 TOP ' + Math.min(3, riskGroups.critical.length) + '</p>' +
+                '<div class="space-y-1.5">';
+              riskGroups.critical.slice(0, 3).forEach(function(p) {
+                html += '<div class="flex items-center justify-between">' +
+                  '<a href="/patients/' + p.patient_id + '" class="text-xs font-semibold text-rose-800 hover:underline">' + p.patient_name + '</a>' +
+                  '<div class="flex items-center gap-2">' +
+                    '<span class="text-[10px] text-rose-600">위험 ' + p.risk_score + '</span>' +
+                    (p.remaining_treatment_value > 0 ? '<span class="text-[10px] font-bold text-rose-700">' + Math.round(p.remaining_treatment_value/10000) + '만원</span>' : '') +
+                  '</div></div>';
+              });
+              html += '</div></div>';
+            }
+            html += '</div></div>';
+
+            // Contact Success Rate Trend
+            html += '<div class="card-premium p-5">';
+            html += '<div class="flex items-center gap-2 mb-4"><div class="w-7 h-7 rounded-lg bg-emerald-50 flex items-center justify-center"><i class="fas fa-chart-line text-xs text-emerald-600"></i></div><h3 class="font-bold text-sm text-surface-900">연락 성공률 추이</h3></div>';
+            html += '<canvas id="retSuccessChart" height="140"></canvas>';
+            html += '</div>';
+
             // Daily contact trend chart
             html += '<div class="card-premium p-5">';
             html += '<div class="flex items-center gap-2 mb-4"><div class="w-7 h-7 rounded-lg bg-sky-50 flex items-center justify-center"><i class="fas fa-chart-line text-xs text-sky-600"></i></div><h3 class="font-bold text-sm text-surface-900">일별 연락 추이</h3></div>';
@@ -262,6 +318,52 @@ export const RetentionPage: FC = () => {
             container.innerHTML = html;
             renderChart(d.status_distribution);
             loadDailyTrend();
+            loadSuccessRateTrend();
+          }
+
+          // Contact Success Rate Trend Chart
+          async function loadSuccessRateTrend() {
+            try {
+              var res = await fetch('/api/retention/report?period=week');
+              var data = await res.json();
+              if (!data.success || !data.data.daily_trend) return;
+              var trend = data.data.daily_trend;
+              if (!trend || trend.length === 0) return;
+              var canvas = document.getElementById('retSuccessChart');
+              if (!canvas || !window.Chart) return;
+              var labels = trend.map(function(d) { var dt=new Date(d.date); return (dt.getMonth()+1)+'/'+dt.getDate(); });
+              var successRates = trend.map(function(d) { 
+                var total = d.total || 0;
+                var success = (d.booked || 0) + (d.connected || 0);
+                return total > 0 ? Math.round(success / total * 100) : 0;
+              });
+              new Chart(canvas.getContext('2d'), {
+                type: 'line',
+                data: {
+                  labels: labels,
+                  datasets: [{
+                    label: '성공률(%)',
+                    data: successRates,
+                    borderColor: '#10b981',
+                    backgroundColor: 'rgba(16,185,129,0.08)',
+                    fill: true,
+                    tension: 0.4,
+                    borderWidth: 2.5,
+                    pointRadius: 4,
+                    pointBackgroundColor: '#10b981',
+                    pointHoverRadius: 6
+                  }]
+                },
+                options: {
+                  responsive: true,
+                  plugins: { legend: { display: false } },
+                  scales: {
+                    x: { grid: {display:false}, ticks: {font:{size:9}} },
+                    y: { beginAtZero: true, max: 100, ticks: {font:{size:9}, callback: function(v){return v+'%';}}, grid: {color:'#f1f5f9'} }
+                  }
+                }
+              });
+            } catch(e) { console.error('Success rate trend error:', e); }
           }
 
           var colorMap = {
