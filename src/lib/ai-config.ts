@@ -65,11 +65,18 @@ export async function callOpenAI(params: {
 }): Promise<any> {
   const { apiKey, model, messages, temperature = 0.3, maxTokens, jsonMode = true } = params;
 
+  // GPT-5 계열은 temperature를 지원하지 않음 (기본값 1만 허용)
+  const isGpt5 = model.includes('gpt-5');
+
   const body: any = {
     model,
     messages,
-    temperature,
   };
+
+  // GPT-5가 아닌 모델에만 temperature 설정
+  if (!isGpt5 && temperature !== undefined) {
+    body.temperature = temperature;
+  }
 
   if (jsonMode) {
     body.response_format = { type: 'json_object' };
