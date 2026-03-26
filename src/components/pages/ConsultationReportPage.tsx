@@ -98,32 +98,82 @@ export const ConsultationReportPage: FC<Props> = ({ id }) => {
           }
 
           async function generateReport() {
+            var steps = [
+              { icon: 'fa-microphone', text: '음성 인식 (STT)...' },
+              { icon: 'fa-users', text: '화자 분리 중...' },
+              { icon: 'fa-search', text: '핵심 정보 추출 (NER)...' },
+              { icon: 'fa-comments', text: 'SPIN 화법 분석...' },
+              { icon: 'fa-file-lines', text: 'AI 리포트 생성 중...' }
+            ];
+            var stepIdx = 0;
             document.getElementById('reportContent').innerHTML =
               '<div class="text-center py-16 animate-fade-in">' +
                 '<div class="w-24 h-24 mx-auto mb-6 rounded-3xl bg-gradient-to-br from-brand-100 to-purple-100 flex items-center justify-center animate-pulse-soft">' +
                   '<i class="fas fa-brain text-4xl text-brand-600"></i>' +
                 '</div>' +
-                '<h3 class="text-xl font-bold text-surface-900 mb-2">AI 분석 중...</h3>' +
-                '<p class="text-surface-500 text-sm leading-relaxed">상담 내용을 분석하고 있습니다<br/>GPT-5 심층 분석 중 · 약 1~2분 소요됩니다</p>' +
-                '<div class="flex justify-center gap-1 mt-6">' +
-                  '<div class="w-2 h-2 rounded-full bg-brand-400 animate-wave" style="animation-delay:0s"></div>' +
-                  '<div class="w-2 h-2 rounded-full bg-brand-400 animate-wave" style="animation-delay:0.2s"></div>' +
-                  '<div class="w-2 h-2 rounded-full bg-brand-400 animate-wave" style="animation-delay:0.4s"></div>' +
+                '<h3 class="text-xl font-bold text-surface-900 mb-2">GPT-5 심층 분석 중...</h3>' +
+                '<p class="text-surface-500 text-sm leading-relaxed">5단계 AI 파이프라인을 실행하고 있습니다<br/>약 1~3분 소요됩니다</p>' +
+                '<div class="w-64 mx-auto mt-6 bg-surface-100 rounded-full h-2 overflow-hidden">' +
+                  '<div id="progressBar" class="bg-gradient-brand h-full rounded-full transition-all duration-1000" style="width:5%"></div>' +
                 '</div>' +
-                '<p id="analysisStep" class="text-xs text-surface-400 mt-4">음성 전사 준비 중...</p>' +
+                '<p id="analysisStep" class="text-xs text-surface-400 mt-3"><i class="fas fa-microphone mr-1"></i>음성 인식 준비 중...</p>' +
+                '<p class="text-[10px] text-surface-300 mt-1" id="elapsedTime">0초 경과</p>' +
               '</div>';
+
+            var startTime = Date.now();
+            var stepTimer = setInterval(function() {
+              var elapsed = Math.floor((Date.now() - startTime) / 1000);
+              var el = document.getElementById('elapsedTime');
+              if (el) el.textContent = elapsed + '초 경과';
+              // Cycle through steps to show progress
+              if (elapsed > 5 && stepIdx < 1) stepIdx = 1;
+              if (elapsed > 15 && stepIdx < 2) stepIdx = 2;
+              if (elapsed > 25 && stepIdx < 3) stepIdx = 3;
+              if (elapsed > 40 && stepIdx < 4) stepIdx = 4;
+              var pBar = document.getElementById('progressBar');
+              var sEl = document.getElementById('analysisStep');
+              if (pBar) pBar.style.width = Math.min(5 + stepIdx * 20, 95) + '%';
+              if (sEl && steps[stepIdx]) sEl.innerHTML = '<i class="fas ' + steps[stepIdx].icon + ' mr-1"></i>' + steps[stepIdx].text;
+            }, 1000);
+
             try {
-              var controller = new AbortController();
-              var timeoutId = setTimeout(function() { controller.abort(); }, 180000);
-              const res = await fetch('/api/reports/' + consultationId + '/generate', { method: 'POST', signal: controller.signal });
-              clearTimeout(timeoutId);
-              if (res.status === 401) { window.location.href = '/login'; return; }
-              const data = await res.json();
-              if (data.success) { reportData = data.data.report; renderReport({ ...data.data.report, id: data.data.report_id }); }
-              else { showError(data.error); }
+              // Step 1: Trigger generation (returns immediately)
+              const triggerRes = await fetch('/api/reports/' + consultationId + '/generate', { method: 'POST' });
+              if (triggerRes.status === 401) { clearInterval(stepTimer); window.location.href = '/login'; return; }
+              const triggerData = await triggerRes.json();
+              if (!triggerData.success) { clearInterval(stepTimer); showError(triggerData.error); return; }
+
+              // Step 2: Poll for completion
+              var maxPolls = 90; // 90 * 3s = 270s max
+              var pollCount = 0;
+              while (pollCount < maxPolls) {
+                await new Promise(function(r) { setTimeout(r, 3000); });
+                pollCount++;
+                try {
+                  const statusRes = await fetch('/api/reports/' + consultationId + '/status');
+                  if (statusRes.status === 401) { clearInterval(stepTimer); window.location.href = '/login'; return; }
+                  const statusData = await statusRes.json();
+                  if (!statusData.success) continue;
+                  if (statusData.data.status === 'completed') {
+                    clearInterval(stepTimer);
+                    var pBar = document.getElementById('progressBar');
+                    if (pBar) pBar.style.width = '100%';
+                    reportData = statusData.data.report;
+                    setTimeout(function() { renderReport({ ...statusData.data.report, id: statusData.data.report_id }); }, 500);
+                    return;
+                  }
+                  if (statusData.data.status === 'failed') {
+                    clearInterval(stepTimer);
+                    showError('AI 분석에 실패했습니다. 다시 시도해주세요.');
+                    return;
+                  }
+                } catch(pollErr) { /* network hiccup, keep polling */ }
+              }
+              clearInterval(stepTimer);
+              showError('분석 시간이 초과되었습니다 (270초). 잠시 후 다시 시도해주세요.');
             } catch (err) {
-              if (err.name === 'AbortError') { showError('분석 시간이 초과되었습니다. 다시 시도해주세요.'); }
-              else { showError('네트워크 오류: ' + (err.message || '연결에 실패했습니다.')); }
+              clearInterval(stepTimer);
+              showError('네트워크 오류: ' + (err.message || '연결에 실패했습니다.'));
             }
           }
 

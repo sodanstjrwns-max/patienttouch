@@ -64,7 +64,7 @@ reports.get('/:consultationId', async (c) => {
   }
 });
 
-// POST /api/reports/:consultationId/generate - Generate report (re-analyze)
+// POST /api/reports/:consultationId/generate - Start async report generation
 reports.post('/:consultationId/generate', async (c) => {
   try {
     const consultationId = c.req.param('consultationId');
@@ -73,8 +73,7 @@ reports.post('/:consultationId/generate', async (c) => {
     const apiKey = c.env.OPENAI_API_KEY;
 
     if (!apiKey) {
-      console.error('OPENAI_API_KEY not found in env. Available env keys:', Object.keys(c.env));
-      return c.json({ success: false, error: 'OpenAI API 키가 설정되지 않았습니다. (env keys: ' + Object.keys(c.env).join(',') + ')' }, 500);
+      return c.json({ success: false, error: 'OpenAI API 키가 설정되지 않았습니다.' }, 500);
     }
 
     // Get consultation with patient info
@@ -89,157 +88,223 @@ reports.post('/:consultationId/generate', async (c) => {
       return c.json({ success: false, error: '상담 기록을 찾을 수 없습니다.' }, 404);
     }
 
-    // Check if audio exists
     if (!consultation.audio_url) {
       return c.json({ success: false, error: '녹음 파일이 없습니다.' }, 400);
     }
 
+    // Mark as processing immediately
+    await db.prepare(`
+      UPDATE consultations SET ai_analysis_status = 'processing', updated_at = datetime('now') WHERE id = ?
+    `).bind(consultationId).run();
+
     // Get audio from R2
     const audioObject = await c.env.R2.get(consultation.audio_url as string);
     if (!audioObject) {
+      await db.prepare(`UPDATE consultations SET ai_analysis_status = 'failed' WHERE id = ?`).bind(consultationId).run();
       return c.json({ success: false, error: '녹음 파일을 찾을 수 없습니다.' }, 404);
     }
 
     const audioData = await audioObject.arrayBuffer();
 
-    // Run full analysis pipeline (env 전달로 모델 설정 적용)
-    const analysis = await runFullAnalysisPipeline(
-      audioData,
-      {
-        name: consultation.patient_name as string || '미지정',
-        age: consultation.patient_age as number,
-        gender: consultation.patient_gender as string
-      },
-      apiKey,
-      c.env as any
-    );
+    // Get AI config for model name
+    const { getAIConfig } = await import('../lib/ai-config');
+    const aiConfig = getAIConfig(c.env as any);
 
-    // Safely convert any value to string for D1 TEXT columns
-    const toStr = (v: any): string => {
-      if (v === null || v === undefined) return '';
-      if (typeof v === 'string') return v;
-      if (Array.isArray(v)) return v.join('\n');
-      if (typeof v === 'object') return JSON.stringify(v);
-      return String(v);
-    };
-    const toJsonStr = (v: any): string => {
-      if (typeof v === 'string') return v;
-      return JSON.stringify(v ?? null);
-    };
+    // Run pipeline in background with waitUntil (won't block response)
+    const bgTask = (async () => {
+      try {
+        console.log('[BG Pipeline] Starting for', consultationId);
 
-    // Create or update report
-    const existingReport = await db.prepare(
-      'SELECT id FROM consultation_reports WHERE consultation_id = ?'
-    ).bind(consultationId).first();
+        const analysis = await runFullAnalysisPipeline(
+          audioData,
+          {
+            name: consultation.patient_name as string || '미지정',
+            age: consultation.patient_age as number,
+            gender: consultation.patient_gender as string
+          },
+          apiKey,
+          c.env as any
+        );
 
-    const reportId = existingReport?.id || 'report_' + generateId().slice(0, 8);
+        // Safely convert values for D1
+        const toStr = (v: any): string => {
+          if (v === null || v === undefined) return '';
+          if (typeof v === 'string') return v;
+          if (Array.isArray(v)) return v.join('\n');
+          if (typeof v === 'object') return JSON.stringify(v);
+          return String(v);
+        };
+        const toJsonStr = (v: any): string => {
+          if (typeof v === 'string') return v;
+          return JSON.stringify(v ?? null);
+        };
 
-    if (existingReport) {
-      // Update existing report
-      await db.prepare(`
-        UPDATE consultation_reports SET
-          consultation_summary = ?,
-          treatment_options = ?,
-          discussed_amount = ?,
-          payment_options = ?,
-          patient_concerns = ?,
-          emotion_timeline = ?,
-          emotion_summary = ?,
-          overall_sentiment = ?,
-          decision_factors = ?,
-          decision_score = ?,
-          decision_prediction = ?,
-          next_actions = ?,
-          recommended_followup_date = ?,
-          followup_message = ?,
-          coaching_feedback = ?,
-          coaching_score = ?,
-          generation_model = 'gpt-4o',
-          updated_at = datetime('now')
-        WHERE id = ?
-      `).bind(
-        toStr(analysis.report.consultation_summary),
-        toJsonStr(analysis.report.treatment_options),
-        analysis.report.discussed_amount || null,
-        toJsonStr(analysis.report.payment_options),
-        toJsonStr(analysis.report.patient_concerns),
-        toJsonStr(analysis.report.emotion_timeline),
-        toStr(analysis.report.emotion_summary),
-        toStr(analysis.report.overall_sentiment),
-        toJsonStr(analysis.report.decision_factors),
-        analysis.report.decision_score || 5,
-        toStr(analysis.report.decision_prediction),
-        toJsonStr(analysis.report.next_actions),
-        toStr(analysis.report.recommended_followup_date),
-        toStr(analysis.report.followup_message),
-        toJsonStr(analysis.report.coaching_feedback),
-        analysis.report.coaching_feedback?.total_score || 0,
-        reportId
-      ).run();
-    } else {
-      // Create new report
-      await db.prepare(`
-        INSERT INTO consultation_reports (
-          id, organization_id, consultation_id,
-          consultation_summary, treatment_options, discussed_amount, payment_options,
-          patient_concerns, emotion_timeline, emotion_summary, overall_sentiment,
-          decision_factors, decision_score, decision_prediction,
-          next_actions, recommended_followup_date, followup_message,
-          coaching_feedback, coaching_score, generation_model
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'gpt-4o')
-      `).bind(
-        reportId, orgId, consultationId,
-        toStr(analysis.report.consultation_summary),
-        toJsonStr(analysis.report.treatment_options),
-        analysis.report.discussed_amount || null,
-        toJsonStr(analysis.report.payment_options),
-        toJsonStr(analysis.report.patient_concerns),
-        toJsonStr(analysis.report.emotion_timeline),
-        toStr(analysis.report.emotion_summary),
-        toStr(analysis.report.overall_sentiment),
-        toJsonStr(analysis.report.decision_factors),
-        analysis.report.decision_score || 5,
-        toStr(analysis.report.decision_prediction),
-        toJsonStr(analysis.report.next_actions),
-        toStr(analysis.report.recommended_followup_date),
-        toStr(analysis.report.followup_message),
-        toJsonStr(analysis.report.coaching_feedback),
-        analysis.report.coaching_feedback?.total_score || 0
-      ).run();
-    }
+        // Create or update report
+        const existingReport = await db.prepare(
+          'SELECT id FROM consultation_reports WHERE consultation_id = ?'
+        ).bind(consultationId).first();
 
-    // Update consultation with analysis data
-    await db.prepare(`
-      UPDATE consultations SET
-        transcript = ?,
-        transcript_diarized = ?,
-        ner_extracted = ?,
-        spin_analysis = ?,
-        summary = ?,
-        decision_score = ?,
-        ai_analysis_status = 'completed',
-        updated_at = datetime('now')
-      WHERE id = ?
-    `).bind(
-      toStr(analysis.transcript),
-      toJsonStr(analysis.diarizedSegments),
-      toJsonStr(analysis.nerData),
-      toJsonStr(analysis.spinAnalysis),
-      toStr(analysis.report.consultation_summary),
-      analysis.report.decision_score || 5,
-      consultationId
-    ).run();
+        const reportId = existingReport?.id || 'report_' + generateId().slice(0, 8);
+        const modelName = aiConfig.primaryModel;
 
+        if (existingReport) {
+          await db.prepare(`
+            UPDATE consultation_reports SET
+              consultation_summary = ?, treatment_options = ?, discussed_amount = ?,
+              payment_options = ?, patient_concerns = ?, emotion_timeline = ?,
+              emotion_summary = ?, overall_sentiment = ?, decision_factors = ?,
+              decision_score = ?, decision_prediction = ?, next_actions = ?,
+              recommended_followup_date = ?, followup_message = ?,
+              coaching_feedback = ?, coaching_score = ?,
+              generation_model = ?, updated_at = datetime('now')
+            WHERE id = ?
+          `).bind(
+            toStr(analysis.report.consultation_summary),
+            toJsonStr(analysis.report.treatment_options),
+            analysis.report.discussed_amount || null,
+            toJsonStr(analysis.report.payment_options),
+            toJsonStr(analysis.report.patient_concerns),
+            toJsonStr(analysis.report.emotion_timeline),
+            toStr(analysis.report.emotion_summary),
+            toStr(analysis.report.overall_sentiment),
+            toJsonStr(analysis.report.decision_factors),
+            analysis.report.decision_score || 5,
+            toStr(analysis.report.decision_prediction),
+            toJsonStr(analysis.report.next_actions),
+            toStr(analysis.report.recommended_followup_date),
+            toStr(analysis.report.followup_message),
+            toJsonStr(analysis.report.coaching_feedback),
+            analysis.report.coaching_feedback?.total_score || 0,
+            modelName,
+            reportId
+          ).run();
+        } else {
+          await db.prepare(`
+            INSERT INTO consultation_reports (
+              id, organization_id, consultation_id,
+              consultation_summary, treatment_options, discussed_amount, payment_options,
+              patient_concerns, emotion_timeline, emotion_summary, overall_sentiment,
+              decision_factors, decision_score, decision_prediction,
+              next_actions, recommended_followup_date, followup_message,
+              coaching_feedback, coaching_score, generation_model
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `).bind(
+            reportId, orgId, consultationId,
+            toStr(analysis.report.consultation_summary),
+            toJsonStr(analysis.report.treatment_options),
+            analysis.report.discussed_amount || null,
+            toJsonStr(analysis.report.payment_options),
+            toJsonStr(analysis.report.patient_concerns),
+            toJsonStr(analysis.report.emotion_timeline),
+            toStr(analysis.report.emotion_summary),
+            toStr(analysis.report.overall_sentiment),
+            toJsonStr(analysis.report.decision_factors),
+            analysis.report.decision_score || 5,
+            toStr(analysis.report.decision_prediction),
+            toJsonStr(analysis.report.next_actions),
+            toStr(analysis.report.recommended_followup_date),
+            toStr(analysis.report.followup_message),
+            toJsonStr(analysis.report.coaching_feedback),
+            analysis.report.coaching_feedback?.total_score || 0,
+            modelName
+          ).run();
+        }
+
+        // Update consultation
+        await db.prepare(`
+          UPDATE consultations SET
+            transcript = ?, transcript_diarized = ?, ner_extracted = ?,
+            spin_analysis = ?, summary = ?, decision_score = ?,
+            ai_analysis_status = 'completed', updated_at = datetime('now')
+          WHERE id = ?
+        `).bind(
+          toStr(analysis.transcript),
+          toJsonStr(analysis.diarizedSegments),
+          toJsonStr(analysis.nerData),
+          toJsonStr(analysis.spinAnalysis),
+          toStr(analysis.report.consultation_summary),
+          analysis.report.decision_score || 5,
+          consultationId
+        ).run();
+
+        console.log('[BG Pipeline] Complete for', consultationId, '— Score:', analysis.report.coaching_feedback?.total_score);
+      } catch (error: any) {
+        console.error('[BG Pipeline] Failed for', consultationId, ':', error?.message || error);
+        await db.prepare(`
+          UPDATE consultations SET ai_analysis_status = 'failed', updated_at = datetime('now') WHERE id = ?
+        `).bind(consultationId).run();
+      }
+    })();
+
+    // Use waitUntil to keep the background task alive after response
+    c.executionCtx.waitUntil(bgTask);
+
+    // Return immediately — client will poll for status
     return c.json({
       success: true,
-      data: {
-        report_id: reportId,
-        report: analysis.report
-      }
+      data: { status: 'processing', consultation_id: consultationId }
     });
   } catch (error: any) {
     console.error('Generate report error:', error?.message || error);
     return c.json({ success: false, error: '레포트 생성에 실패했습니다: ' + (error?.message || String(error)) }, 500);
+  }
+});
+
+// GET /api/reports/:consultationId/status - Poll report generation status
+reports.get('/:consultationId/status', async (c) => {
+  try {
+    const consultationId = c.req.param('consultationId');
+    const orgId = c.get('organizationId');
+    const db = c.env.DB;
+
+    const consultation = await db.prepare(`
+      SELECT ai_analysis_status FROM consultations WHERE id = ? AND organization_id = ?
+    `).bind(consultationId, orgId).first();
+
+    if (!consultation) {
+      return c.json({ success: false, error: '상담을 찾을 수 없습니다.' }, 404);
+    }
+
+    const status = consultation.ai_analysis_status || 'pending';
+
+    if (status === 'completed') {
+      // Fetch the full report
+      const report = await db.prepare(`
+        SELECT r.*, c.patient_id, p.name as patient_name
+        FROM consultation_reports r
+        JOIN consultations c ON r.consultation_id = c.id
+        JOIN patients p ON c.patient_id = p.id
+        WHERE r.consultation_id = ? AND r.organization_id = ?
+      `).bind(consultationId, orgId).first();
+
+      if (report) {
+        return c.json({
+          success: true,
+          data: {
+            status: 'completed',
+            report_id: report.id,
+            report: {
+              ...report,
+              treatment_options: safeParseJSON(report.treatment_options as string, []),
+              payment_options: safeParseJSON(report.payment_options as string, {}),
+              patient_concerns: safeParseJSON(report.patient_concerns as string, []),
+              emotion_timeline: safeParseJSON(report.emotion_timeline as string, []),
+              decision_factors: safeParseJSON(report.decision_factors as string, {}),
+              next_actions: safeParseJSON(report.next_actions as string, []),
+              coaching_feedback: safeParseJSON(report.coaching_feedback as string, {})
+            }
+          }
+        });
+      }
+    }
+
+    return c.json({
+      success: true,
+      data: { status }
+    });
+  } catch (error) {
+    console.error('Check report status error:', error);
+    return c.json({ success: false, error: '상태 확인에 실패했습니다.' }, 500);
   }
 });
 
