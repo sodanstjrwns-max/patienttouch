@@ -2,7 +2,7 @@
 import { Hono } from 'hono';
 import { safeParseJSON } from '../lib/utils';
 import { authMiddleware } from '../lib/auth';
-import { safeInt, validatePeriod, validateAdminPeriod, periodToDays, setCacheHeaders } from '../lib/middleware';
+import { safeInt, validatePeriod, validateAdminPeriod, periodToDays, setCacheHeaders, maskPatientData } from '../lib/middleware';
 import type { Env, KPIData } from '../types';
 
 const dashboard = new Hono<{ Bindings: Env }>();
@@ -795,7 +795,7 @@ dashboard.get('/today-contacts', async (c) => {
     return c.json({
       success: true,
       data: {
-        contacts,
+        contacts: maskPatientData(contacts),
         total: contacts.length,
         critical_count: contacts.filter(c => c.urgency === 'critical').length,
         high_count: contacts.filter(c => c.urgency === 'high').length

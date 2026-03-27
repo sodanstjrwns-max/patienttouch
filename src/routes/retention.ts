@@ -3,6 +3,7 @@
 import { Hono } from 'hono';
 import { generateId, safeParseJSON } from '../lib/utils';
 import { authMiddleware } from '../lib/auth';
+import { maskPatientData } from '../lib/middleware';
 import type { Env } from '../types';
 
 const retention = new Hono<{ Bindings: Env }>();

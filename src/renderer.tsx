@@ -198,6 +198,76 @@ export const renderer = jsxRenderer(({ children, title }) => {
             /* Prevent iOS zoom on input */
             input, textarea, select { font-size: 16px !important; }
             
+            /* === Mobile Touch Feedback === */
+            .touch-active {
+              -webkit-tap-highlight-color: transparent;
+              cursor: pointer;
+              user-select: none;
+              -webkit-user-select: none;
+            }
+            button, a, [onclick], [role="button"], .card-premium[onclick] {
+              -webkit-tap-highlight-color: transparent;
+              touch-action: manipulation;
+            }
+            button:active, .touch-active:active, .card-premium[onclick]:active {
+              transform: scale(0.97) !important;
+              transition: transform 0.1s ease !important;
+            }
+            /* Ripple effect */
+            .ripple-host { position: relative; overflow: hidden; }
+            .ripple-host::after {
+              content: '';
+              position: absolute;
+              width: 100%; padding-bottom: 100%;
+              border-radius: 50%;
+              background: rgba(99,102,241,0.12);
+              transform: scale(0);
+              opacity: 0;
+              pointer-events: none;
+              left: var(--ripple-x, 50%); top: var(--ripple-y, 50%);
+              translate: -50% -50%;
+            }
+            .ripple-host:active::after {
+              transform: scale(2.5);
+              opacity: 1;
+              transition: transform 0.4s ease, opacity 0.1s ease;
+            }
+            
+            /* === Focus-visible for accessibility === */
+            :focus-visible {
+              outline: 2px solid #6366f1;
+              outline-offset: 2px;
+              border-radius: 8px;
+            }
+            
+            /* === Phone number mask style === */
+            .phone-masked {
+              letter-spacing: 0.5px;
+              font-variant-numeric: tabular-nums;
+            }
+            .phone-masked .reveal-btn {
+              display: inline-flex;
+              align-items: center;
+              gap: 3px;
+              font-size: 10px;
+              color: #6366f1;
+              cursor: pointer;
+              margin-left: 4px;
+              padding: 1px 6px;
+              border-radius: 4px;
+              background: rgba(99,102,241,0.06);
+              transition: all 0.2s;
+            }
+            .phone-masked .reveal-btn:hover { background: rgba(99,102,241,0.12); }
+            
+            /* === Better loading skeleton pulse === */
+            .skeleton-pulse {
+              background: linear-gradient(90deg, #f1f5f9 0%, #e2e8f0 20%, #f1f5f9 40%, #f1f5f9 100%);
+              background-size: 200% 100%;
+              animation: shimmer 1.2s ease-in-out infinite;
+              border-radius: 0.5rem;
+            }
+            
             /* Shimmer loading */
             .shimmer {
               background: linear-gradient(90deg, #f1f5f9 25%, #e2e8f0 37%, #f1f5f9 63%);
@@ -449,19 +519,71 @@ export const renderer = jsxRenderer(({ children, title }) => {
               }, {passive:true});
             }
 
-            // === 4. Error State with Retry ===
+            // === 4. Error State with Retry (Enhanced) ===
             function showErrorState(containerId, message, retryFn) {
               var el = document.getElementById(containerId);
               if (!el) return;
               var retryId = 'retry_' + Date.now();
-              el.innerHTML = '<div class="card-premium p-6 text-center"><div class="w-12 h-12 mx-auto bg-rose-50 rounded-2xl flex items-center justify-center mb-3"><i class="fas fa-wifi-slash text-rose-400 text-lg"></i></div><p class="text-sm font-bold text-surface-800 mb-1">\ub370\uc774\ud130\ub97c \ubd88\ub7ec\uc62c \uc218 \uc5c6\uc2b5\ub2c8\ub2e4</p><p class="text-xs text-surface-500 mb-4">'+(message||'\ub124\ud2b8\uc6cc\ud06c \uc5f0\uacb0\uc744 \ud655\uc778\ud574\uc8fc\uc138\uc694')+'</p><button id="'+retryId+'" class="inline-flex items-center gap-1.5 text-sm font-semibold text-brand-600 bg-brand-50 px-4 py-2 rounded-xl hover:bg-brand-100 transition-all active:scale-95"><i class="fas fa-rotate text-xs"></i>\ub2e4\uc2dc \uc2dc\ub3c4</button></div>';
+              el.innerHTML = '<div class="card-premium p-6 text-center animate-fade-in"><div class="w-14 h-14 mx-auto bg-rose-50 rounded-2xl flex items-center justify-center mb-3"><i class="fas fa-triangle-exclamation text-rose-400 text-xl"></i></div><p class="text-sm font-bold text-surface-800 mb-1">\ub370\uc774\ud130\ub97c \ubd88\ub7ec\uc62c \uc218 \uc5c6\uc2b5\ub2c8\ub2e4</p><p class="text-xs text-surface-500 mb-4 leading-relaxed">'+(message||'\ub124\ud2b8\uc6cc\ud06c \uc5f0\uacb0\uc744 \ud655\uc778\ud574\uc8fc\uc138\uc694')+'</p>' + (retryFn ? '<button id="'+retryId+'" class="inline-flex items-center gap-1.5 text-sm font-semibold text-brand-600 bg-brand-50 px-4 py-2.5 rounded-xl hover:bg-brand-100 transition-all active:scale-95 shadow-sm"><i class="fas fa-rotate text-xs"></i>\ub2e4\uc2dc \uc2dc\ub3c4</button>' : '') + '</div>';
               if (retryFn) {
                 var btn = document.getElementById(retryId);
                 if (btn) btn.addEventListener('click', function() {
-                  el.innerHTML = '<div class="card-premium p-4"><div class="shimmer h-16 rounded-lg w-full"></div></div>';
+                  showLoadingState(containerId);
                   retryFn();
                 });
               }
+            }
+
+            // === 4b. Loading State (standard) ===
+            function showLoadingState(containerId, count) {
+              var el = document.getElementById(containerId);
+              if (!el) return;
+              count = count || 3;
+              var html = '<div class="space-y-3 animate-fade-in">';
+              for (var i = 0; i < count; i++) {
+                html += '<div class="card-premium p-4"><div class="flex items-center gap-3"><div class="w-10 h-10 rounded-xl skeleton-pulse shrink-0"></div><div class="flex-1 space-y-2"><div class="skeleton-pulse h-4 rounded-lg" style="width:'+(75-i*10)+'%"></div><div class="skeleton-pulse h-3 rounded-lg" style="width:'+(55-i*5)+'%"></div></div></div></div>';
+              }
+              html += '</div>';
+              el.innerHTML = html;
+            }
+
+            // === 4c. Empty State (standard) ===
+            function showEmptyState(containerId, icon, title, desc, action) {
+              var el = document.getElementById(containerId);
+              if (!el) return;
+              el.innerHTML = '<div class="text-center py-16 px-6 animate-fade-in"><div class="w-20 h-20 mx-auto mb-5 rounded-2xl bg-surface-100 flex items-center justify-center"><i class="'+icon+' text-3xl text-surface-300"></i></div><h3 class="text-base font-bold text-surface-800 mb-1">'+title+'</h3>' + (desc ? '<p class="text-surface-500 text-sm mb-5 max-w-xs mx-auto leading-relaxed">'+desc+'</p>' : '') + (action || '') + '</div>';
+            }
+
+            // === 4d. Safe Fetch with error handling ===
+            function safeFetch(url, options) {
+              return fetch(url, options)
+                .then(function(res) {
+                  if (!res.ok) {
+                    if (res.status === 401) { window.location.href = '/login'; return Promise.reject('auth'); }
+                    if (res.status === 429) { showToast('\uc694\uccad\uc774 \ub108\ubb34 \ub9ce\uc2b5\ub2c8\ub2e4. \uc7a0\uc2dc \ud6c4 \ub2e4\uc2dc \uc2dc\ub3c4\ud574\uc8fc\uc138\uc694.', 'warning'); return Promise.reject('rate_limited'); }
+                    return res.json().then(function(d){ return Promise.reject(d.error || '\uc624\ub958\uac00 \ubc1c\uc0dd\ud588\uc2b5\ub2c8\ub2e4'); });
+                  }
+                  return res.json();
+                })
+                .catch(function(err) {
+                  if (err === 'auth' || err === 'rate_limited') return Promise.reject(err);
+                  if (err instanceof TypeError) return Promise.reject('\ub124\ud2b8\uc6cc\ud06c \uc5f0\uacb0\uc744 \ud655\uc778\ud574\uc8fc\uc138\uc694');
+                  return Promise.reject(err);
+                });
+            }
+
+            // === 4e. Phone masking utility ===
+            function maskPhone(phone) {
+              if (!phone) return '-';
+              var p = phone.replace(/[^0-9]/g, '');
+              if (p.length === 11) return p.slice(0,3) + '-****-' + p.slice(7);
+              if (p.length === 10) return p.slice(0,3) + '-***-' + p.slice(6);
+              return phone.slice(0, Math.ceil(phone.length/2)) + '****';
+            }
+            function phoneWithReveal(phone, elId) {
+              if (!phone) return '-';
+              var masked = maskPhone(phone);
+              return '<span class="phone-masked" id="ph_'+elId+'">'+masked+' <span class="reveal-btn" onclick="this.parentElement.textContent=\''+phone.replace(/'/g,"\\'")+'\'">\uD83D\uDC41</span></span>';
             }
 
             // === 5. Page Transition (smooth) ===

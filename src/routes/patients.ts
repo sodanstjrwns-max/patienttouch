@@ -2,6 +2,7 @@
 import { Hono } from 'hono';
 import { generateId, safeParseJSON } from '../lib/utils';
 import { authMiddleware } from '../lib/auth';
+import { maskPatientData } from '../lib/middleware';
 import type { Env, Patient } from '../types';
 
 const patients = new Hono<{ Bindings: Env }>();
@@ -54,7 +55,7 @@ patients.get('/', async (c) => {
       tags: safeParseJSON(p.tags as string, [])
     }));
 
-    return c.json({ success: true, data: patients });
+    return c.json({ success: true, data: maskPatientData(patients) });
   } catch (error) {
     console.error('List patients error:', error);
     return c.json({ success: false, error: '환자 목록을 불러오는데 실패했습니다.' }, 500);
@@ -164,7 +165,7 @@ patients.get('/:id', async (c) => {
 
     return c.json({
       success: true,
-      data: {
+      data: maskPatientData({
         ...patient,
         tags: safeParseJSON(patient.tags as string, []),
         // Summary stats
@@ -199,7 +200,7 @@ patients.get('/:id', async (c) => {
         retention_status: retentionStatus,
         treatments: treatments.results,
         timeline
-      }
+      })
     });
   } catch (error) {
     console.error('Get patient error:', error);

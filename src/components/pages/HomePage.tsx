@@ -653,7 +653,7 @@ export const HomePage: FC = () => {
               else if(c.recommended_script) html += '<p class="text-[10px] text-surface-500 mt-1 line-clamp-1"><i class="fas fa-sparkles text-brand-400 mr-1 text-[8px]"></i>'+c.recommended_script+'</p>';
               html += '</div>';
               html += '<div class="flex flex-col gap-1.5 shrink-0">';
-              if(c.patient_phone) html += '<a href="tel:'+c.patient_phone+'" class="w-8 h-8 rounded-lg bg-brand-50 flex items-center justify-center text-brand-600 hover:bg-brand-100 active:scale-90 transition-all"><i class="fas fa-phone text-xs"></i></a>';
+              if(c.patient_phone_full) html += '<a href="tel:'+c.patient_phone_full+'" class="w-8 h-8 rounded-lg bg-brand-50 flex items-center justify-center text-brand-600 hover:bg-brand-100 active:scale-90 transition-all"><i class="fas fa-phone text-xs"></i></a>';
               html += '<button onclick="openHomeContactModal(\\'' + c.patient_id + '\\', \\'' + (c.task_id||'') + '\\', \\'' + (c.source||'task') + '\\')" class="w-8 h-8 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-600 hover:bg-emerald-100 active:scale-90 transition-all"><i class="fas fa-check text-xs"></i></button>';
               html += '</div>';
               html += '</div></div>';
