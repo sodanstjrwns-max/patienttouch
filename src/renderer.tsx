@@ -434,6 +434,31 @@ export const renderer = jsxRenderer(({ children, title }) => {
             .line-clamp-1 { overflow:hidden; display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:1; }
             .line-clamp-2 { overflow:hidden; display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; }
             .line-clamp-3 { overflow:hidden; display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:3; }
+
+            /* Page transition */
+            body { transition: opacity 0.2s ease-out; }
+            
+            /* Toast animations */
+            #toast-container > div {
+              will-change: transform, opacity;
+            }
+            
+            /* Timeline styles for Patient Detail */
+            .timeline-dot { position:relative; }
+            .timeline-dot::before {
+              content:''; position:absolute; left:50%; top:100%;
+              width:2px; height:calc(100% + 12px);
+              background:#e2e8f0; transform:translateX(-50%);
+            }
+            .timeline-item:last-child .timeline-dot::before { display:none; }
+            
+            /* Comparison card highlights */
+            .compare-better { border-left:3px solid #10b981; }
+            .compare-worse { border-left:3px solid #ef4444; }
+            .compare-same { border-left:3px solid #94a3b8; }
+            
+            /* Export button pulse */
+            .export-ready { animation: pulseSoft 2s ease-in-out infinite; }
           `
         }} />
         
@@ -583,7 +608,15 @@ export const renderer = jsxRenderer(({ children, title }) => {
             function phoneWithReveal(phone, elId) {
               if (!phone) return '-';
               var masked = maskPhone(phone);
-              return '<span class="phone-masked" id="ph_'+elId+'">'+masked+' <span class="reveal-btn" onclick="this.parentElement.textContent=\''+phone.replace(/'/g,"\\'")+'\'">\uD83D\uDC41</span></span>';
+              var uid = 'ph_' + elId;
+              setTimeout(function(){
+                var btn = document.getElementById('rv_' + elId);
+                if (btn) btn.addEventListener('click', function(){
+                  var sp = document.getElementById(uid);
+                  if (sp) sp.textContent = phone;
+                });
+              }, 100);
+              return '<span class="phone-masked" id="'+uid+'">'+masked+' <span class="reveal-btn cursor-pointer" id="rv_'+elId+'">\uD83D\uDC41</span></span>';
             }
 
             // === 5. Page Transition (smooth) ===
@@ -676,35 +709,6 @@ export const renderer = jsxRenderer(({ children, title }) => {
           `
         }} />
 
-        {/* Pull-to-refresh CSS */}
-        <style dangerouslySetInnerHTML={{
-          __html: `
-            /* Page transition */
-            body { transition: opacity 0.2s ease-out; }
-            
-            /* Toast animations */
-            #toast-container > div {
-              will-change: transform, opacity;
-            }
-            
-            /* Timeline styles for Patient Detail */
-            .timeline-dot { position:relative; }
-            .timeline-dot::before {
-              content:''; position:absolute; left:50%; top:100%;
-              width:2px; height:calc(100% + 12px);
-              background:#e2e8f0; transform:translateX(-50%);
-            }
-            .timeline-item:last-child .timeline-dot::before { display:none; }
-            
-            /* Comparison card highlights */
-            .compare-better { border-left:3px solid #10b981; }
-            .compare-worse { border-left:3px solid #ef4444; }
-            .compare-same { border-left:3px solid #94a3b8; }
-            
-            /* Export button pulse */
-            .export-ready { animation: pulseSoft 2s ease-in-out infinite; }
-          `
-        }} />
       </head>
       <body class="bg-gradient-mesh min-h-screen text-surface-900 antialiased">
         {children}

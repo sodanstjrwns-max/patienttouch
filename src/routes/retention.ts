@@ -178,40 +178,17 @@ retention.get('/patients/:id', async (c) => {
     const patientId = c.req.param('id');
     const db = c.env.DB;
 
-    const status = await db.prepare(`
-      SELECT * FROM patient_retention_status WHERE patient_id = ? AND organization_id = ?
-    `).bind(patientId, orgId).first();
-
-    const treatments = await db.prepare(`
-      SELECT * FROM patient_treatments WHERE patient_id = ? AND organization_id = ? ORDER BY created_at DESC
-    `).bind(patientId, orgId).all();
-
-    const contacts = await db.prepare(`
-      SELECT rc.*, u.name as staff_name FROM retention_contacts rc
-      LEFT JOIN users u ON rc.staff_id = u.id
-      WHERE rc.patient_id = ? AND rc.organization_id = ?
-      ORDER BY rc.contacted_at DESC LIMIT 30
-    `).bind(patientId, orgId).all();
-
-    // 타임라인 데이터 (상담 + 치료 + 연락 기록 통합)
-    const consultations = await db.prepare(`
-      SELECT id, consultation_date as date, treatment_type, amount, status, 'consultation' as event_type
-      FROM consultations WHERE patient_id = ? AND organization_id = ?
-      ORDER BY consultation_date DESC
-    `).bind(patientId, orgId).all();
-
-    const treatmentEvents = await db.prepare(`
-      SELECT id, started_at as date, treatment_type, treatment_name, total_amount as amount, status, 'treatment' as event_type
-      FROM patient_treatments WHERE patient_id = ? AND organization_id = ?
-      ORDER BY created_at DESC
-    `).bind(patientId, orgId).all();
-
-    const contactEvents = await db.prepare(`
-      SELECT rc.id, rc.contacted_at as date, rc.contact_type, rc.result, rc.notes, 'contact' as event_type, u.name as staff_name
-      FROM retention_contacts rc LEFT JOIN users u ON rc.staff_id = u.id
-      WHERE rc.patient_id = ? AND rc.organization_id = ?
-      ORDER BY rc.contacted_at DESC
-    `).bind(patientId, orgId).all();
+    // All queries in parallel for maximum speed
+    const [status, treatments, contacts, consultations, treatmentEvents, contactEvents, remainingSum, lastScaling] = await Promise.all([
+      db.prepare(`SELECT * FROM patient_retention_status WHERE patient_id = ? AND organization_id = ?`).bind(patientId, orgId).first(),
+      db.prepare(`SELECT * FROM patient_treatments WHERE patient_id = ? AND organization_id = ? ORDER BY created_at DESC`).bind(patientId, orgId).all(),
+      db.prepare(`SELECT rc.*, u.name as staff_name FROM retention_contacts rc LEFT JOIN users u ON rc.staff_id = u.id WHERE rc.patient_id = ? AND rc.organization_id = ? ORDER BY rc.contacted_at DESC LIMIT 30`).bind(patientId, orgId).all(),
+      db.prepare(`SELECT id, consultation_date as date, treatment_type, amount, status, 'consultation' as event_type FROM consultations WHERE patient_id = ? AND organization_id = ? ORDER BY consultation_date DESC`).bind(patientId, orgId).all(),
+      db.prepare(`SELECT id, started_at as date, treatment_type, treatment_name, total_amount as amount, status, 'treatment' as event_type FROM patient_treatments WHERE patient_id = ? AND organization_id = ? ORDER BY created_at DESC`).bind(patientId, orgId).all(),
+      db.prepare(`SELECT rc.id, rc.contacted_at as date, rc.contact_type, rc.result, rc.notes, 'contact' as event_type, u.name as staff_name FROM retention_contacts rc LEFT JOIN users u ON rc.staff_id = u.id WHERE rc.patient_id = ? AND rc.organization_id = ? ORDER BY rc.contacted_at DESC`).bind(patientId, orgId).all(),
+      db.prepare(`SELECT COALESCE(SUM(remaining_amount), 0) as total FROM patient_treatments WHERE patient_id = ? AND organization_id = ? AND status NOT IN ('completed', 'abandoned')`).bind(patientId, orgId).first<{total: number}>(),
+      db.prepare(`SELECT completed_at FROM patient_treatments WHERE patient_id = ? AND treatment_type = 'scaling' AND status = 'completed' ORDER BY completed_at DESC LIMIT 1`).bind(patientId).first<{completed_at: string}>()
+    ]);
 
     // 통합 타임라인 (모두 합쳐서 날짜순)
     const timeline = [
@@ -220,19 +197,7 @@ retention.get('/patients/:id', async (c) => {
       ...contactEvents.results.map(e => ({ ...e, event_type: 'contact' }))
     ].sort((a: any, b: any) => (b.date || '').localeCompare(a.date || ''));
 
-    // 잔여 치료비 합계
-    const remainingSum = await db.prepare(`
-      SELECT COALESCE(SUM(remaining_amount), 0) as total FROM patient_treatments
-      WHERE patient_id = ? AND organization_id = ? AND status NOT IN ('completed', 'abandoned')
-    `).bind(patientId, orgId).first<{total: number}>();
-
     // 리콜 일정 (마지막 스케일링 + 6개월)
-    const lastScaling = await db.prepare(`
-      SELECT completed_at FROM patient_treatments
-      WHERE patient_id = ? AND treatment_type = 'scaling' AND status = 'completed'
-      ORDER BY completed_at DESC LIMIT 1
-    `).bind(patientId).first<{completed_at: string}>();
-
     let nextRecallDate = null;
     if (lastScaling?.completed_at) {
       const d = new Date(lastScaling.completed_at);

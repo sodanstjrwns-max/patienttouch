@@ -2,7 +2,7 @@
 import { Hono } from 'hono';
 import { safeParseJSON } from '../lib/utils';
 import { authMiddleware } from '../lib/auth';
-import { safeInt, validatePeriod, validateAdminPeriod, periodToDays, setCacheHeaders, maskPatientData } from '../lib/middleware';
+import { safeInt, validatePeriod, validateAdminPeriod, periodToDays, setCacheHeaders, maskPatientData, maskPhone } from '../lib/middleware';
 import type { Env, KPIData } from '../types';
 
 const dashboard = new Hono<{ Bindings: Env }>();
@@ -1394,7 +1394,7 @@ dashboard.get('/export', async (c) => {
 
       let csv = '\\uFEFF이름,전화,나이,성별,내원경로,지역,태그,등록일,상담횟수,결제금액\\n';
       for (const r of result.results) {
-        csv += `${r.name},${r.phone||''},${r.age||''},${r.gender==='male'?'남':'여'},${r.referral_source||''},${r.region||''},${r.tags||''},${(r.created_at as string||'').split('T')[0]},${r.consult_count||0},${r.total_paid||0}\\n`;
+        csv += `${r.name},${maskPhone(r.phone as string)},${r.age||''},${r.gender==='male'?'남':'여'},${r.referral_source||''},${r.region||''},${r.tags||''},${(r.created_at as string||'').split('T')[0]},${r.consult_count||0},${r.total_paid||0}\\n`;
       }
 
       return new Response(csv, {
@@ -1417,7 +1417,7 @@ dashboard.get('/export', async (c) => {
       const sMap: Record<string,string> = {in_treatment:'치료중',unscheduled_urgent:'긴급미예약',unscheduled_warning:'주의미예약',recall_6m:'6개월리콜',recall_12m:'12개월리콜',at_risk:'이탈위험',consulted_unconverted:'상담미전환',active:'활성',completed:'완료'};
       let csv = '\\uFEFF환자명,전화,상태,위험도,미내원일수,잔여치료비,우선도\\n';
       for (const r of result.results) {
-        csv += `${r.patient_name},${r.phone||''},${sMap[r.status as string]||r.status},${r.risk_score},${r.days_since_visit},${r.remaining_treatment_value},${r.priority_score}\\n`;
+        csv += `${r.patient_name},${maskPhone(r.phone as string)},${sMap[r.status as string]||r.status},${r.risk_score},${r.days_since_visit},${r.remaining_treatment_value},${r.priority_score}\\n`;
       }
 
       return new Response(csv, {

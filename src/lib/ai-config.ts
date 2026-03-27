@@ -53,7 +53,7 @@ export function logAIConfig(config: AIModelConfig): void {
 
 /**
  * OpenAI Chat Completions API 호출 헬퍼
- * 재시도 로직 + 에러 핸들링 포함
+ * 재시도 로직 + 타임아웃 + 에러 핸들링 포함
  */
 export async function callOpenAI(params: {
   apiKey: string;
@@ -67,6 +67,11 @@ export async function callOpenAI(params: {
 
   // GPT-5 계열 감지 (gpt-5, gpt-5-mini, gpt-5.4 등)
   const isGpt5 = model.includes('gpt-5');
+  
+  // Fallback 모델 매핑
+  const fallbackModel = isGpt5 
+    ? (model.includes('mini') ? 'gpt-4o-mini' : 'gpt-4o') 
+    : null;
 
   const body: any = {
     model,
@@ -79,16 +84,11 @@ export async function callOpenAI(params: {
   }
 
   // GPT-5 계열: response_format json_object 대신 json_schema 사용하거나 생략
-  // → GPT-5는 프롬프트에서 JSON을 요청하면 JSON으로 응답하므로, response_format 없이도 작동
-  // → json_object가 지원되지 않을 수 있으므로 GPT-5에서는 생략
   if (jsonMode && !isGpt5) {
     body.response_format = { type: 'json_object' };
   }
 
   if (isGpt5) {
-    // GPT-5 계열: reasoning_tokens가 많이 소비되므로 max_completion_tokens를 넉넉히 설정
-    // reasoning_tokens + output_tokens 합계가 max_completion_tokens 이내여야 함
-    // 기본 16384 (reasoning ~8K + output ~8K), 명시적 지정 시 그 값 사용
     body.max_completion_tokens = maxTokens ? Math.max(maxTokens, 16384) : 16384;
   } else if (maxTokens) {
     body.max_tokens = maxTokens;
@@ -96,75 +96,135 @@ export async function callOpenAI(params: {
 
   console.log(`[AI Call] Model: ${model}, JSON mode: ${jsonMode}, GPT-5: ${isGpt5}, Messages: ${messages.length}`);
 
-  const response = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(body),
-  });
+  // === Retry with exponential backoff ===
+  const MAX_RETRIES = 3;
+  const TIMEOUT_MS = 180000; // 180 seconds
+  let lastError: Error | null = null;
 
-  if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`OpenAI API error (${model}): ${response.status} - ${error}`);
-  }
-
-  const result: any = await response.json();
-  
-  // 디버그: 전체 응답 구조 로깅
-  const choice = result.choices?.[0];
-  const message = choice?.message;
-  console.log(`[AI Response] Model: ${model}, finish_reason: ${choice?.finish_reason}, has_content: ${!!message?.content}, has_refusal: ${!!message?.refusal}, content_length: ${message?.content?.length || 0}`);
-
-  // GPT-5 refusal 체크 (거부 응답 처리)
-  if (message?.refusal) {
-    throw new Error(`OpenAI refused request (${model}): ${message.refusal}`);
-  }
-
-  let content = message?.content;
-
-  // content가 null 또는 빈 문자열이면 에러 처리
-  // GPT-5는 reasoning_tokens를 많이 쓰고 content가 ""(빈 문자열)일 수 있음
-  if (!content || content.trim() === '') {
-    const reasoningTokens = result.usage?.completion_tokens_details?.reasoning_tokens || 0;
-    console.error(`[AI Error] Empty content from ${model}. reasoning_tokens: ${reasoningTokens}, finish_reason: ${choice?.finish_reason}. Full response:`, JSON.stringify(result).substring(0, 500));
-    
-    // finish_reason이 'length'이면 토큰 부족
-    if (choice?.finish_reason === 'length') {
-      throw new Error(`GPT-5 응답 토큰 부족 (reasoning에 ${reasoningTokens}토큰 소비). 다시 시도해주세요.`);
-    }
-    throw new Error(`Empty response from OpenAI (${model}). finish_reason: ${choice?.finish_reason}`);
-  }
-
-  // 사용량 로깅
-  const usage = result.usage;
-  if (usage) {
-    console.log(`[AI Usage] ${model}: ${usage.prompt_tokens} in → ${usage.completion_tokens} out (${usage.total_tokens} total)`);
-  }
-
-  if (jsonMode) {
-    // JSON 파싱 시 content에서 마크다운 코드블록 제거 (GPT-5가 가끔 ```json ... ``` 으로 감쌈)
-    let jsonStr = content.trim();
-    if (jsonStr.startsWith('```json')) {
-      jsonStr = jsonStr.slice(7);
-    } else if (jsonStr.startsWith('```')) {
-      jsonStr = jsonStr.slice(3);
-    }
-    if (jsonStr.endsWith('```')) {
-      jsonStr = jsonStr.slice(0, -3);
-    }
-    jsonStr = jsonStr.trim();
-    
+  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
     try {
-      return JSON.parse(jsonStr);
-    } catch (parseError) {
-      console.error(`[AI Parse Error] Failed to parse JSON from ${model}. Content (first 300 chars):`, content.substring(0, 300));
-      throw new Error(`Failed to parse JSON response from ${model}: ${(parseError as Error).message}`);
+      // AbortController for timeout
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
+
+      const response = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        const error = await response.text();
+        
+        // Retryable errors: 429 (rate limit), 500, 502, 503 (server errors)
+        if ([429, 500, 502, 503].includes(response.status) && attempt < MAX_RETRIES - 1) {
+          const retryAfter = response.headers.get('retry-after');
+          const delay = retryAfter 
+            ? Math.min(parseInt(retryAfter) * 1000, 30000) 
+            : Math.min(1000 * Math.pow(2, attempt), 15000);
+          console.warn(`[AI Retry] ${model} returned ${response.status}, retrying in ${delay}ms (attempt ${attempt + 1}/${MAX_RETRIES})`);
+          await new Promise(r => setTimeout(r, delay));
+          continue;
+        }
+        
+        throw new Error(`OpenAI API error (${model}): ${response.status} - ${error}`);
+      }
+
+      const result: any = await response.json();
+      
+      const choice = result.choices?.[0];
+      const message = choice?.message;
+      console.log(`[AI Response] Model: ${model}, finish_reason: ${choice?.finish_reason}, has_content: ${!!message?.content}, content_length: ${message?.content?.length || 0}`);
+
+      // GPT-5 refusal 체크
+      if (message?.refusal) {
+        throw new Error(`OpenAI refused request (${model}): ${message.refusal}`);
+      }
+
+      let content = message?.content;
+
+      // content가 null 또는 빈 문자열이면 에러 처리
+      if (!content || content.trim() === '') {
+        const reasoningTokens = result.usage?.completion_tokens_details?.reasoning_tokens || 0;
+        console.error(`[AI Error] Empty content from ${model}. reasoning_tokens: ${reasoningTokens}, finish_reason: ${choice?.finish_reason}`);
+        
+        if (choice?.finish_reason === 'length') {
+          throw new Error(`GPT-5 응답 토큰 부족 (reasoning에 ${reasoningTokens}토큰 소비). 다시 시도해주세요.`);
+        }
+        throw new Error(`Empty response from OpenAI (${model}). finish_reason: ${choice?.finish_reason}`);
+      }
+
+      // 사용량 로깅
+      const usage = result.usage;
+      if (usage) {
+        console.log(`[AI Usage] ${model}: ${usage.prompt_tokens} in → ${usage.completion_tokens} out (${usage.total_tokens} total)`);
+      }
+
+      if (jsonMode) {
+        let jsonStr = content.trim();
+        if (jsonStr.startsWith('```json')) {
+          jsonStr = jsonStr.slice(7);
+        } else if (jsonStr.startsWith('```')) {
+          jsonStr = jsonStr.slice(3);
+        }
+        if (jsonStr.endsWith('```')) {
+          jsonStr = jsonStr.slice(0, -3);
+        }
+        jsonStr = jsonStr.trim();
+        
+        try {
+          return JSON.parse(jsonStr);
+        } catch (parseError) {
+          console.error(`[AI Parse Error] Failed to parse JSON from ${model}. Content (first 300 chars):`, content.substring(0, 300));
+          throw new Error(`Failed to parse JSON response from ${model}: ${(parseError as Error).message}`);
+        }
+      }
+      
+      return content;
+
+    } catch (err: any) {
+      lastError = err;
+      
+      // Timeout (AbortError)
+      if (err.name === 'AbortError') {
+        console.error(`[AI Timeout] ${model} timed out after ${TIMEOUT_MS}ms (attempt ${attempt + 1}/${MAX_RETRIES})`);
+        if (attempt < MAX_RETRIES - 1) continue;
+      }
+      
+      // Non-retryable errors: break immediately
+      if (err.message?.includes('refused') || err.message?.includes('parse')) {
+        break;
+      }
+      
+      if (attempt < MAX_RETRIES - 1) {
+        const delay = Math.min(1000 * Math.pow(2, attempt), 10000);
+        console.warn(`[AI Retry] ${model} error: ${err.message?.substring(0, 100)}, retrying in ${delay}ms`);
+        await new Promise(r => setTimeout(r, delay));
+      }
     }
   }
-  
-  return content;
+
+  // === Fallback to alternative model ===
+  if (fallbackModel && lastError) {
+    console.warn(`[AI Fallback] ${model} failed after ${MAX_RETRIES} attempts. Falling back to ${fallbackModel}`);
+    try {
+      return await callOpenAI({
+        ...params,
+        model: fallbackModel,
+      });
+    } catch (fallbackErr: any) {
+      console.error(`[AI Fallback Error] ${fallbackModel} also failed: ${fallbackErr.message?.substring(0, 200)}`);
+      throw new Error(`AI 분석 실패: ${model}과 ${fallbackModel} 모두 응답 불가. 원인: ${lastError.message?.substring(0, 100)}`);
+    }
+  }
+
+  throw lastError || new Error(`AI 분석 실패: ${model} 응답 없음`);
 }
 
 /**
