@@ -220,9 +220,10 @@ export const RetentionPage: FC = () => {
                 }
 
                 html += '<div class="flex gap-2">';
-                if (c.patient_phone) {
-                  html += '<a href="tel:' + c.patient_phone + '" class="flex-1 flex items-center justify-center gap-1.5 py-2 bg-brand-600 text-white rounded-lg text-xs font-semibold hover:bg-brand-700 transition-all active:scale-95"><i class="fas fa-phone text-[10px]"></i>전화</a>';
-                  html += '<a href="sms:' + c.patient_phone + '" class="flex-1 flex items-center justify-center gap-1.5 py-2 bg-surface-800 text-white rounded-lg text-xs font-semibold hover:bg-surface-900 transition-all active:scale-95"><i class="fas fa-comment text-[10px]"></i>문자</a>';
+                if (c.patient_phone || c.patient_phone_full) {
+                  var _ph = c.patient_phone_full || c.patient_phone;
+                  html += '<a href="tel:' + _ph + '" class="flex-1 flex items-center justify-center gap-1.5 py-2 bg-brand-600 text-white rounded-lg text-xs font-semibold hover:bg-brand-700 transition-all active:scale-95"><i class="fas fa-phone text-[10px]"></i>전화</a>';
+                  html += '<a href="sms:' + _ph + '" class="flex-1 flex items-center justify-center gap-1.5 py-2 bg-surface-800 text-white rounded-lg text-xs font-semibold hover:bg-surface-900 transition-all active:scale-95"><i class="fas fa-comment text-[10px]"></i>문자</a>';
                 }
                 html += '<button onclick="openContactModal(\\'' + c.patient_id + '\\', \\'' + (treatments.length > 0 ? treatments[0].id : '') + '\\')" class="flex-1 flex items-center justify-center gap-1.5 py-2 bg-emerald-600 text-white rounded-lg text-xs font-semibold hover:bg-emerald-700 transition-all active:scale-95"><i class="fas fa-check text-[10px]"></i>기록</button>';
                 // KakaoTalk template button

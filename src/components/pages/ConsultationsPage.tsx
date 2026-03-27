@@ -603,7 +603,7 @@ export const ConsultationsPage: FC = () => {
                 var sel = document.getElementById('mPatient');
                 sel.innerHTML = '<option value="">환자를 선택하세요</option>';
                 data.data.forEach(function(p) {
-                  sel.innerHTML += '<option value="' + p.id + '">' + p.name + (p.phone ? ' (' + p.phone + ')' : '') + '</option>';
+                  sel.innerHTML += '<option value="' + p.id + '">' + p.name + (p.phone_display ? ' (' + p.phone_display + ')' : p.phone ? ' (' + p.phone + ')' : '') + '</option>';
                 });
               }
             } catch(e) {}

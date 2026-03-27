@@ -530,7 +530,7 @@ export const PatientDetailPage: FC<Props> = ({ id }) => {
                     '<h2 class="text-xl font-bold text-surface-900">' + p.name + '</h2>' +
                     (p.age ? '<span class="text-surface-400 text-sm">' + p.age + '세 ' + (p.gender === 'male' ? '남' : p.gender === 'female' ? '여' : '') + '</span>' : '') +
                   '</div>' +
-                  (p.phone ? '<a href="tel:' + p.phone + '" class="inline-flex items-center gap-1.5 text-brand-600 font-semibold text-sm hover:text-brand-700 transition-colors"><i class="fas fa-phone text-xs"></i>' + p.phone + '</a>' : '') +
+                  (p.phone ? '<a href="tel:' + (p.phone_full||p.phone) + '" class="inline-flex items-center gap-1.5 text-brand-600 font-semibold text-sm hover:text-brand-700 transition-colors"><i class="fas fa-phone text-xs"></i>' + (p.phone_display||p.phone) + '</a>' : '') +
                   '<div class="flex flex-wrap gap-1 mt-2">' +
                     (p.referral_source ? '<span class="px-2 py-0.5 bg-sky-50 text-sky-700 rounded-lg text-[10px] font-semibold"><i class="fas fa-route mr-0.5"></i>' + p.referral_source + '</span>' : '') +
                     (p.region ? '<span class="px-2 py-0.5 bg-emerald-50 text-emerald-700 rounded-lg text-[10px] font-semibold"><i class="fas fa-map-marker-alt mr-0.5"></i>' + p.region + '</span>' : '') +
@@ -571,7 +571,7 @@ export const PatientDetailPage: FC<Props> = ({ id }) => {
 
             // Quick Actions
             html += '<div class="grid grid-cols-2 gap-2">' +
-              '<a href="tel:' + (p.phone || '') + '" class="card-premium p-3.5 flex items-center justify-center gap-2 font-semibold text-sm ' + (!p.phone ? 'opacity-40 pointer-events-none' : 'active:scale-[0.98]') + '">' +
+              '<a href="tel:' + (p.phone_full||p.phone||'') + '" class="card-premium p-3.5 flex items-center justify-center gap-2 font-semibold text-sm ' + (!p.phone ? 'opacity-40 pointer-events-none' : 'active:scale-[0.98]') + '">' +
                 '<div class="w-8 h-8 rounded-lg bg-brand-50 flex items-center justify-center"><i class="fas fa-phone text-brand-600 text-xs"></i></div>' +
                 '<span class="text-surface-800">전화</span>' +
               '</a>' +
@@ -988,7 +988,7 @@ export const PatientDetailPage: FC<Props> = ({ id }) => {
             document.getElementById('editName').value = p.name || '';
             document.getElementById('editAge').value = p.age || '';
             document.getElementById('editGender').value = p.gender || '';
-            document.getElementById('editPhone').value = p.phone || '';
+            document.getElementById('editPhone').value = p.phone_full || p.phone || '';
             document.getElementById('editReferral').value = p.referral_source || '';
             document.getElementById('editRegion').value = p.region || '';
             document.getElementById('editTags').value = (p.tags || []).join(', ');

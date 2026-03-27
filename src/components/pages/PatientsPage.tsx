@@ -171,6 +171,7 @@ export const PatientsPage: FC = () => {
                 var tagsStr = tags.join(' ').toLowerCase();
                 matchText = p.name.toLowerCase().includes(q) || 
                   (p.phone && p.phone.includes(q)) ||
+                  (p.phone_full && p.phone_full.includes(q)) ||
                   (p.referral_source && p.referral_source.toLowerCase().includes(q)) ||
                   (p.region && p.region.toLowerCase().includes(q)) ||
                   tagsStr.includes(q) ||
@@ -256,7 +257,7 @@ export const PatientsPage: FC = () => {
                     (st ? '<span class="text-[9px] px-1.5 py-0.5 rounded-md font-semibold ' + st.bg + '">' + st.label + '</span>' : '') +
                   '</div>' +
                   '<div class="flex items-center gap-1.5 mt-0.5 flex-wrap">' +
-                    (p.phone ? '<span class="text-xs text-surface-500">' + p.phone + '</span>' : '') +
+                    (p.phone ? '<span class="text-xs text-surface-500">' + (p.phone_display || p.phone) + '</span>' : '') +
                     (p.referral_source ? '<span class="text-[10px] px-1.5 py-0.5 rounded-md bg-sky-50 text-sky-600 font-medium">' + p.referral_source + '</span>' : '') +
                     (p.region ? '<span class="text-[10px] px-1.5 py-0.5 rounded-md bg-emerald-50 text-emerald-600 font-medium">' + p.region + '</span>' : '') +
                     (tags.length > 0 ? tags.slice(0,2).map(function(t){ return '<span class="text-[10px] px-1.5 py-0.5 rounded-md bg-brand-50 text-brand-600 font-medium">' + t + '</span>'; }).join('') : '') +
