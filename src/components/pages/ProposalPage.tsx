@@ -107,8 +107,8 @@ export const ProposalPage: FC<Props> = ({ token }) => {
 
               // Greeting
               html += '<div class="card mx-4 -mt-6 p-5 relative z-10 shadow-lg">' +
-                '<h2 class="text-lg font-bold text-gray-900 mb-2">' + p.title + '</h2>' +
-                '<p class="text-gray-600 text-sm leading-relaxed whitespace-pre-line">' + (p.greeting_message || '') + '</p>' +
+                '<h2 class="text-lg font-bold text-gray-900 mb-2">' + esc(p.title) + '</h2>' +
+                '<p class="text-gray-600 text-sm leading-relaxed whitespace-pre-line">' + (esc(p.greeting_message) || '') + '</p>' +
               '</div>';
 
               // Treatment Options
@@ -119,7 +119,7 @@ export const ProposalPage: FC<Props> = ({ token }) => {
                 var isRec = opt.recommended;
                 html += '<div class="card p-5 border-2 ' + (isRec ? 'border-brand-400 shadow-lg shadow-brand-200/30' : 'border-transparent') + '">' +
                   '<div class="flex justify-between items-start mb-3">' +
-                    '<div class="flex items-center gap-2"><span class="font-bold text-gray-900">' + opt.name + '</span>' +
+                    '<div class="flex items-center gap-2"><span class="font-bold text-gray-900">' + esc(opt.name) + '</span>' +
                     (isRec ? '<span class="text-[10px] font-bold bg-brand-600 text-white px-2 py-0.5 rounded-md">추천</span>' : '') + '</div>' +
                     '<div class="text-right"><span class="text-2xl font-black text-brand-600">' + (opt.price / 10000).toFixed(0) + '</span><span class="text-sm text-gray-400 ml-0.5">만원</span></div>' +
                   '</div>' +

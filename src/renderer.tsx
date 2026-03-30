@@ -482,7 +482,15 @@ export const renderer = jsxRenderer(({ children, title }) => {
               };
             })();
 
-            // === 2. Toast Notification System ===
+            // === 2. XSS Protection ===
+            function escapeHtml(str) {
+              if (str === null || str === undefined) return '';
+              return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+            }
+            // Shorthand alias
+            var esc = escapeHtml;
+
+            // === 3. Toast Notification System ===
             window._toastContainer = null;
             window._toastQueue = [];
             function showToast(msg, type, duration) {

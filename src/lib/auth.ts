@@ -2,7 +2,12 @@
 import { Context, Next } from 'hono';
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
 import { verifyJWT, createJWT } from './utils';
-import type { AuthPayload } from '../types';
+import type { AuthPayload, Env } from '../types';
+
+// Helper to get JWT secret from environment
+function getJwtSecret(c: Context): string | undefined {
+  try { return (c.env as Env & { JWT_SECRET?: string }).JWT_SECRET; } catch { return undefined; }
+}
 
 // Auth middleware - verifies JWT and adds user info to context
 export async function authMiddleware(c: Context, next: Next) {
@@ -20,7 +25,7 @@ export async function authMiddleware(c: Context, next: Next) {
     return c.json({ success: false, error: 'Unauthorized' }, 401);
   }
 
-  const payload = await verifyJWT(token);
+  const payload = await verifyJWT(token, getJwtSecret(c));
   if (!payload) {
     // Clear invalid cookie
     deleteCookie(c, 'auth_token');
@@ -45,7 +50,7 @@ export async function setAuthCookie(c: Context, user: { id: string; organization
     exp: Math.floor(Date.now() / 1000) + (7 * 24 * 60 * 60) // 7 days
   };
 
-  const token = await createJWT(payload);
+  const token = await createJWT(payload, getJwtSecret(c));
 
   setCookie(c, 'auth_token', token, {
     httpOnly: true,

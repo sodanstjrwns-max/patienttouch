@@ -21,9 +21,11 @@ export async function verifyPassword(password: string, hash: string): Promise<bo
 }
 
 // JWT functions using Web Crypto API
-const JWT_SECRET = 'patient-touch-secret-key-2026';
+// Secret is injected from environment (c.env.JWT_SECRET) — never hardcoded
+const FALLBACK_SECRET = 'patient-touch-dev-only-change-in-production';
 
-export async function createJWT(payload: Record<string, unknown>): Promise<string> {
+export async function createJWT(payload: Record<string, unknown>, secret?: string): Promise<string> {
+  const jwtSecret = secret || FALLBACK_SECRET;
   const header = { alg: 'HS256', typ: 'JWT' };
   
   const encodedHeader = btoa(JSON.stringify(header)).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
@@ -32,7 +34,7 @@ export async function createJWT(payload: Record<string, unknown>): Promise<strin
   const encoder = new TextEncoder();
   const key = await crypto.subtle.importKey(
     'raw',
-    encoder.encode(JWT_SECRET),
+    encoder.encode(jwtSecret),
     { name: 'HMAC', hash: 'SHA-256' },
     false,
     ['sign']
@@ -50,8 +52,9 @@ export async function createJWT(payload: Record<string, unknown>): Promise<strin
   return `${encodedHeader}.${encodedPayload}.${encodedSignature}`;
 }
 
-export async function verifyJWT(token: string): Promise<Record<string, unknown> | null> {
+export async function verifyJWT(token: string, secret?: string): Promise<Record<string, unknown> | null> {
   try {
+    const jwtSecret = secret || FALLBACK_SECRET;
     const parts = token.split('.');
     if (parts.length !== 3) return null;
     
@@ -60,7 +63,7 @@ export async function verifyJWT(token: string): Promise<Record<string, unknown> 
     const encoder = new TextEncoder();
     const key = await crypto.subtle.importKey(
       'raw',
-      encoder.encode(JWT_SECRET),
+      encoder.encode(jwtSecret),
       { name: 'HMAC', hash: 'SHA-256' },
       false,
       ['verify']

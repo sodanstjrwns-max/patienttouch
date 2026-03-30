@@ -483,6 +483,7 @@ export interface RetentionDashboard {
 export interface Env {
   DB: D1Database;
   R2: R2Bucket;
+  JWT_SECRET?: string;
   OPENAI_API_KEY: string;
   DEEPGRAM_API_KEY?: string;
   GOOGLE_CLIENT_ID: string;
