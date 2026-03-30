@@ -29,6 +29,6 @@ CREATE INDEX IF NOT EXISTS idx_treatments_patient_org
 CREATE INDEX IF NOT EXISTS idx_consultations_patient_status
   ON consultations(patient_id, status, consultation_date DESC);
 
--- 8. notification_logs: org + type + date 복합 (알림 조회 최적화)
+-- 8. notification_logs: org + channel + date 복합 (알림 조회 최적화)
 CREATE INDEX IF NOT EXISTS idx_notification_logs_org_type
-  ON notification_logs(org_id, notification_type, created_at DESC);
+  ON notification_logs(org_id, channel, created_at DESC);

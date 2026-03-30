@@ -118,6 +118,135 @@ export const HomePage: FC = () => {
           </div>
         </div>
 
+        {/* ====== TODAY CLINICAL BOARD (진료 보드) ====== */}
+        <div>
+          <div class="flex items-center justify-between mb-3">
+            <div class="flex items-center gap-2">
+              <div class="w-6 h-6 rounded-lg bg-indigo-50 flex items-center justify-center">
+                <i class="fas fa-user-doctor text-[10px] text-indigo-600"></i>
+              </div>
+              <h2 class="text-sm font-bold text-surface-900">오늘의 진료보드</h2>
+              <span id="doctorCount" class="text-[10px] font-bold text-white bg-indigo-500 px-1.5 py-0.5 rounded-full min-w-[20px] text-center leading-none">0</span>
+            </div>
+            <button id="addDoctorBtn" class="text-[11px] font-semibold text-brand-600 bg-brand-50 px-2.5 py-1 rounded-lg hover:bg-brand-100 transition-all">
+              <i class="fas fa-plus mr-1 text-[10px]"></i>원장 추가
+            </button>
+          </div>
+          <div id="clinicalBoardSection" class="space-y-2">
+            <div class="card-premium p-4"><div class="shimmer h-14 rounded-lg w-full"></div></div>
+          </div>
+        </div>
+
+        {/* ====== TODAY STAFF STATUS (근무 현황) ====== */}
+        <div>
+          <div class="flex items-center justify-between mb-3">
+            <div class="flex items-center gap-2">
+              <div class="w-6 h-6 rounded-lg bg-teal-50 flex items-center justify-center">
+                <i class="fas fa-people-group text-[10px] text-teal-600"></i>
+              </div>
+              <h2 class="text-sm font-bold text-surface-900">오늘의 근무현황</h2>
+              <span id="staffCount" class="text-[10px] font-bold text-white bg-teal-500 px-1.5 py-0.5 rounded-full min-w-[20px] text-center leading-none">0</span>
+            </div>
+            <button id="addStaffBtn" class="text-[11px] font-semibold text-teal-600 bg-teal-50 px-2.5 py-1 rounded-lg hover:bg-teal-100 transition-all">
+              <i class="fas fa-plus mr-1 text-[10px]"></i>직원 추가
+            </button>
+          </div>
+          <div id="staffStatusSection" class="space-y-2">
+            <div class="card-premium p-4"><div class="shimmer h-14 rounded-lg w-full"></div></div>
+          </div>
+        </div>
+
+        {/* ====== ADD DOCTOR MODAL ====== */}
+        <div id="addDoctorModal" class="hidden fixed inset-0 bg-surface-900/60 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center">
+          <div class="bg-white rounded-t-3xl sm:rounded-3xl w-full sm:max-w-lg p-6 animate-slide-up">
+            <div class="flex justify-between items-center mb-5">
+              <h3 class="text-lg font-bold text-surface-900">진료 원장 추가</h3>
+              <button id="closeDoctorModal" class="w-9 h-9 flex items-center justify-center rounded-xl bg-surface-100 hover:bg-surface-200 text-surface-500 transition-all active:scale-95">
+                <i class="fas fa-xmark"></i>
+              </button>
+            </div>
+            <div class="space-y-4">
+              <div>
+                <label class="block text-sm font-semibold text-surface-700 mb-1.5">등록된 원장 선택</label>
+                <select id="doctorUserSelect" class="w-full px-4 py-3 bg-surface-50 border border-surface-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-400 transition-all">
+                  <option value="">직접 입력</option>
+                </select>
+              </div>
+              <div id="doctorNameRow">
+                <label class="block text-sm font-semibold text-surface-700 mb-1.5">원장명</label>
+                <input type="text" id="doctorNameInput" placeholder="예: 김○○ 원장" class="w-full px-4 py-3 bg-surface-50 border border-surface-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-400 transition-all" />
+              </div>
+              <div class="grid grid-cols-2 gap-3">
+                <div>
+                  <label class="block text-sm font-semibold text-surface-700 mb-1.5">시작 시간</label>
+                  <input type="time" id="doctorStartTime" value="09:00" class="w-full px-4 py-3 bg-surface-50 border border-surface-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-400 transition-all" />
+                </div>
+                <div>
+                  <label class="block text-sm font-semibold text-surface-700 mb-1.5">종료 시간</label>
+                  <input type="time" id="doctorEndTime" value="18:00" class="w-full px-4 py-3 bg-surface-50 border border-surface-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-400 transition-all" />
+                </div>
+              </div>
+              <div>
+                <label class="block text-sm font-semibold text-surface-700 mb-1.5">메모</label>
+                <input type="text" id="doctorMemo" placeholder="예: 수술 전담, 교정 상담" class="w-full px-4 py-3 bg-surface-50 border border-surface-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-400 transition-all" />
+              </div>
+              <button id="saveDoctorBtn" class="w-full bg-gradient-brand text-white font-semibold py-3.5 rounded-xl transition-all active:scale-[0.98] shadow-lg shadow-brand-600/20">
+                <i class="fas fa-plus mr-2"></i>원장 추가
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* ====== ADD STAFF MODAL ====== */}
+        <div id="addStaffModal" class="hidden fixed inset-0 bg-surface-900/60 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center">
+          <div class="bg-white rounded-t-3xl sm:rounded-3xl w-full sm:max-w-lg p-6 animate-slide-up">
+            <div class="flex justify-between items-center mb-5">
+              <h3 class="text-lg font-bold text-surface-900">직원 추가</h3>
+              <button id="closeStaffModal" class="w-9 h-9 flex items-center justify-center rounded-xl bg-surface-100 hover:bg-surface-200 text-surface-500 transition-all active:scale-95">
+                <i class="fas fa-xmark"></i>
+              </button>
+            </div>
+            <div class="space-y-4">
+              <div>
+                <label class="block text-sm font-semibold text-surface-700 mb-1.5">등록된 직원 선택</label>
+                <select id="staffUserSelect" class="w-full px-4 py-3 bg-surface-50 border border-surface-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-400 transition-all">
+                  <option value="">직접 입력 (아르바이트 등)</option>
+                </select>
+              </div>
+              <div id="staffNameRow">
+                <label class="block text-sm font-semibold text-surface-700 mb-1.5">이름</label>
+                <input type="text" id="staffNameInput" placeholder="예: 이○○" class="w-full px-4 py-3 bg-surface-50 border border-surface-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-400 transition-all" />
+              </div>
+              <div>
+                <label class="block text-sm font-semibold text-surface-700 mb-1.5">직종</label>
+                <div class="flex flex-wrap gap-2" id="staffRoleBtns">
+                  <button class="staff-role-btn px-3 py-2 rounded-xl text-sm font-semibold border-2 border-teal-500 text-teal-600 bg-teal-50 transition-all" data-role="part_time">아르바이트</button>
+                  <button class="staff-role-btn px-3 py-2 rounded-xl text-sm font-semibold border-2 border-surface-200 text-surface-600 transition-all" data-role="hygienist">치위생사</button>
+                  <button class="staff-role-btn px-3 py-2 rounded-xl text-sm font-semibold border-2 border-surface-200 text-surface-600 transition-all" data-role="coordinator">코디네이터</button>
+                  <button class="staff-role-btn px-3 py-2 rounded-xl text-sm font-semibold border-2 border-surface-200 text-surface-600 transition-all" data-role="staff">일반 직원</button>
+                </div>
+              </div>
+              <div class="grid grid-cols-2 gap-3">
+                <div>
+                  <label class="block text-sm font-semibold text-surface-700 mb-1.5">시작 시간</label>
+                  <input type="time" id="staffStartTime" value="09:00" class="w-full px-4 py-3 bg-surface-50 border border-surface-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-400 transition-all" />
+                </div>
+                <div>
+                  <label class="block text-sm font-semibold text-surface-700 mb-1.5">종료 시간</label>
+                  <input type="time" id="staffEndTime" value="18:00" class="w-full px-4 py-3 bg-surface-50 border border-surface-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-400 transition-all" />
+                </div>
+              </div>
+              <div>
+                <label class="block text-sm font-semibold text-surface-700 mb-1.5">메모</label>
+                <input type="text" id="staffMemoInput" placeholder="예: 오전만 근무, 리셉션 담당" class="w-full px-4 py-3 bg-surface-50 border border-surface-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-400 transition-all" />
+              </div>
+              <button id="saveStaffBtn" class="w-full bg-gradient-to-r from-teal-500 to-emerald-500 text-white font-semibold py-3.5 rounded-xl transition-all active:scale-[0.98] shadow-lg shadow-teal-600/20">
+                <i class="fas fa-plus mr-2"></i>직원 추가
+              </button>
+            </div>
+          </div>
+        </div>
+
         {/* ====== WEEK PROGRESS + SPARKLINES ====== */}
         <div class="grid grid-cols-2 gap-2.5">
           <div id="weekRevenueRing" class="card-premium p-4 flex flex-col items-center justify-center min-h-[160px]">
@@ -781,7 +910,334 @@ export const HomePage: FC = () => {
             window.location.href = '/login';
           });
 
+          // === STAFF SCHEDULE (진료보드 & 근무현황) ===
+          var staffScheduleData = null;
+          var selectedStaffRole = 'part_time';
+
+          async function loadStaffSchedule() {
+            try {
+              var res = await fetch('/api/staff-schedule/today');
+              var data = await res.json();
+              if (!data.success) return;
+              staffScheduleData = data.data;
+
+              renderClinicalBoard(data.data);
+              renderStaffStatus(data.data);
+              populateUserSelects(data.data.users || []);
+            } catch(e) { console.error('Staff schedule error:', e); }
+          }
+
+          function renderClinicalBoard(data) {
+            var doctors = data.doctors || [];
+            var el = document.getElementById('clinicalBoardSection');
+            var countEl = document.getElementById('doctorCount');
+            if (countEl) countEl.textContent = doctors.length;
+
+            if (doctors.length === 0) {
+              el.innerHTML =
+                '<div class="card-premium p-5 text-center">' +
+                  '<div class="w-12 h-12 mx-auto bg-indigo-50 rounded-2xl flex items-center justify-center mb-2"><i class="fas fa-user-doctor text-xl text-indigo-300"></i></div>' +
+                  '<p class="font-bold text-sm text-surface-800 mb-0.5">오늘 진료 원장 없음</p>' +
+                  '<p class="text-xs text-surface-500">원장을 추가해주세요</p>' +
+                '</div>';
+              return;
+            }
+
+            var dPatients = {};
+            (data.doctor_patients || []).forEach(function(dp) { dPatients[dp.user_id] = dp.patient_count || 0; });
+
+            var statusCfg = {
+              scheduled: {bg:'bg-sky-50',tx:'text-sky-700',lb:'근무예정',ic:'fa-clock'},
+              working: {bg:'bg-emerald-50',tx:'text-emerald-700',lb:'진료중',ic:'fa-stethoscope'},
+              off: {bg:'bg-surface-100',tx:'text-surface-500',lb:'퇴근',ic:'fa-right-from-bracket'},
+              absent: {bg:'bg-rose-50',tx:'text-rose-700',lb:'결근',ic:'fa-xmark'},
+              half_day: {bg:'bg-amber-50',tx:'text-amber-700',lb:'반차',ic:'fa-clock-rotate-left'}
+            };
+
+            el.innerHTML = doctors.map(function(doc) {
+              var st = statusCfg[doc.status] || statusCfg.scheduled;
+              var pts = doc.user_id ? (dPatients[doc.user_id] || 0) : (doc.assigned_patients || 0);
+              return '<div class="card-premium p-3 flex items-center gap-3">' +
+                '<div class="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-sm shadow-indigo-400/30">' +
+                  '<i class="fas fa-user-doctor text-white text-sm"></i>' +
+                '</div>' +
+                '<div class="flex-1 min-w-0">' +
+                  '<div class="flex items-center gap-1.5">' +
+                    '<span class="font-bold text-sm text-surface-900">' + doc.staff_name + '</span>' +
+                    '<span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md text-[9px] font-bold ' + st.bg + ' ' + st.tx + '"><i class="fas ' + st.ic + ' text-[7px]"></i> ' + st.lb + '</span>' +
+                  '</div>' +
+                  '<div class="flex items-center gap-2 mt-0.5">' +
+                    (doc.start_time ? '<span class="text-[11px] text-surface-500"><i class="far fa-clock text-[9px] mr-0.5"></i>' + doc.start_time + '~' + (doc.end_time||'') + '</span>' : '') +
+                    '<span class="text-[11px] font-semibold text-brand-600"><i class="fas fa-user text-[9px] mr-0.5"></i>' + pts + '명 배정</span>' +
+                    (doc.memo ? '<span class="text-[10px] text-surface-400">' + doc.memo + '</span>' : '') +
+                  '</div>' +
+                '</div>' +
+                '<div class="flex gap-1">' +
+                  '<button onclick="toggleDoctorStatus(\\'' + doc.id + '\\',\\'' + doc.status + '\\')" class="w-8 h-8 rounded-lg bg-surface-50 flex items-center justify-center text-surface-400 hover:text-brand-600 hover:bg-brand-50 transition-all" title="상태 변경"><i class="fas fa-arrows-rotate text-xs"></i></button>' +
+                  '<button onclick="removeSchedule(\\'' + doc.id + '\\')" class="w-8 h-8 rounded-lg bg-surface-50 flex items-center justify-center text-surface-400 hover:text-rose-500 hover:bg-rose-50 transition-all" title="삭제"><i class="fas fa-trash-can text-xs"></i></button>' +
+                '</div>' +
+              '</div>';
+            }).join('');
+          }
+
+          function renderStaffStatus(data) {
+            var staff = data.staff || [];
+            var el = document.getElementById('staffStatusSection');
+            var countEl = document.getElementById('staffCount');
+            if (countEl) countEl.textContent = staff.length;
+
+            if (staff.length === 0) {
+              el.innerHTML =
+                '<div class="card-premium p-5 text-center">' +
+                  '<div class="w-12 h-12 mx-auto bg-teal-50 rounded-2xl flex items-center justify-center mb-2"><i class="fas fa-people-group text-xl text-teal-300"></i></div>' +
+                  '<p class="font-bold text-sm text-surface-800 mb-0.5">오늘 등록된 직원 없음</p>' +
+                  '<p class="text-xs text-surface-500">직원을 추가해주세요</p>' +
+                '</div>';
+              return;
+            }
+
+            var roleCfg = {
+              coordinator: {bg:'bg-brand-50',tx:'text-brand-700',lb:'코디네이터',ic:'fa-headset'},
+              hygienist: {bg:'bg-sky-50',tx:'text-sky-700',lb:'치위생사',ic:'fa-tooth'},
+              staff: {bg:'bg-surface-100',tx:'text-surface-600',lb:'직원',ic:'fa-id-badge'},
+              part_time: {bg:'bg-amber-50',tx:'text-amber-700',lb:'아르바이트',ic:'fa-clock'}
+            };
+            var statusCfg = {
+              scheduled: {bg:'bg-sky-50',tx:'text-sky-700',lb:'근무예정'},
+              working: {bg:'bg-emerald-50',tx:'text-emerald-700',lb:'근무중'},
+              off: {bg:'bg-surface-100',tx:'text-surface-500',lb:'퇴근'},
+              absent: {bg:'bg-rose-50',tx:'text-rose-700',lb:'결근'},
+              half_day: {bg:'bg-amber-50',tx:'text-amber-700',lb:'반차'}
+            };
+
+            // Group by role
+            var grouped = {};
+            staff.forEach(function(s) {
+              var r = s.staff_role || 'staff';
+              if (!grouped[r]) grouped[r] = [];
+              grouped[r].push(s);
+            });
+
+            var html = '';
+            var roleOrder = ['coordinator','hygienist','staff','part_time'];
+            roleOrder.forEach(function(role) {
+              if (!grouped[role] || grouped[role].length === 0) return;
+              var rc = roleCfg[role] || roleCfg.staff;
+              html += '<div class="mb-1"><span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-bold ' + rc.bg + ' ' + rc.tx + '"><i class="fas ' + rc.ic + ' text-[8px]"></i> ' + rc.lb + ' ' + grouped[role].length + '명</span></div>';
+              grouped[role].forEach(function(s) {
+                var st = statusCfg[s.status] || statusCfg.scheduled;
+                var avColors = ['bg-teal-100 text-teal-700','bg-emerald-100 text-emerald-700','bg-sky-100 text-sky-700','bg-amber-100 text-amber-700','bg-purple-100 text-purple-700'];
+                var avC = avColors[s.staff_name.charCodeAt(0) % avColors.length];
+                html += '<div class="card-premium p-3 flex items-center gap-3">' +
+                  '<div class="w-9 h-9 rounded-xl ' + avC + ' flex items-center justify-center font-bold text-xs shrink-0">' + s.staff_name.charAt(0) + '</div>' +
+                  '<div class="flex-1 min-w-0">' +
+                    '<div class="flex items-center gap-1.5">' +
+                      '<span class="font-bold text-sm text-surface-900">' + s.staff_name + '</span>' +
+                      '<span class="inline-flex items-center px-1.5 py-0.5 rounded-md text-[9px] font-bold ' + st.bg + ' ' + st.tx + '">' + st.lb + '</span>' +
+                    '</div>' +
+                    '<div class="flex items-center gap-2 mt-0.5">' +
+                      (s.start_time ? '<span class="text-[11px] text-surface-500"><i class="far fa-clock text-[9px] mr-0.5"></i>' + s.start_time + '~' + (s.end_time||'') + '</span>' : '') +
+                      (s.memo ? '<span class="text-[10px] text-surface-400">' + s.memo + '</span>' : '') +
+                    '</div>' +
+                  '</div>' +
+                  '<div class="flex gap-1">' +
+                    '<button onclick="toggleStaffStatus(\\'' + s.id + '\\',\\'' + s.status + '\\')" class="w-7 h-7 rounded-lg bg-surface-50 flex items-center justify-center text-surface-400 hover:text-teal-600 hover:bg-teal-50 transition-all" title="상태 변경"><i class="fas fa-arrows-rotate text-[10px]"></i></button>' +
+                    '<button onclick="removeSchedule(\\'' + s.id + '\\')" class="w-7 h-7 rounded-lg bg-surface-50 flex items-center justify-center text-surface-400 hover:text-rose-500 hover:bg-rose-50 transition-all" title="삭제"><i class="fas fa-trash-can text-[10px]"></i></button>' +
+                  '</div>' +
+                '</div>';
+              });
+            });
+
+            el.innerHTML = html;
+          }
+
+          function populateUserSelects(users) {
+            var docSel = document.getElementById('doctorUserSelect');
+            var staffSel = document.getElementById('staffUserSelect');
+            if (!docSel || !staffSel) return;
+
+            docSel.innerHTML = '<option value="">직접 입력</option>';
+            staffSel.innerHTML = '<option value="">직접 입력 (아르바이트 등)</option>';
+
+            (users || []).forEach(function(u) {
+              var opt = '<option value="' + u.id + '" data-name="' + u.name + '">' + u.name + ' (' + u.email + ')</option>';
+              if (u.role === 'admin') { docSel.innerHTML += opt; }
+              staffSel.innerHTML += opt;
+            });
+          }
+
+          // Doctor user select -> auto-fill name
+          document.getElementById('doctorUserSelect').addEventListener('change', function() {
+            var sel = this.options[this.selectedIndex];
+            var nameRow = document.getElementById('doctorNameRow');
+            var nameInput = document.getElementById('doctorNameInput');
+            if (this.value) {
+              nameInput.value = sel.dataset.name || '';
+              nameRow.style.opacity = '0.5';
+              nameInput.readOnly = true;
+            } else {
+              nameInput.value = '';
+              nameRow.style.opacity = '1';
+              nameInput.readOnly = false;
+            }
+          });
+
+          document.getElementById('staffUserSelect').addEventListener('change', function() {
+            var sel = this.options[this.selectedIndex];
+            var nameRow = document.getElementById('staffNameRow');
+            var nameInput = document.getElementById('staffNameInput');
+            if (this.value) {
+              nameInput.value = sel.dataset.name || '';
+              nameRow.style.opacity = '0.5';
+              nameInput.readOnly = true;
+            } else {
+              nameInput.value = '';
+              nameRow.style.opacity = '1';
+              nameInput.readOnly = false;
+            }
+          });
+
+          // Staff role buttons
+          document.querySelectorAll('.staff-role-btn').forEach(function(btn) {
+            btn.addEventListener('click', function() {
+              selectedStaffRole = this.dataset.role;
+              document.querySelectorAll('.staff-role-btn').forEach(function(b) {
+                var active = b.dataset.role === selectedStaffRole;
+                b.className = 'staff-role-btn px-3 py-2 rounded-xl text-sm font-semibold border-2 transition-all ' +
+                  (active ? 'border-teal-500 text-teal-600 bg-teal-50' : 'border-surface-200 text-surface-600');
+              });
+            });
+          });
+
+          // Modal openers/closers
+          document.getElementById('addDoctorBtn').addEventListener('click', function() {
+            document.getElementById('addDoctorModal').classList.remove('hidden');
+          });
+          document.getElementById('closeDoctorModal').addEventListener('click', function() {
+            document.getElementById('addDoctorModal').classList.add('hidden');
+          });
+          document.getElementById('addStaffBtn').addEventListener('click', function() {
+            document.getElementById('addStaffModal').classList.remove('hidden');
+          });
+          document.getElementById('closeStaffModal').addEventListener('click', function() {
+            document.getElementById('addStaffModal').classList.add('hidden');
+          });
+
+          // Save doctor
+          document.getElementById('saveDoctorBtn').addEventListener('click', async function() {
+            var btn = this;
+            var userId = document.getElementById('doctorUserSelect').value || null;
+            var name = document.getElementById('doctorNameInput').value.trim();
+            if (!name) { showToast('원장 이름을 입력해주세요.', 'error'); return; }
+
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>추가 중...';
+            try {
+              var today = new Date().toISOString().split('T')[0];
+              var res = await fetch('/api/staff-schedule', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  staff_name: name,
+                  staff_role: 'doctor',
+                  user_id: userId,
+                  date: today,
+                  start_time: document.getElementById('doctorStartTime').value || '09:00',
+                  end_time: document.getElementById('doctorEndTime').value || '18:00',
+                  memo: document.getElementById('doctorMemo').value || null
+                })
+              });
+              var data = await res.json();
+              if (data.success) {
+                showToast(name + ' 원장이 추가되었습니다.', 'success');
+                document.getElementById('addDoctorModal').classList.add('hidden');
+                document.getElementById('doctorNameInput').value = '';
+                document.getElementById('doctorMemo').value = '';
+                document.getElementById('doctorUserSelect').value = '';
+                loadStaffSchedule();
+              } else {
+                showToast(data.error || '추가에 실패했습니다.', 'error');
+              }
+            } catch(e) { showToast('오류가 발생했습니다.', 'error'); }
+            finally { btn.disabled = false; btn.innerHTML = '<i class="fas fa-plus mr-2"></i>원장 추가'; }
+          });
+
+          // Save staff
+          document.getElementById('saveStaffBtn').addEventListener('click', async function() {
+            var btn = this;
+            var userId = document.getElementById('staffUserSelect').value || null;
+            var name = document.getElementById('staffNameInput').value.trim();
+            if (!name) { showToast('직원 이름을 입력해주세요.', 'error'); return; }
+
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>추가 중...';
+            try {
+              var today = new Date().toISOString().split('T')[0];
+              var res = await fetch('/api/staff-schedule', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  staff_name: name,
+                  staff_role: selectedStaffRole,
+                  user_id: userId,
+                  date: today,
+                  start_time: document.getElementById('staffStartTime').value || '09:00',
+                  end_time: document.getElementById('staffEndTime').value || '18:00',
+                  memo: document.getElementById('staffMemoInput').value || null
+                })
+              });
+              var data = await res.json();
+              if (data.success) {
+                showToast(name + '님이 추가되었습니다.', 'success');
+                document.getElementById('addStaffModal').classList.add('hidden');
+                document.getElementById('staffNameInput').value = '';
+                document.getElementById('staffMemoInput').value = '';
+                document.getElementById('staffUserSelect').value = '';
+                loadStaffSchedule();
+              } else {
+                showToast(data.error || '추가에 실패했습니다.', 'error');
+              }
+            } catch(e) { showToast('오류가 발생했습니다.', 'error'); }
+            finally { btn.disabled = false; btn.innerHTML = '<i class="fas fa-plus mr-2"></i>직원 추가'; }
+          });
+
+          // Toggle status (cycle: scheduled -> working -> off)
+          async function toggleDoctorStatus(id, current) {
+            var next = current === 'scheduled' ? 'working' : current === 'working' ? 'off' : 'scheduled';
+            await updateScheduleStatus(id, next);
+          }
+          async function toggleStaffStatus(id, current) {
+            var next = current === 'scheduled' ? 'working' : current === 'working' ? 'off' : 'scheduled';
+            await updateScheduleStatus(id, next);
+          }
+          async function updateScheduleStatus(id, status) {
+            try {
+              var res = await fetch('/api/staff-schedule/' + id, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status: status })
+              });
+              var data = await res.json();
+              if (data.success) { loadStaffSchedule(); }
+              else { showToast('상태 변경에 실패했습니다.', 'error'); }
+            } catch(e) { showToast('오류가 발생했습니다.', 'error'); }
+          }
+
+          // Remove schedule
+          async function removeSchedule(id) {
+            if (!confirm('이 근무자를 삭제하시겠습니까?')) return;
+            try {
+              var res = await fetch('/api/staff-schedule/' + id, { method: 'DELETE' });
+              var data = await res.json();
+              if (data.success) {
+                showToast('삭제되었습니다.', 'success');
+                loadStaffSchedule();
+              } else { showToast('삭제에 실패했습니다.', 'error'); }
+            } catch(e) { showToast('오류가 발생했습니다.', 'error'); }
+          }
+
           loadHomePage();
+          loadStaffSchedule();
           showAIInsight();
 
           // Pull-to-Refresh
