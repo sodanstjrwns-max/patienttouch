@@ -65,6 +65,7 @@ export const ConsultationReportPage: FC<Props> = ({ id }) => {
         </div>
       </div>
 
+      <script src="/static/level-system.js"></script>
       <script src="/static/pages/consultation-report.js"></script>
     </Layout>
   )

@@ -188,9 +188,51 @@ async function saveRecording() {
       document.getElementById('statusText').textContent = '분석 완료!';
       document.getElementById('statusText').className = 'text-xs text-emerald-400 font-semibold';
       document.getElementById('saveBtn').innerHTML = '<i class="fas fa-check text-xl text-emerald-400"></i>';
+      
+      // === LEVEL UP / PB CELEBRATION ===
+      var celebrationDelay = 800;
+      try {
+        if (typeof getLevel === 'function' && data.data) {
+          var newScore = data.data.coaching_score || data.data.total_score || 0;
+          if (newScore > 0) {
+            // Fetch previous scores to compare
+            var growthRes = await fetch('/api/dashboard/growth-sessions?limit=20');
+            var growthData = await growthRes.json();
+            if (growthData.success && growthData.data.sessions.length > 1) {
+              var sessions = growthData.data.sessions;
+              var prevSession = sessions[sessions.length - 2]; // second to last (latest is this one)
+              var prevScore = prevSession ? prevSession.total_score : 0;
+              
+              // Check Level Up
+              var lvUp = checkLevelUp(prevScore, newScore);
+              if (lvUp && lvUp.isLevelUp) {
+                showLevelUpCelebration(lvUp.from, lvUp.to, newScore);
+                celebrationDelay = 5000; // wait for celebration
+              }
+              // Check Personal Best
+              else if (growthData.data.stats.personal_best === newScore && sessions.length >= 3) {
+                showPersonalBestCelebration(newScore);
+                celebrationDelay = 4000;
+              }
+              // Show score result even without level up
+              else {
+                var curLv = getLevel(newScore);
+                showScoreResult(curLv, newScore, prevScore);
+                celebrationDelay = 3000;
+              }
+            } else if (newScore > 0) {
+              // First session
+              var firstLv = getLevel(newScore);
+              showFirstSessionCelebration(firstLv, newScore);
+              celebrationDelay = 4000;
+            }
+          }
+        }
+      } catch(lvErr) { console.warn('Level check error:', lvErr); }
+      
       setTimeout(function() {
         window.location.href = '/consultations/' + consultationId + '/report';
-      }, 1500);
+      }, celebrationDelay);
     } else {
       document.getElementById('statusText').textContent = data.error || '분석 실패';
       setTimeout(function() {
@@ -212,6 +254,45 @@ function cleanup() {
 
 // Recording quality indicator
 function showQualityIndicator(durationMs) {
+
+// Score result mini-toast (no level up, no PB)
+function showScoreResult(lv, score, prevScore) {
+  var delta = score - prevScore;
+  var deltaStr = delta > 0 ? '+' + delta : String(delta);
+  var deltaColor = delta > 0 ? '#10b981' : delta < 0 ? '#ef4444' : '#94a3b8';
+  var toast = document.createElement('div');
+  toast.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:9998;text-align:center;animation:bounceIn 0.5s cubic-bezier(0.34,1.56,0.64,1)';
+  toast.innerHTML =
+    '<div class="bg-white/95 backdrop-blur-xl rounded-3xl shadow-2xl p-6 min-w-[240px]">' +
+      '<span style="font-size:48px">' + lv.emoji + '</span>' +
+      '<p class="text-surface-900 text-xl font-black mt-2">' + score + '<span class="text-sm text-surface-400">점</span></p>' +
+      '<p class="text-sm font-bold mt-1" style="color:' + deltaColor + '">' + deltaStr + '점</p>' +
+      '<p class="text-[11px] text-surface-500 mt-1">Lv.' + lv.level + ' ' + lv.title + '</p>' +
+    '</div>';
+  document.body.appendChild(toast);
+  setTimeout(function() { toast.style.animation = 'fadeOut 0.3s forwards'; setTimeout(function(){ toast.remove(); }, 300); }, 2500);
+}
+
+// First session welcome
+function showFirstSessionCelebration(lv, score) {
+  var overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.7);backdrop-filter:blur(8px);animation:fadeIn 0.3s ease-out';
+  overlay.innerHTML =
+    '<div style="animation:bounceIn 0.6s cubic-bezier(0.34,1.56,0.64,1)" class="text-center px-8 py-8 max-w-xs">' +
+      '<div style="font-size:56px;animation:pulse 1s ease-in-out infinite" class="mb-2">🎊</div>' +
+      '<p class="text-white text-xs tracking-widest font-bold mb-2">WELCOME TO</p>' +
+      '<p class="text-4xl mb-1">' + lv.emoji + '</p>' +
+      '<p class="text-white text-lg font-black mb-1">Lv.' + lv.level + ' ' + lv.title + '</p>' +
+      '<p class="text-white/80 text-sm mb-4">첫 번째 상담 분석 완료!</p>' +
+      '<div class="bg-white/10 rounded-xl p-3 mb-4"><p class="text-white text-2xl font-black">' + score + '<span class="text-sm text-white/60">점</span></p></div>' +
+      '<p class="text-white/60 text-[11px] mb-4">상담을 더 분석할수록 레벨이 올라갑니다 💪</p>' +
+      '<button onclick="this.closest(\'div[style]\').remove()" class="px-6 py-2.5 bg-gradient-to-r ' + lv.gradient + ' text-white rounded-2xl font-bold text-sm shadow-lg">시작이 반! 🚀</button>' +
+    '</div>';
+  document.body.appendChild(overlay);
+  setTimeout(function() { if(overlay.parentNode) overlay.remove(); }, 6000);
+}
+
+
   var secs = Math.floor(durationMs / 1000);
   var mins = Math.floor(secs / 60);
   var quality = mins >= 5 ? { label: '최적', color: 'emerald', icon: 'fa-check-circle', desc: '충분한 녹음 시간 · 정밀 분석 가능' }

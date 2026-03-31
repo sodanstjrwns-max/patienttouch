@@ -128,6 +128,9 @@ async function loadHomePage() {
     var tm = d.today_mission || {};
     var sa = d.stale_alert || {};
 
+    // === LEVEL PROGRESS CARD (fetch growth data) ===
+    renderLevelCard(ws);
+
     // === HERO DECIDED ===
     animNum(document.getElementById('heroRevenue'), td.decided, 1200);
     
@@ -838,6 +841,74 @@ document.getElementById('headerLogoutBtn').addEventListener('click', async funct
 
 loadHomePage();
 showAIInsight();
+
+// === LEVEL CARD RENDERER ===
+async function renderLevelCard(ws) {
+  try {
+    if (typeof getLevel !== 'function') { return; }
+    var gRes = await fetch('/api/dashboard/growth-sessions?limit=20');
+    var gData = await gRes.json();
+    var card = document.getElementById('levelProgressCard');
+    if (!card) return;
+
+    if (!gData.success || !gData.data.sessions || gData.data.sessions.length === 0) {
+      // No data yet — show starter card
+      card.classList.remove('hidden');
+      card.innerHTML = '<a href="/recording" class="block card-premium p-4 bg-gradient-to-r from-brand-50 to-purple-50 border-2 border-brand-200/50 hover:shadow-md transition-all">' +
+        '<div class="flex items-center gap-3">' +
+          '<span style="font-size:32px">🌱</span>' +
+          '<div class="flex-1">' +
+            '<p class="text-sm font-bold text-surface-900">상담 레벨 시스템</p>' +
+            '<p class="text-[11px] text-surface-500">첫 상담을 녹음하면 레벨이 시작됩니다!</p>' +
+          '</div>' +
+          '<i class="fas fa-chevron-right text-surface-300"></i>' +
+        '</div></a>';
+      return;
+    }
+
+    var stats = gData.data.stats;
+    var score = stats.latest_score || stats.overall_avg || 0;
+    var lv = getLevel(score);
+    var exp = getExpProgress(score);
+    var next = getNextLevel(score);
+    var nudge = levelNudge(score, stats.total_sessions);
+
+    card.classList.remove('hidden');
+    card.innerHTML = '<a href="/growth" class="block card-premium p-4 hover:shadow-md transition-all relative overflow-hidden">' +
+      '<div class="absolute top-0 right-0 w-24 h-24 opacity-5" style="font-size:80px;line-height:1">' + lv.emoji + '</div>' +
+      '<div class="relative">' +
+        '<div class="flex items-center gap-3 mb-2.5">' +
+          '<div class="w-11 h-11 rounded-2xl bg-gradient-to-br ' + lv.gradient + ' flex items-center justify-center shadow-lg" style="font-size:22px">' + lv.emoji + '</div>' +
+          '<div class="flex-1">' +
+            '<div class="flex items-center gap-1.5 mb-0.5">' +
+              '<span class="text-[10px] font-black text-' + lv.color + '-600 bg-' + lv.color + '-100 px-1.5 py-0.5 rounded">Lv.' + lv.level + '</span>' +
+              '<span class="text-xs font-bold text-surface-900">' + lv.title + '</span>' +
+              (stats.current_streak >= 2 ? showStreakBadge(stats.current_streak) : '') +
+            '</div>' +
+            '<div class="flex items-center gap-2">' +
+              '<span class="text-lg font-black text-' + lv.color + '-600">' + score + '<span class="text-[10px] text-surface-400 font-medium">점</span></span>' +
+              '<span class="text-[10px] text-surface-400">' + stats.total_sessions + '회 상담</span>' +
+            '</div>' +
+          '</div>' +
+          '<i class="fas fa-chevron-right text-surface-300"></i>' +
+        '</div>' +
+        // EXP bar
+        '<div class="mb-2">' +
+          '<div class="flex items-center justify-between mb-1">' +
+            '<span class="text-[9px] text-surface-500">' + (next ? next.emoji + ' ' + next.title + '까지' : '🏆 MAX') + '</span>' +
+            '<span class="text-[9px] font-bold text-' + lv.color + '-600">' + (next ? exp.toNext + '점 남음' : '달성!') + '</span>' +
+          '</div>' +
+          '<div class="h-2 bg-surface-100 rounded-full overflow-hidden">' +
+            '<div class="h-full bg-gradient-to-r ' + lv.gradient + ' rounded-full transition-all duration-1000" style="width:' + exp.percent + '%"></div>' +
+          '</div>' +
+        '</div>' +
+        // Nudge message
+        '<p class="text-[11px] text-surface-600 leading-relaxed">' + nudge + '</p>' +
+      '</div></a>';
+  } catch(e) {
+    console.warn('Level card error:', e);
+  }
+}
 
 // Pull-to-Refresh
 initPullToRefresh(function(){ loadHomePage(); });

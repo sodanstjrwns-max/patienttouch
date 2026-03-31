@@ -154,6 +154,11 @@ export const HomePage: FC = () => {
           </a>
         </div>
 
+        {/* ====== LEVEL PROGRESS CARD ====== */}
+        <div id="levelProgressCard" class="hidden">
+          {/* Populated by home.js with level data */}
+        </div>
+
         {/* ====== KPI STATS ROW with comparison arrows ====== */}
         <div>
           <div class="flex items-center justify-between mb-3">
@@ -279,6 +284,7 @@ export const HomePage: FC = () => {
         </div>
       </div>
 
+      <script src="/static/level-system.js"></script>
       <script src="/static/pages/home.js"></script>
     </Layout>
   )

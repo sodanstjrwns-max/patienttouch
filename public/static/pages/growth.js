@@ -56,44 +56,94 @@ function renderGrowthPage(data, trend) {
 
   var html = '';
 
-  // === HERO STATS ===
+  // === LEVEL HERO ===
+  var score = s.latest_score || s.overall_avg || 0;
+  var lv = getLevel(score);
+  var exp = getExpProgress(score);
+  var next = getNextLevel(score);
   var growthColor = s.total_growth > 0 ? 'emerald' : s.total_growth < 0 ? 'rose' : 'surface';
   var growthSign = s.total_growth > 0 ? '+' : '';
   var growthIcon = s.total_growth > 0 ? 'fa-arrow-trend-up' : s.total_growth < 0 ? 'fa-arrow-trend-down' : 'fa-equals';
 
-  html += '<div class="bg-gradient-to-br from-brand-500 to-purple-600 rounded-3xl p-5 text-white mb-5 shadow-xl shadow-brand-500/20">' +
-    '<div class="flex items-center gap-2 mb-4">' +
-      '<div class="w-8 h-8 rounded-xl bg-white/20 flex items-center justify-center"><i class="fas fa-chart-line text-sm"></i></div>' +
-      '<div><h2 class="text-sm font-bold">나의 상담 성장</h2>' +
-        '<p class="text-[10px] text-white/60">' + s.total_sessions + '회 상담 분석 기반</p></div>' +
+  html += '<div class="bg-gradient-to-br ' + lv.gradient + ' rounded-3xl p-5 text-white mb-5 shadow-xl shadow-brand-500/20 relative overflow-hidden">' +
+    // Subtle background pattern
+    '<div class="absolute inset-0 opacity-10" style="background-image:radial-gradient(circle at 20% 50%,white 1px,transparent 1px),radial-gradient(circle at 80% 20%,white 1px,transparent 1px);background-size:60px 60px"></div>' +
+    '<div class="relative">' +
+
+    // Level badge + title
+    '<div class="flex items-center gap-3 mb-5">' +
+      '<div class="w-14 h-14 rounded-2xl bg-white/20 backdrop-blur flex items-center justify-center" style="font-size:32px">' + lv.emoji + '</div>' +
+      '<div class="flex-1">' +
+        '<div class="flex items-center gap-2 mb-0.5">' +
+          '<span class="px-2 py-0.5 rounded-md bg-white/25 text-[10px] font-black tracking-wider">Lv.' + lv.level + '</span>' +
+          (s.current_streak >= 2 ? '<span class="px-1.5 py-0.5 rounded-md bg-orange-400/30 text-[9px] font-bold">🔥 ' + s.current_streak + '연속</span>' : '') +
+        '</div>' +
+        '<h2 class="text-lg font-black">' + lv.title + '</h2>' +
+        '<p class="text-[10px] text-white/60">' + s.total_sessions + '회 상담 분석 기반</p>' +
+      '</div>' +
+      '<div class="text-center">' +
+        '<p class="text-3xl font-black leading-none">' + score + '</p>' +
+        '<p class="text-[9px] text-white/60">최근 점수</p>' +
+      '</div>' +
     '</div>' +
 
-    '<div class="grid grid-cols-3 gap-3 mb-4">' +
-      '<div class="text-center">' +
-        '<p class="text-3xl font-black">' + (s.latest_score || 0) + '</p>' +
-        '<p class="text-[10px] text-white/60 mt-0.5">최근 점수</p></div>' +
-      '<div class="text-center">' +
-        '<p class="text-3xl font-black">' + (s.overall_avg || 0) + '</p>' +
-        '<p class="text-[10px] text-white/60 mt-0.5">전체 평균</p></div>' +
-      '<div class="text-center">' +
-        '<div class="flex items-center justify-center gap-1">' +
-          '<i class="fas ' + growthIcon + ' text-sm"></i>' +
-          '<p class="text-3xl font-black">' + growthSign + s.total_growth + '</p></div>' +
-        '<p class="text-[10px] text-white/60 mt-0.5">총 성장</p></div>' +
+    // EXP bar
+    '<div class="mb-4">' +
+      '<div class="flex items-center justify-between mb-1.5">' +
+        '<span class="text-[10px] font-semibold text-white/80">' +
+          (next ? 'Lv.' + next.level + ' ' + next.title + '까지' : '🏆 MAX LEVEL 달성!') +
+        '</span>' +
+        '<span class="text-[10px] font-bold text-white/90">' +
+          (next ? exp.toNext + '점 남음' : '100%') +
+        '</span>' +
+      '</div>' +
+      '<div class="h-3 bg-white/15 rounded-full overflow-hidden">' +
+        '<div class="h-full bg-white/40 rounded-full transition-all duration-1000 relative overflow-hidden" style="width:' + exp.percent + '%">' +
+          '<div class="absolute inset-0" style="background:linear-gradient(90deg,transparent,rgba(255,255,255,0.3),transparent);animation:shimmer 2s infinite;background-size:200% 100%"></div>' +
+        '</div>' +
+      '</div>' +
+      (next ? '<p class="text-[9px] text-white/50 mt-1 text-center">' + exp.percent + '% 달성 · ' + next.emoji + ' ' + next.title + '이 기다리고 있어요!</p>' : '') +
     '</div>' +
 
-    '<div class="flex gap-2">' +
-      '<div class="flex-1 bg-white/10 rounded-xl p-2.5 text-center">' +
-        '<p class="text-lg font-black">' + (s.personal_best || 0) + '<span class="text-xs text-white/60">점</span></p>' +
-        '<p class="text-[9px] text-white/60">최고 기록</p></div>' +
-      '<div class="flex-1 bg-white/10 rounded-xl p-2.5 text-center">' +
-        '<p class="text-lg font-black">' + (s.best_streak || 0) + '<span class="text-xs text-white/60">회</span></p>' +
-        '<p class="text-[9px] text-white/60">최장 연속 향상</p></div>' +
-      '<div class="flex-1 bg-white/10 rounded-xl p-2.5 text-center">' +
-        '<p class="text-lg font-black">' + (s.current_streak || 0) + '<span class="text-xs text-white/60">회</span></p>' +
-        '<p class="text-[9px] text-white/60">현재 연속</p></div>' +
+    // Stats row
+    '<div class="grid grid-cols-4 gap-2">' +
+      '<div class="bg-white/10 rounded-xl p-2 text-center">' +
+        '<p class="text-lg font-black leading-none">' + (s.overall_avg || 0) + '</p>' +
+        '<p class="text-[8px] text-white/60 mt-0.5">평균</p></div>' +
+      '<div class="bg-white/10 rounded-xl p-2 text-center">' +
+        '<div class="flex items-center justify-center gap-0.5">' +
+          '<i class="fas ' + growthIcon + ' text-[10px]"></i>' +
+          '<p class="text-lg font-black leading-none">' + growthSign + s.total_growth + '</p></div>' +
+        '<p class="text-[8px] text-white/60 mt-0.5">성장</p></div>' +
+      '<div class="bg-white/10 rounded-xl p-2 text-center">' +
+        '<p class="text-lg font-black leading-none">' + (s.personal_best || 0) + '</p>' +
+        '<p class="text-[8px] text-white/60 mt-0.5">최고</p></div>' +
+      '<div class="bg-white/10 rounded-xl p-2 text-center">' +
+        '<p class="text-lg font-black leading-none">' + (s.best_streak || 0) + '</p>' +
+        '<p class="text-[8px] text-white/60 mt-0.5">최장연속</p></div>' +
     '</div>' +
-  '</div>';
+
+    '</div></div>';
+
+  // === LEVEL ROADMAP ===
+  html += '<div class="card-premium p-4 mb-4">' +
+    '<div class="flex items-center gap-2 mb-3">' +
+      '<div class="w-6 h-6 rounded-lg bg-amber-50 flex items-center justify-center"><i class="fas fa-road text-amber-500 text-[10px]"></i></div>' +
+      '<h3 class="text-sm font-bold text-surface-900">레벨 로드맵</h3>' +
+    '</div>' +
+    '<div class="flex items-center gap-1">';
+  
+  LEVELS.forEach(function(l) {
+    var isActive = lv.level >= l.level;
+    var isCurrent = lv.level === l.level;
+    html += '<div class="flex-1 text-center' + (isCurrent ? ' relative' : '') + '">' +
+      (isCurrent ? '<div class="absolute -top-5 left-1/2 -translate-x-1/2 text-[8px] font-bold text-brand-600 bg-brand-50 px-1.5 py-0.5 rounded whitespace-nowrap">현재</div>' : '') +
+      '<div class="w-full h-2 rounded-full mb-1 ' + (isActive ? 'bg-gradient-to-r ' + l.gradient : 'bg-surface-100') + '"></div>' +
+      '<span style="font-size:' + (isCurrent ? '18' : '12') + 'px">' + l.emoji + '</span>' +
+      '<p class="text-[8px] ' + (isActive ? 'text-surface-700 font-semibold' : 'text-surface-300') + '">' + l.min + '+</p>' +
+    '</div>';
+  });
+  html += '</div></div>';
 
   // === LINE CHART: Score Trend ===
   html += '<div class="card-premium p-4 mb-4">' +
@@ -157,23 +207,31 @@ function renderGrowthPage(data, trend) {
 
   sessions.slice().reverse().forEach(function(sess, i) {
     var sc = sess.total_score || 0;
+    var sessLv = getLevel(sc);
     var sColor = sc >= 80 ? 'emerald' : sc >= 60 ? 'brand' : sc >= 40 ? 'amber' : 'rose';
     var dateStr = sess.consultation_date ? sess.consultation_date.split('T')[0].slice(5) : '-';
     var pbBadge = sess.is_personal_best ? '<span class="text-[8px] px-1 py-0.5 rounded bg-amber-100 text-amber-600 font-bold ml-1">🏆 PB</span>' : '';
-    var gradeBadge = sess.grade ? '<span class="text-[9px] font-bold text-' + sColor + '-600 ml-1">' + sess.grade + '</span>' : '';
+    // Check level-up from previous session
+    var prevSess = sessions.slice().reverse()[i + 1];
+    var lvUpBadge = '';
+    if (prevSess) {
+      var prevLv = getLevel(prevSess.total_score || 0);
+      if (sessLv.level > prevLv.level) lvUpBadge = '<span class="text-[8px] px-1 py-0.5 rounded bg-brand-100 text-brand-600 font-bold ml-1">⬆️ LEVEL UP</span>';
+    }
 
     html += '<a href="/consultations/' + sess.id + '/report" class="flex items-center gap-3 p-2.5 rounded-xl hover:bg-surface-50 transition-colors">' +
       '<div class="w-8 text-center shrink-0">' +
-        '<p class="text-[10px] text-surface-400">#' + sess.session_number + '</p>' +
+        '<span style="font-size:16px">' + sessLv.emoji + '</span>' +
         '<p class="text-[9px] text-surface-500">' + dateStr + '</p>' +
       '</div>' +
       '<div class="flex-1 min-w-0">' +
         '<p class="text-xs font-medium text-surface-800 truncate">' +
           (sess.patient_name || '미지정') + (sess.treatment_type ? ' · ' + sess.treatment_type : '') +
-          pbBadge + gradeBadge +
+          pbBadge + lvUpBadge +
         '</p>' +
         '<p class="text-[10px] text-surface-400 truncate">' +
-          (sess.top_strength ? '✅ ' + sess.top_strength.slice(0, 30) : '') +
+          '<span class="text-' + sessLv.color + '-600 font-semibold">Lv.' + sessLv.level + '</span> · ' +
+          (sess.top_strength ? '✅ ' + sess.top_strength.slice(0, 25) : '#' + sess.session_number) +
         '</p>' +
       '</div>' +
       '<div class="text-right shrink-0">' +

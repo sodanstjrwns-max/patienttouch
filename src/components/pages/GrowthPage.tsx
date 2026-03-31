@@ -53,6 +53,7 @@ export const GrowthPage: FC = () => {
         </div>
       </nav>
 
+      <script src="/static/level-system.js"></script>
       <script src="/static/pages/growth.js"></script>
     </div>
   )

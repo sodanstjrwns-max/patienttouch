@@ -240,12 +240,26 @@ function renderReport(report) {
       if (gradeMatch) extractedGrade = gradeMatch[1].toUpperCase();
     }
     var displayGrade = cf.grade || extractedGrade || '';
+    var cfScore = cf.total_score || 0;
+    var cfLv = typeof getLevel === 'function' ? getLevel(cfScore) : null;
     html += '<div class="card-premium p-5 bg-gradient-to-br from-purple-50/50 to-pink-50/30">' +
+      // Level hero banner
+      (cfLv ? '<div class="flex items-center gap-3 mb-4 p-3 bg-gradient-to-r ' + cfLv.gradient + ' rounded-2xl text-white">' +
+        '<span style="font-size:28px">' + cfLv.emoji + '</span>' +
+        '<div class="flex-1">' +
+          '<div class="flex items-center gap-1.5">' +
+            '<span class="text-[10px] font-black bg-white/25 px-1.5 py-0.5 rounded">Lv.' + cfLv.level + '</span>' +
+            '<span class="text-sm font-bold">' + cfLv.title + '</span>' +
+          '</div>' +
+          (typeof expBar === 'function' ? '<div class="mt-1.5">' + expBar(cfScore, false).replace(/text-surface/g, 'text-white/60').replace(/bg-surface-100/g, 'bg-white/15') + '</div>' : '') +
+        '</div>' +
+        '<div class="text-right"><p class="text-2xl font-black">' + cfScore + '</p><p class="text-[9px] text-white/60">점</p></div>' +
+      '</div>' : '') +
       '<div class="flex items-center gap-2 mb-4">' +
         '<div class="w-7 h-7 rounded-lg bg-purple-50 flex items-center justify-center"><i class="fas fa-graduation-cap text-xs text-purple-600"></i></div>' +
         '<h3 class="font-bold text-sm text-surface-900">코칭 피드백</h3>' +
         (displayGrade ? '<span class="ml-1 text-xs font-black px-2 py-0.5 rounded-lg ' + gradeStyle(displayGrade) + '">' + displayGrade + '</span>' : '') +
-        '<span class="ml-auto text-2xl font-black text-purple-600">' + (cf.total_score || 0) + '<span class="text-xs font-semibold text-surface-400">점</span></span>' +
+        (!cfLv ? '<span class="ml-auto text-2xl font-black text-purple-600">' + cfScore + '<span class="text-xs font-semibold text-surface-400">점</span></span>' : '<span class="ml-auto"></span>') +
       '</div>';
     // 한줄 코칭
     if (cf.one_line_coaching) {

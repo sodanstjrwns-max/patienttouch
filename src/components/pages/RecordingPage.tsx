@@ -92,6 +92,7 @@ export const RecordingPage: FC<RecordingPageProps> = ({ patientId }) => {
         </div>
       </div>
 
+      <script src="/static/level-system.js"></script>
       <script src="/static/pages/recording.js"></script>
     </div>
   )
