@@ -178,29 +178,8 @@ async function loadHomePage() {
         '</div>';
     }
 
-    // === TODAY MISSION PROGRESS ===
-    var mTotal = (tm.contacts_total||0) + (td.total_consultations||0);
-    var mDone = (tm.contacts_done||0) + (td.total_consultations||0);
-    var mPct = mTotal > 0 ? Math.min(100, Math.round((mDone / mTotal) * 100)) : (td.total_consultations > 0 ? 100 : 0);
-    
-    var mEl = document.getElementById('todayMission');
-    mEl.classList.remove('hidden');
-    mEl.innerHTML =
-      '<div class="flex items-center justify-between mb-2.5">' +
-        '<div class="flex items-center gap-2">' +
-          '<div class="w-6 h-6 rounded-lg bg-brand-50 flex items-center justify-center"><i class="fas fa-flag text-[10px] text-brand-600"></i></div>' +
-          '<span class="text-sm font-bold text-surface-900">오늘 미션</span>' +
-        '</div>' +
-        '<span class="text-xs font-extrabold '+(mPct>=100?'text-emerald-600':'text-brand-600')+'">'+mPct+'%</span>' +
-      '</div>' +
-      '<div class="h-2 bg-surface-100 rounded-full overflow-hidden mb-3">' +
-        '<div class="h-full rounded-full transition-all duration-1000 '+(mPct>=100?'bg-emerald-500':'bg-brand-500')+'" style="width:'+mPct+'%"></div>' +
-      '</div>' +
-      '<div class="flex items-center gap-3">' +
-        '<div class="flex items-center gap-1.5"><i class="fas fa-phone text-[10px] text-brand-500"></i><span class="text-[11px] font-semibold text-surface-700">연락 <b class="text-brand-600">'+(tm.contacts_done||0)+'</b>/'+(tm.contacts_total||0)+'</span></div>' +
-        '<div class="flex items-center gap-1.5"><i class="fas fa-stethoscope text-[10px] text-sky-500"></i><span class="text-[11px] font-semibold text-surface-700">상담 <b class="text-sky-600">'+(tm.consultations_done||0)+'</b>건</span></div>' +
-        '<div class="flex items-center gap-1.5"><i class="fas fa-circle-check text-[10px] text-emerald-500"></i><span class="text-[11px] font-semibold text-surface-700">결정 <b class="text-emerald-600">'+(tm.decisions_done||0)+'</b>건</span></div>' +
-      '</div>';
+    // === TODAY CHECKLIST ===
+    loadChecklist(td, tm, d);
 
     // === KPI STATS ROW with comparison arrows ===
     var cr = ws.conversion_rate||0, pcr = ws.prev_conversion_rate||0;
@@ -538,6 +517,297 @@ async function saveHomeContact() {
     } else { showToast(data.error || '저장에 실패했습니다.', 'error'); }
   } catch (err) { showToast('오류가 발생했습니다.', 'error'); }
   finally { btn.disabled = false; btn.innerHTML = '<i class="fas fa-check mr-2"></i>기록 저장'; }
+}
+
+// =========================================
+// PATIENT QUICK SEARCH
+// =========================================
+(function() {
+  var input = document.getElementById('quickSearchInput');
+  var results = document.getElementById('quickSearchResults');
+  var list = document.getElementById('quickSearchList');
+  var clearBtn = document.getElementById('quickSearchClear');
+  var timer = null;
+  var avCol = ['bg-brand-100 text-brand-700','bg-emerald-100 text-emerald-700','bg-amber-100 text-amber-700','bg-rose-100 text-rose-700','bg-sky-100 text-sky-700','bg-purple-100 text-purple-700'];
+
+  input.addEventListener('input', function() {
+    var q = input.value.trim();
+    clearBtn.classList.toggle('hidden', q.length === 0);
+    if (timer) clearTimeout(timer);
+    if (q.length < 1) { results.classList.add('hidden'); return; }
+    timer = setTimeout(function(){ searchPatients(q); }, 250);
+  });
+
+  clearBtn.addEventListener('click', function() {
+    input.value = '';
+    clearBtn.classList.add('hidden');
+    results.classList.add('hidden');
+  });
+
+  // Close on outside click
+  document.addEventListener('click', function(e) {
+    if (!input.contains(e.target) && !results.contains(e.target) && !clearBtn.contains(e.target)) {
+      results.classList.add('hidden');
+    }
+  });
+
+  input.addEventListener('focus', function() {
+    if (input.value.trim().length >= 1 && list.children.length > 0) {
+      results.classList.remove('hidden');
+    }
+  });
+
+  async function searchPatients(q) {
+    try {
+      var res = await safeFetch('/api/patients?search=' + encodeURIComponent(q) + '&limit=8');
+      var data = await res.json();
+      if (!data.success || !data.data || data.data.length === 0) {
+        list.innerHTML =
+          '<div class="p-4 text-center">' +
+            '<div class="w-10 h-10 mx-auto bg-surface-100 rounded-xl flex items-center justify-center mb-2">' +
+              '<i class="fas fa-user-slash text-surface-300 text-sm"></i></div>' +
+            '<p class="text-surface-500 text-xs">검색 결과가 없습니다</p>' +
+            '<a href="/patients" class="inline-block mt-2 text-[11px] font-semibold text-brand-600 bg-brand-50 px-3 py-1.5 rounded-lg hover:bg-brand-100">환자 등록하기</a>' +
+          '</div>';
+        results.classList.remove('hidden');
+        return;
+      }
+
+      var statusMap = {paid:'결제',undecided:'미결정',pending:'대기',lost:'이탈'};
+      var statusColor = {paid:'bg-emerald-50 text-emerald-700',undecided:'bg-amber-50 text-amber-700',pending:'bg-surface-100 text-surface-600',lost:'bg-rose-50 text-rose-700'};
+
+      var html = '';
+      data.data.forEach(function(p) {
+        var ci = (esc(p.name)||'?').charCodeAt(0) % avCol.length;
+        var ph = p.phone ? esc(p.phone) : '';
+        var ls = p.last_consultation_status;
+        var sBadge = ls ? '<span class="text-[9px] px-1.5 py-0.5 rounded-md font-bold '+(statusColor[ls]||statusColor.pending)+'">'+(statusMap[ls]||ls)+'</span>' : '';
+        var cntBadge = p.consultation_count > 0 ? '<span class="text-[9px] px-1.5 py-0.5 rounded-md bg-surface-100 text-surface-500 font-medium">상담 '+p.consultation_count+'회</span>' : '';
+
+        html += '<a href="/patients/'+p.id+'" class="flex items-center gap-3 p-3 hover:bg-brand-50/50 transition-all active:bg-brand-50 cursor-pointer">';
+        html += '<div class="w-9 h-9 rounded-xl '+avCol[ci]+' flex items-center justify-center font-bold text-xs shrink-0">'+(esc(p.name)||'?').charAt(0)+'</div>';
+        html += '<div class="flex-1 min-w-0">';
+        html += '<div class="flex items-center gap-1.5"><span class="font-bold text-sm text-surface-900">'+esc(p.name)+'</span>'+sBadge+'</div>';
+        html += '<div class="flex items-center gap-1.5 mt-0.5">';
+        if (ph) html += '<span class="text-[11px] text-surface-500">'+ph+'</span>';
+        html += cntBadge;
+        html += '</div></div>';
+        html += '<i class="fas fa-chevron-right text-surface-300 text-[10px] shrink-0"></i>';
+        html += '</a>';
+      });
+      if (data.data.length >= 8) {
+        html += '<a href="/patients?search='+encodeURIComponent(q)+'" class="block p-3 text-center text-[11px] font-semibold text-brand-600 hover:bg-brand-50/50 transition-all">' +
+          '<i class="fas fa-arrow-right mr-1 text-[10px]"></i>전체 결과 보기</a>';
+      }
+      list.innerHTML = html;
+      results.classList.remove('hidden');
+    } catch(e) {
+      list.innerHTML = '<div class="p-4 text-center text-xs text-surface-500">검색 중 오류 발생</div>';
+      results.classList.remove('hidden');
+    }
+  }
+})();
+
+// =========================================
+// TODAY CHECKLIST
+// =========================================
+var checklistExpanded = false;
+var checklistAllItems = [];
+
+async function loadChecklist(td, tm, summaryData) {
+  try {
+    var wrap = document.getElementById('todayChecklist');
+    var items = [];
+
+    // 1. Contacts: fetch today-contacts
+    var cRes = await safeFetch('/api/dashboard/today-contacts');
+    var cData = await cRes.json();
+    if (cData.success && cData.data && cData.data.contacts) {
+      cData.data.contacts.forEach(function(c) {
+        items.push({
+          type: 'contact',
+          id: 'contact_' + c.patient_id + '_' + (c.task_id||''),
+          done: false,
+          urgency: c.urgency || 'medium',
+          icon: 'fa-phone',
+          color: c.urgency === 'critical' ? 'rose' : c.urgency === 'high' ? 'amber' : 'sky',
+          title: esc(c.patient_name) + ' 연락',
+          subtitle: esc(c.reason) || esc(c.treatment_type) || '미결정 환자',
+          amount: c.amount,
+          patient_id: c.patient_id,
+          task_id: c.task_id || '',
+          source: c.source || 'task',
+          phone: c.patient_phone_full || ''
+        });
+      });
+    }
+
+    // 2. Retention urgent: fetch retention dashboard
+    try {
+      var rRes = await safeFetch('/api/retention/dashboard?filter=urgent');
+      var rData = await rRes.json();
+      if (rData.success && rData.data && rData.data.patients) {
+        var retPatientIds = new Set(items.map(function(i){ return i.patient_id; }));
+        rData.data.patients.slice(0, 5).forEach(function(p) {
+          if (retPatientIds.has(p.patient_id)) return; // skip duplicates
+          var sLabel = p.status === 'unscheduled_urgent' ? '예약 미완 (긴급)' :
+                       p.status === 'unscheduled_warning' ? '예약 미완' :
+                       p.status === 'at_risk' ? '이탈 위험' :
+                       p.status === 'consulted_unconverted' ? '상담 후 미전환' :
+                       p.status === 'recall_6m' ? '6개월 리콜' :
+                       p.status === 'recall_12m' ? '12개월 리콜' : '리텐션 대상';
+          items.push({
+            type: 'retention',
+            id: 'ret_' + p.patient_id,
+            done: false,
+            urgency: p.risk_score >= 70 ? 'critical' : p.risk_score >= 40 ? 'high' : 'medium',
+            icon: 'fa-heart-pulse',
+            color: p.risk_score >= 70 ? 'rose' : p.risk_score >= 40 ? 'amber' : 'purple',
+            title: esc(p.patient_name) + ' 관리',
+            subtitle: sLabel + (p.days_since_visit > 0 ? ' · ' + p.days_since_visit + '일 경과' : ''),
+            amount: p.remaining_treatment_value || 0,
+            patient_id: p.patient_id,
+            task_id: '',
+            source: 'retention',
+            phone: p.patient_phone || ''
+          });
+        });
+      }
+    } catch(e) { /* retention not critical */ }
+
+    // 3. Summary-based mission items
+    if (td.undecided > 0) {
+      items.unshift({
+        type: 'mission',
+        id: 'mission_undecided',
+        done: false,
+        urgency: td.undecided >= 3 ? 'high' : 'medium',
+        icon: 'fa-hourglass-half',
+        color: 'amber',
+        title: '미결정 환자 ' + td.undecided + '명 팔로업',
+        subtitle: '빠른 연락이 전환율을 높입니다',
+        amount: 0,
+        patient_id: '',
+        task_id: '',
+        source: 'mission',
+        phone: '',
+        link: '/consultations?status=undecided'
+      });
+    }
+
+    // Sort: critical > high > medium
+    var urgOrder = {critical:0, high:1, medium:2};
+    items.sort(function(a,b) { return (urgOrder[a.urgency]||2) - (urgOrder[b.urgency]||2); });
+
+    checklistAllItems = items;
+    renderChecklist(items);
+    wrap.classList.remove('hidden');
+
+  } catch(e) { console.error('Checklist error:', e); }
+}
+
+function renderChecklist(items) {
+  var listEl = document.getElementById('checklistItems');
+  var progEl = document.getElementById('checklistProgress');
+  var footerEl = document.getElementById('checklistFooter');
+  var ringEl = document.getElementById('checklistProgressRing');
+
+  var doneCount = items.filter(function(i){ return i.done; }).length;
+  var total = items.length;
+  var pct = total > 0 ? Math.round((doneCount / total) * 100) : 100;
+
+  progEl.textContent = doneCount + '/' + total + ' 완료';
+
+  // Progress ring
+  var sz=36, sw=4, r=(sz-sw)/2, circ=2*Math.PI*r;
+  var off = circ - (pct/100)*circ;
+  var col = pct >= 100 ? '#10b981' : pct >= 50 ? '#6366f1' : '#f59e0b';
+  ringEl.innerHTML =
+    '<svg width="'+sz+'" height="'+sz+'" class="transform -rotate-90">' +
+      '<circle cx="'+sz/2+'" cy="'+sz/2+'" r="'+r+'" fill="none" stroke="#f1f5f9" stroke-width="'+sw+'"/>' +
+      '<circle cx="'+sz/2+'" cy="'+sz/2+'" r="'+r+'" fill="none" stroke="'+col+'" stroke-width="'+sw+'" stroke-linecap="round" stroke-dasharray="'+circ+'" stroke-dashoffset="'+off+'" style="transition:stroke-dashoffset 0.6s ease"/>' +
+    '</svg>';
+
+  if (total === 0) {
+    listEl.innerHTML =
+      '<div class="p-5 text-center">' +
+        '<div class="w-12 h-12 mx-auto bg-emerald-50 rounded-2xl flex items-center justify-center mb-2"><i class="fas fa-party-horn text-xl text-emerald-500"></i></div>' +
+        '<p class="font-bold text-sm text-surface-800 mb-0.5">오늘 할 일 완료!</p>' +
+        '<p class="text-xs text-surface-500">새 연락 대상은 갱신 버튼으로 찾아보세요</p>' +
+      '</div>';
+    footerEl.classList.add('hidden');
+    return;
+  }
+
+  var showCount = checklistExpanded ? items.length : Math.min(items.length, 5);
+  var html = '';
+
+  for (var i = 0; i < showCount; i++) {
+    var it = items[i];
+    var urgBorder = it.urgency === 'critical' ? 'border-l-rose-500' : it.urgency === 'high' ? 'border-l-amber-400' : 'border-l-surface-200';
+    var bgColor = it.color;
+
+    html += '<div class="flex items-center gap-3 p-3 border-l-[3px] ' + urgBorder + ' ' + (it.done ? 'opacity-50' : '') + ' transition-all">';
+
+    // Checkbox
+    html += '<button onclick="toggleCheckItem(\'' + it.id + '\')" class="w-6 h-6 rounded-lg border-2 flex items-center justify-center shrink-0 transition-all ' +
+      (it.done ? 'bg-emerald-500 border-emerald-500 text-white' : 'border-surface-300 hover:border-brand-400') + '">' +
+      (it.done ? '<i class="fas fa-check text-[9px]"></i>' : '') + '</button>';
+
+    // Icon
+    html += '<div class="w-7 h-7 rounded-lg bg-' + bgColor + '-50 flex items-center justify-center shrink-0">' +
+      '<i class="fas ' + it.icon + ' text-' + bgColor + '-600 text-[10px]"></i></div>';
+
+    // Content
+    html += '<div class="flex-1 min-w-0">';
+    html += '<p class="text-sm font-semibold text-surface-900 ' + (it.done ? 'line-through' : '') + ' truncate">' + it.title + '</p>';
+    html += '<p class="text-[10px] text-surface-500 truncate">' + it.subtitle;
+    if (it.amount > 0) html += ' · <span class="font-semibold text-emerald-600">' + fmt(it.amount) + '만</span>';
+    html += '</p></div>';
+
+    // Actions
+    html += '<div class="flex gap-1 shrink-0">';
+    if (it.patient_id && it.phone && !it.done) {
+      html += '<a href="tel:' + it.phone + '" class="w-7 h-7 rounded-lg bg-brand-50 flex items-center justify-center text-brand-600 hover:bg-brand-100 active:scale-90 transition-all"><i class="fas fa-phone text-[10px]"></i></a>';
+    }
+    if (it.patient_id && !it.done) {
+      if (it.type === 'contact') {
+        html += '<button onclick="openHomeContactModal(\'' + it.patient_id + '\', \'' + it.task_id + '\', \'' + it.source + '\')" class="w-7 h-7 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-600 hover:bg-emerald-100 active:scale-90 transition-all"><i class="fas fa-clipboard-check text-[10px]"></i></button>';
+      } else {
+        html += '<a href="/patients/' + it.patient_id + '" class="w-7 h-7 rounded-lg bg-surface-100 flex items-center justify-center text-surface-500 hover:bg-surface-200 active:scale-90 transition-all"><i class="fas fa-arrow-right text-[10px]"></i></a>';
+      }
+    }
+    if (it.link && !it.done) {
+      html += '<a href="' + it.link + '" class="w-7 h-7 rounded-lg bg-surface-100 flex items-center justify-center text-surface-500 hover:bg-surface-200 active:scale-90 transition-all"><i class="fas fa-arrow-right text-[10px]"></i></a>';
+    }
+    html += '</div></div>';
+  }
+
+  listEl.innerHTML = html;
+
+  // Footer toggle
+  if (items.length > 5) {
+    footerEl.classList.remove('hidden');
+    document.getElementById('checklistToggleText').textContent = checklistExpanded ? '접기' : '더 보기 (' + (items.length - 5) + '건)';
+    document.getElementById('checklistToggleIcon').className = 'fas fa-chevron-' + (checklistExpanded ? 'up' : 'down') + ' text-[9px] ml-0.5';
+  } else {
+    footerEl.classList.add('hidden');
+  }
+}
+
+function toggleCheckItem(itemId) {
+  for (var i = 0; i < checklistAllItems.length; i++) {
+    if (checklistAllItems[i].id === itemId) {
+      checklistAllItems[i].done = !checklistAllItems[i].done;
+      break;
+    }
+  }
+  renderChecklist(checklistAllItems);
+}
+
+function toggleChecklistExpand() {
+  checklistExpanded = !checklistExpanded;
+  renderChecklist(checklistAllItems);
 }
 
 // === LOGOUT ===

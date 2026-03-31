@@ -1,9 +1,22 @@
+// ============================================
+// Consultation List - Server-side Infinite Scroll
+// ============================================
+
 var currentFilter = 'all';
 var allConsultations = [];
 var searchQuery = '';
 var advFilterOpen = false;
 var activeAdvFilters = {};
 var miniChartInstance = null;
+
+// Infinite scroll state
+var PAGE_SIZE = 30;
+var currentOffset = 0;
+var totalCount = 0;
+var hasMore = false;
+var isLoading = false;
+var isLoadingMore = false;
+var searchDebounceTimer = null;
 
 // === Status Filter ===
 document.querySelectorAll('.filter-btn').forEach(function(btn) {
@@ -13,15 +26,18 @@ document.querySelectorAll('.filter-btn').forEach(function(btn) {
     });
     this.className = 'filter-btn active shrink-0 px-3.5 py-2 rounded-xl text-xs font-semibold transition-all bg-brand-600 text-white shadow-md shadow-brand-600/20';
     currentFilter = this.dataset.status;
-    filterAndRender();
+    resetAndLoad();
   });
 });
 
-// === Text Search ===
-document.getElementById('consultSearch').addEventListener('input', debounce(function(e) {
-  searchQuery = (e.target.value || '').toLowerCase();
-  filterAndRender();
-}, 200));
+// === Text Search (server-side) ===
+document.getElementById('consultSearch').addEventListener('input', function(e) {
+  searchQuery = (e.target.value || '').trim();
+  clearTimeout(searchDebounceTimer);
+  searchDebounceTimer = setTimeout(function() {
+    resetAndLoad();
+  }, 300);
+});
 
 // === Advanced Filter Toggle ===
 document.getElementById('advFilterToggle').addEventListener('click', function() {
@@ -46,7 +62,6 @@ document.querySelectorAll('.date-quick-btn').forEach(function(btn) {
     var fmt = function(d) { return d.toISOString().split('T')[0]; };
     document.getElementById('filterDateFrom').value = fmt(fromDate);
     document.getElementById('filterDateTo').value = fmt(now);
-    // Highlight active
     document.querySelectorAll('.date-quick-btn').forEach(function(b) {
       b.className = 'date-quick-btn text-[9px] font-bold px-2 py-1 rounded-md bg-surface-100 text-surface-500 hover:bg-brand-50 hover:text-brand-600 transition-all';
     });
@@ -54,7 +69,7 @@ document.querySelectorAll('.date-quick-btn').forEach(function(btn) {
   });
 });
 
-// === Apply Advanced Filter ===
+// === Apply Advanced Filter (server-side) ===
 document.getElementById('applyAdvFilter').addEventListener('click', function() {
   activeAdvFilters = {
     dateFrom: document.getElementById('filterDateFrom').value || null,
@@ -67,7 +82,7 @@ document.getElementById('applyAdvFilter').addEventListener('click', function() {
     sort: document.getElementById('filterSort').value || 'date_desc'
   };
   renderActiveFilters();
-  filterAndRender();
+  resetAndLoad();
   showToast('필터가 적용되었습니다', 'success');
 });
 
@@ -86,7 +101,7 @@ document.getElementById('resetAdvFilter').addEventListener('click', function() {
     b.className = 'date-quick-btn text-[9px] font-bold px-2 py-1 rounded-md bg-surface-100 text-surface-500 hover:bg-brand-50 hover:text-brand-600 transition-all';
   });
   document.getElementById('activeFilters').classList.add('hidden');
-  filterAndRender();
+  resetAndLoad();
   showToast('필터가 초기화되었습니다', 'info');
 });
 
@@ -108,7 +123,7 @@ function renderActiveFilters() {
   container.innerHTML = tags.map(function(t) {
     return '<span class="shrink-0 inline-flex items-center gap-1 px-2.5 py-1 bg-brand-50 text-brand-700 rounded-lg text-[10px] font-semibold border border-brand-200/50">' +
       '<i class="fas fa-filter text-[8px]"></i>' + t.label +
-      '<button onclick="removeAdvFilter(\\'' + t.key + '\\')" class="ml-0.5 text-brand-400 hover:text-brand-700"><i class="fas fa-xmark text-[8px]"></i></button>' +
+      '<button onclick="removeAdvFilter(\'' + t.key + '\')" class="ml-0.5 text-brand-400 hover:text-brand-700"><i class="fas fa-xmark text-[8px]"></i></button>' +
     '</span>';
   }).join('');
 }
@@ -120,70 +135,219 @@ window.removeAdvFilter = function(key) {
   if (key === 'treat') { activeAdvFilters.treatType = null; document.getElementById('filterTreatType').value=''; }
   if (key === 'sort') { activeAdvFilters.sort = 'date_desc'; document.getElementById('filterSort').value='date_desc'; }
   renderActiveFilters();
-  filterAndRender();
+  resetAndLoad();
 };
 
-// === Core Filter + Render ===
-function filterAndRender() {
-  var filtered = allConsultations.filter(function(c) {
-    // Status filter
-    if (currentFilter !== 'all' && c.status !== currentFilter) return false;
-    // Text search
-    if (searchQuery) {
-      var match = (esc(c.patient_name) && esc(c.patient_name).toLowerCase().includes(searchQuery)) ||
-        (esc(c.treatment_type) && esc(c.treatment_type).toLowerCase().includes(searchQuery)) ||
-        (c.user_name && c.user_name.toLowerCase().includes(searchQuery));
-      if (!match) return false;
-    }
-    // Advanced filters
-    var f = activeAdvFilters;
-    if (f.dateFrom) {
-      var cDate = (c.consultation_date || '').split('T')[0];
-      if (cDate < f.dateFrom) return false;
-    }
-    if (f.dateTo) {
-      var cDate2 = (c.consultation_date || '').split('T')[0];
-      if (cDate2 > f.dateTo) return false;
-    }
-    if (f.amountMin !== null && (c.amount || 0) < f.amountMin) return false;
-    if (f.amountMax !== null && (c.amount || 0) > f.amountMax) return false;
-    if (f.scoreMin !== null) {
-      var score = (c.feedback && c.feedback.total_score) ? c.feedback.total_score : 0;
-      if (score < f.scoreMin) return false;
-    }
-    if (f.scoreMax !== null) {
-      var score2 = (c.feedback && c.feedback.total_score) ? c.feedback.total_score : 0;
-      if (score2 > f.scoreMax) return false;
-    }
-    if (f.treatType && esc(c.treatment_type) !== f.treatType) return false;
-    return true;
-  });
-
-  // Sort
-  var sortKey = (activeAdvFilters.sort || 'date_desc');
-  filtered.sort(function(a, b) {
-    if (sortKey === 'date_desc') return (b.consultation_date||'').localeCompare(a.consultation_date||'');
-    if (sortKey === 'date_asc') return (a.consultation_date||'').localeCompare(b.consultation_date||'');
-    if (sortKey === 'amount_desc') return (b.amount||0) - (a.amount||0);
-    if (sortKey === 'amount_asc') return (a.amount||0) - (b.amount||0);
-    if (sortKey === 'score_desc') return ((b.feedback&&b.feedback.total_score)||0) - ((a.feedback&&a.feedback.total_score)||0);
-    if (sortKey === 'score_asc') return ((a.feedback&&a.feedback.total_score)||0) - ((b.feedback&&b.feedback.total_score)||0);
-    if (sortKey === 'decision_desc') return (b.decision_score||0) - (a.decision_score||0);
-    return 0;
-  });
-
-  renderConsultations(filtered);
-  renderMiniChart(filtered);
+// ============================================
+// Build Server Query URL
+// ============================================
+function buildQueryUrl(offset) {
+  var params = ['limit=' + PAGE_SIZE, 'offset=' + offset];
+  
+  // Status filter
+  if (currentFilter && currentFilter !== 'all') {
+    params.push('status=' + encodeURIComponent(currentFilter));
+  }
+  
+  // Text search (server-side)
+  if (searchQuery) {
+    params.push('search=' + encodeURIComponent(searchQuery));
+  }
+  
+  // Advanced filters
+  var f = activeAdvFilters;
+  if (f.dateFrom) params.push('date_from=' + encodeURIComponent(f.dateFrom));
+  if (f.dateTo) params.push('date_to=' + encodeURIComponent(f.dateTo));
+  if (f.amountMin) params.push('amount_min=' + f.amountMin);
+  if (f.amountMax) params.push('amount_max=' + f.amountMax);
+  if (f.scoreMin) params.push('score_min=' + f.scoreMin);
+  if (f.scoreMax) params.push('score_max=' + f.scoreMax);
+  if (f.treatType) params.push('treatment_type=' + encodeURIComponent(f.treatType));
+  if (f.sort) params.push('sort=' + encodeURIComponent(f.sort));
+  
+  return '/api/consultations?' + params.join('&');
 }
 
-// === Mini Chart ===
+// ============================================
+// Reset + Load (for filter changes)
+// ============================================
+function resetAndLoad() {
+  currentOffset = 0;
+  allConsultations = [];
+  totalCount = 0;
+  hasMore = false;
+  // Show skeleton loading
+  document.getElementById('consultationList').innerHTML = buildSkeletonHTML();
+  document.getElementById('consultCount').textContent = '로딩...';
+  document.getElementById('consultTotalAmount').textContent = '';
+  hideLoadMoreIndicator();
+  loadConsultations(false);
+}
+
+function buildSkeletonHTML() {
+  var html = '<div class="space-y-2">';
+  for (var i = 0; i < 5; i++) {
+    html += '<div class="card-premium p-4 animate-pulse"><div class="flex items-center gap-3.5">' +
+      '<div class="w-11 h-11 rounded-xl bg-surface-100"></div>' +
+      '<div class="flex-1"><div class="h-4 bg-surface-100 rounded w-24 mb-2"></div><div class="h-3 bg-surface-100 rounded w-40"></div></div>' +
+      '<div class="h-8 w-8 bg-surface-100 rounded"></div>' +
+    '</div></div>';
+  }
+  html += '</div>';
+  return html;
+}
+
+// ============================================
+// Load Consultations (with append support)
+// ============================================
+async function loadConsultations(append) {
+  if (isLoading) return;
+  isLoading = true;
+  
+  if (append) {
+    isLoadingMore = true;
+    showLoadMoreIndicator();
+  }
+  
+  try {
+    var url = buildQueryUrl(currentOffset);
+    var res = await fetch(url);
+    var result = await res.json();
+    
+    if (!result.success) {
+      if (res.status === 401) { window.location.href = '/login'; return; }
+      return;
+    }
+    
+    var newData = result.data || [];
+    totalCount = result.total || 0;
+    hasMore = result.has_more || false;
+    
+    if (append) {
+      allConsultations = allConsultations.concat(newData);
+    } else {
+      allConsultations = newData;
+    }
+    
+    currentOffset += newData.length;
+    
+    renderConsultations(allConsultations, totalCount, append);
+    renderMiniChart(allConsultations);
+    
+    if (hasMore) {
+      showScrollHint();
+    } else {
+      hideScrollHint();
+    }
+    
+  } catch (err) {
+    console.error('Load consultations error:', err);
+    if (!append) {
+      document.getElementById('consultationList').innerHTML = 
+        '<div class="text-center py-10"><p class="text-surface-500 text-sm">데이터를 불러오지 못했습니다.</p>' +
+        '<button onclick="resetAndLoad()" class="mt-2 text-brand-600 text-sm font-semibold">다시 시도</button></div>';
+    }
+  } finally {
+    isLoading = false;
+    isLoadingMore = false;
+    hideLoadMoreIndicator();
+  }
+}
+
+// ============================================
+// Infinite Scroll Observer
+// ============================================
+var scrollSentinel = null;
+var scrollObserver = null;
+
+function setupInfiniteScroll() {
+  // Create sentinel element if not exists
+  if (!scrollSentinel) {
+    scrollSentinel = document.createElement('div');
+    scrollSentinel.id = 'scrollSentinel';
+    scrollSentinel.style.height = '1px';
+    scrollSentinel.style.width = '100%';
+    var listContainer = document.getElementById('consultationList');
+    if (listContainer && listContainer.parentNode) {
+      listContainer.parentNode.insertBefore(scrollSentinel.cloneNode ? scrollSentinel : scrollSentinel, listContainer.nextSibling);
+      scrollSentinel = document.getElementById('scrollSentinel') || scrollSentinel;
+      // Re-insert after list container
+      if (!document.getElementById('scrollSentinel')) {
+        listContainer.after(scrollSentinel);
+      }
+    }
+  }
+  
+  // Cleanup previous observer
+  if (scrollObserver) scrollObserver.disconnect();
+  
+  scrollObserver = new IntersectionObserver(function(entries) {
+    entries.forEach(function(entry) {
+      if (entry.isIntersecting && hasMore && !isLoading) {
+        loadConsultations(true);
+      }
+    });
+  }, { rootMargin: '200px' });
+  
+  if (scrollSentinel) {
+    scrollObserver.observe(scrollSentinel);
+  }
+}
+
+// Insert sentinel after consultationList
+(function initSentinel() {
+  var list = document.getElementById('consultationList');
+  if (list) {
+    var sentinel = document.createElement('div');
+    sentinel.id = 'scrollSentinel';
+    sentinel.style.height = '1px';
+    list.after(sentinel);
+    scrollSentinel = sentinel;
+    
+    // Load more indicator
+    var indicator = document.createElement('div');
+    indicator.id = 'loadMoreIndicator';
+    indicator.className = 'hidden text-center py-4';
+    indicator.innerHTML = '<div class="inline-flex items-center gap-2 text-sm text-surface-400">' +
+      '<div class="w-4 h-4 border-2 border-brand-300 border-t-transparent rounded-full animate-spin"></div>' +
+      '더 불러오는 중...</div>';
+    sentinel.after(indicator);
+    
+    // "All loaded" hint
+    var hint = document.createElement('div');
+    hint.id = 'scrollHint';
+    hint.className = 'hidden text-center py-3';
+    hint.innerHTML = '<span class="text-[11px] text-surface-400 font-medium">↓ 스크롤하면 더 불러옵니다</span>';
+    list.after(hint);
+  }
+})();
+
+function showLoadMoreIndicator() {
+  var el = document.getElementById('loadMoreIndicator');
+  if (el) el.classList.remove('hidden');
+}
+function hideLoadMoreIndicator() {
+  var el = document.getElementById('loadMoreIndicator');
+  if (el) el.classList.add('hidden');
+}
+function showScrollHint() {
+  var el = document.getElementById('scrollHint');
+  if (el) el.classList.remove('hidden');
+}
+function hideScrollHint() {
+  var el = document.getElementById('scrollHint');
+  if (el) el.classList.add('hidden');
+}
+
+// ============================================
+// Mini Chart
+// ============================================
 function renderMiniChart(data) {
   if (!data || data.length < 2 || !window.Chart) {
     document.getElementById('chartPanel').classList.add('hidden');
     return;
   }
   document.getElementById('chartPanel').classList.remove('hidden');
-  // Aggregate by date
   var byDate = {};
   data.forEach(function(c) {
     var dk = (c.consultation_date||'').split('T')[0];
@@ -221,7 +385,10 @@ function renderMiniChart(data) {
   });
 }
 
-function renderConsultations(data) {
+// ============================================
+// Render Consultations
+// ============================================
+function renderConsultations(data, total, isAppend) {
   if (!data || data.length === 0) {
     document.getElementById('consultCount').textContent = '0건';
     document.getElementById('consultTotalAmount').textContent = '';
@@ -231,13 +398,13 @@ function renderConsultations(data) {
         '<h3 class="text-lg font-bold text-surface-800 mb-1">상담 기록이 없습니다</h3>' +
         '<p class="text-surface-500 text-sm mb-5">' + (Object.keys(activeAdvFilters).length > 0 ? '필터 조건을 변경해보세요' : '첫 상담을 녹음해보세요') + '</p>' +
         (Object.keys(activeAdvFilters).length > 0 
-          ? '<button onclick="document.getElementById(\\'resetAdvFilter\\').click()" class="inline-flex items-center gap-2 font-semibold text-sm text-brand-600 bg-brand-50 px-5 py-2.5 rounded-xl active:scale-95 transition-all"><i class="fas fa-rotate-right"></i>필터 초기화</button>'
+          ? '<button onclick="document.getElementById(\'resetAdvFilter\').click()" class="inline-flex items-center gap-2 font-semibold text-sm text-brand-600 bg-brand-50 px-5 py-2.5 rounded-xl active:scale-95 transition-all"><i class="fas fa-rotate-right"></i>필터 초기화</button>'
           : '<a href="/recording" class="inline-flex items-center gap-2 font-semibold text-sm text-white bg-gradient-brand px-5 py-2.5 rounded-xl shadow-md shadow-brand-600/20"><i class="fas fa-microphone"></i>녹음 시작</a>') +
       '</div>';
     return;
   }
 
-  // Calculate stats
+  // Stats from loaded data
   var totalAmount = data.reduce(function(sum, c){ return sum + (c.amount || 0); }, 0);
   var paidAmount = data.filter(function(c){ return c.status === 'paid'; }).reduce(function(sum, c){ return sum + (c.amount || 0); }, 0);
   var avgScore = 0;
@@ -247,18 +414,23 @@ function renderConsultations(data) {
   });
   avgScore = scoredCount > 0 ? Math.round(avgScore / scoredCount) : 0;
 
-  document.getElementById('consultCount').textContent = data.length + '건';
+  // Show loaded count vs total
+  var countStr = data.length < total ? data.length + '/' + total + '건' : total + '건';
+  document.getElementById('consultCount').textContent = countStr;
   document.getElementById('consultTotalAmount').textContent = 
     '결정 ' + Math.round(paidAmount / 10000).toLocaleString() + '만 / 전체 ' + Math.round(totalAmount / 10000).toLocaleString() + '만원' +
     (avgScore > 0 ? ' · 평균 ' + avgScore + '점' : '');
 
-  // Group by date (if sorted by date)
+  // Sort
   var sortKey = (activeAdvFilters.sort || 'date_desc');
   if (sortKey.startsWith('date')) {
     renderGroupedByDate(data);
   } else {
     renderFlatList(data);
   }
+  
+  // Setup infinite scroll after render
+  setupInfiniteScroll();
 }
 
 function renderGroupedByDate(data) {
@@ -356,26 +528,12 @@ function renderConsultCard(c, st) {
   '</a>';
 }
 
-async function loadConsultations() {
-  try {
-    var url = '/api/consultations?limit=200';
-    var res = await fetch(url);
-    var data = await res.json();
-    
-    if (!data.success) {
-      if (res.status === 401) { window.location.href = '/login'; return; }
-      return;
-    }
-    
-    allConsultations = data.data || [];
-    filterAndRender();
-  } catch (err) {
-    console.error('Load consultations error:', err);
-  }
-}
-
-loadConsultations();
-initPullToRefresh(function(){ loadConsultations(); });
+// ============================================
+// Initial Load
+// ============================================
+resetAndLoad();
+initPullToRefresh(function(){ resetAndLoad(); });
+setupInfiniteScroll();
 
 // ============================================
 // Manual Consultation Entry
@@ -430,7 +588,7 @@ document.getElementById('manualForm').addEventListener('submit', async function(
       }
       closeManualModal();
       document.getElementById('manualForm').reset();
-      loadConsultations();
+      resetAndLoad();
       showToast('상담이 등록되었습니다!', 'success');
     } else { showToast(data.error || '저장 실패','error'); }
   } catch (err) { showToast('오류가 발생했습니다.','error'); }

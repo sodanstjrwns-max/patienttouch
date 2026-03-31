@@ -247,13 +247,24 @@ patients.put('/:id', async (c) => {
     const { name, phone, age, gender, memo, tags, status, referral_source, region } = await c.req.json();
     const db = c.env.DB;
 
-    // Verify ownership
+    // Verify ownership and get current memo
     const existing = await db.prepare(
-      'SELECT id FROM patients WHERE id = ? AND organization_id = ?'
-    ).bind(patientId, orgId).first();
+      'SELECT id, memo FROM patients WHERE id = ? AND organization_id = ?'
+    ).bind(patientId, orgId).first<{ id: string; memo: string | null }>();
 
     if (!existing) {
       return c.json({ success: false, error: '환자를 찾을 수 없습니다.' }, 404);
+    }
+
+    // Track memo changes
+    if (memo !== undefined && memo !== existing.memo) {
+      const userId = c.get('userId');
+      const userRecord = await db.prepare('SELECT name FROM users WHERE id = ?').bind(userId).first<{ name: string }>();
+      const userName = userRecord?.name || 'unknown';
+      await db.prepare(`
+        INSERT INTO patient_memo_history (patient_id, organization_id, user_id, user_name, old_memo, new_memo)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `).bind(patientId, orgId, userId, userName, existing.memo || '', memo || '').run();
     }
 
     await db.prepare(`
@@ -270,9 +281,9 @@ patients.put('/:id', async (c) => {
         updated_at = datetime('now')
       WHERE id = ? AND organization_id = ?
     `).bind(
-      name, phone, age, gender, memo, 
-      tags ? JSON.stringify(tags) : null, status,
-      referral_source, region,
+      name ?? null, phone ?? null, age ?? null, gender ?? null, memo ?? null, 
+      tags ? JSON.stringify(tags) : null, status ?? null,
+      referral_source ?? null, region ?? null,
       patientId, orgId
     ).run();
 
@@ -299,6 +310,163 @@ patients.delete('/:id', async (c) => {
   } catch (error) {
     console.error('Delete patient error:', error);
     return c.json({ success: false, error: '환자 삭제에 실패했습니다.' }, 500);
+  }
+});
+
+// GET /api/patients/:id/memo-history - Get memo change history
+patients.get('/:id/memo-history', async (c) => {
+  try {
+    const patientId = c.req.param('id');
+    const orgId = c.get('organizationId');
+    const db = c.env.DB;
+
+    const result = await db.prepare(`
+      SELECT id, user_name, old_memo, new_memo, changed_at
+      FROM patient_memo_history
+      WHERE patient_id = ? AND organization_id = ?
+      ORDER BY changed_at DESC
+      LIMIT 50
+    `).bind(patientId, orgId).all();
+
+    return c.json({ success: true, data: result.results });
+  } catch (error) {
+    console.error('Memo history error:', error);
+    return c.json({ success: false, error: '메모 이력 조회 실패' }, 500);
+  }
+});
+
+// GET /api/patients/:id/contact-timeline - Get unified contact timeline
+patients.get('/:id/contact-timeline', async (c) => {
+  try {
+    const patientId = c.req.param('id');
+    const orgId = c.get('organizationId');
+    const db = c.env.DB;
+
+    // Fetch contact logs, tasks, and consultation history in parallel
+    const [contactLogs, contactTasks, consultations, treatments, retentionContacts] = await Promise.all([
+      db.prepare(`
+        SELECT cl.*, u.name as user_name
+        FROM contact_logs cl
+        LEFT JOIN contact_tasks ct ON cl.task_id = ct.id
+        LEFT JOIN users u ON cl.user_id = u.id
+        WHERE cl.patient_id = ? AND cl.organization_id = ?
+        ORDER BY cl.created_at DESC
+        LIMIT 100
+      `).bind(patientId, orgId).all(),
+      db.prepare(`
+        SELECT ct.*, u.name as assigned_user_name
+        FROM contact_tasks ct
+        LEFT JOIN users u ON ct.user_id = u.id
+        WHERE ct.patient_id = ? AND ct.organization_id = ?
+        ORDER BY ct.created_at DESC
+        LIMIT 50
+      `).bind(patientId, orgId).all(),
+      db.prepare(`
+        SELECT c.id, c.consultation_date, c.treatment_type, c.amount, c.status, c.decision_score, 
+               u.name as consultant_name,
+               json_extract(c.feedback, '$.total_score') as consult_score
+        FROM consultations c
+        LEFT JOIN users u ON c.user_id = u.id
+        WHERE c.patient_id = ? AND c.organization_id = ?
+        ORDER BY c.consultation_date DESC
+        LIMIT 50
+      `).bind(patientId, orgId).all(),
+      db.prepare(`
+        SELECT * FROM patient_treatments
+        WHERE patient_id = ? AND organization_id = ?
+        ORDER BY started_at DESC
+        LIMIT 20
+      `).bind(patientId, orgId).all(),
+      db.prepare(`
+        SELECT rc.*, u.name as staff_name, pt.treatment_type
+        FROM retention_contacts rc
+        LEFT JOIN users u ON rc.staff_id = u.id
+        LEFT JOIN patient_treatments pt ON rc.treatment_id = pt.id
+        WHERE rc.patient_id = ? AND rc.organization_id = ?
+        ORDER BY rc.contacted_at DESC
+        LIMIT 50
+      `).bind(patientId, orgId).all()
+    ]);
+
+    return c.json({
+      success: true,
+      data: {
+        contact_logs: contactLogs.results,
+        contact_tasks: contactTasks.results,
+        consultations: consultations.results,
+        treatments: treatments.results,
+        retention_contacts: retentionContacts.results
+      }
+    });
+  } catch (error) {
+    console.error('Contact timeline error:', error);
+    return c.json({ success: false, error: '타임라인 조회 실패' }, 500);
+  }
+});
+
+// GET /api/patients/:id/retention-summary - Integrated retention view
+patients.get('/:id/retention-summary', async (c) => {
+  try {
+    const patientId = c.req.param('id');
+    const orgId = c.get('organizationId');
+    const db = c.env.DB;
+
+    const [retStatus, treatments, contacts, patient] = await Promise.all([
+      db.prepare(`
+        SELECT * FROM patient_retention_status
+        WHERE patient_id = ? AND organization_id = ?
+      `).bind(patientId, orgId).first(),
+      db.prepare(`
+        SELECT * FROM patient_treatments
+        WHERE patient_id = ? AND organization_id = ?
+        ORDER BY started_at DESC
+      `).bind(patientId, orgId).all(),
+      db.prepare(`
+        SELECT rc.*, u.name as staff_name, pt.treatment_type
+        FROM retention_contacts rc
+        LEFT JOIN users u ON rc.staff_id = u.id
+        LEFT JOIN patient_treatments pt ON rc.treatment_id = pt.id
+        WHERE rc.patient_id = ? AND rc.organization_id = ?
+        ORDER BY rc.contacted_at DESC
+        LIMIT 20
+      `).bind(patientId, orgId).all(),
+      db.prepare(`
+        SELECT p.*, 
+          (SELECT COUNT(*) FROM consultations WHERE patient_id = p.id) as total_consultations,
+          (SELECT SUM(amount) FROM consultations WHERE patient_id = p.id AND status = 'paid') as total_paid
+        FROM patients p
+        WHERE p.id = ? AND p.organization_id = ?
+      `).bind(patientId, orgId).first()
+    ]);
+
+    // Calculate treatment progress
+    const treatmentList = (treatments.results || []) as any[];
+    const totalTreatmentAmount = treatmentList.reduce((s: number, t: any) => s + (t.total_amount || 0), 0);
+    const totalPaidAmount = treatmentList.reduce((s: number, t: any) => s + (t.paid_amount || 0), 0);
+    const remainingAmount = totalTreatmentAmount - totalPaidAmount;
+    const completedTreatments = treatmentList.filter((t: any) => t.status === 'completed').length;
+    const activeTreatments = treatmentList.filter((t: any) => t.status === 'in_progress' || t.status === 'scheduled').length;
+
+    return c.json({
+      success: true,
+      data: {
+        retention_status: retStatus || null,
+        treatments: treatmentList,
+        contacts: contacts.results,
+        patient_summary: patient || null,
+        stats: {
+          total_treatment_amount: totalTreatmentAmount,
+          total_paid_amount: totalPaidAmount,
+          remaining_amount: remainingAmount,
+          completed_treatments: completedTreatments,
+          active_treatments: activeTreatments,
+          total_treatments: treatmentList.length
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Retention summary error:', error);
+    return c.json({ success: false, error: '리텐션 요약 조회 실패' }, 500);
   }
 });
 

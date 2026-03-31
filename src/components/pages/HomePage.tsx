@@ -41,6 +41,29 @@ export const HomePage: FC = () => {
         </div>
       </header>
 
+      {/* ====== PATIENT QUICK SEARCH ====== */}
+      <div class="px-4 pt-3">
+        <div class="relative">
+          <div class="relative">
+            <i class="fas fa-magnifying-glass absolute left-3.5 top-1/2 -translate-y-1/2 text-surface-400 text-xs pointer-events-none"></i>
+            <input
+              type="text"
+              id="quickSearchInput"
+              class="w-full pl-9 pr-10 py-2.5 bg-surface-50 border border-surface-200/80 rounded-xl text-sm text-surface-900 placeholder-surface-400 outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-400 focus:bg-white transition-all"
+              placeholder="환자 이름 · 전화번호로 빠른 검색"
+              autocomplete="off"
+            />
+            <button id="quickSearchClear" class="hidden absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full bg-surface-200 flex items-center justify-center text-surface-500 hover:bg-surface-300 transition-all">
+              <i class="fas fa-xmark text-[9px]"></i>
+            </button>
+          </div>
+          {/* Search Results Dropdown */}
+          <div id="quickSearchResults" class="hidden absolute left-0 right-0 top-full mt-1 bg-white rounded-xl border border-surface-200 shadow-xl shadow-surface-900/10 z-50 max-h-[320px] overflow-y-auto">
+            <div id="quickSearchList" class="divide-y divide-surface-50"></div>
+          </div>
+        </div>
+      </div>
+
       {/* MAIN CONTENT */}
       <div class="px-4 pt-4 space-y-5">
 
@@ -49,6 +72,34 @@ export const HomePage: FC = () => {
 
         {/* ====== STALE UNDECIDED ALERT BANNER ====== */}
         <div id="staleAlertBanner" class="hidden"></div>
+
+        {/* ====== TODAY CHECKLIST ====== */}
+        <div id="todayChecklist" class="hidden">
+          <div class="card-premium overflow-hidden">
+            <div class="p-4 border-b border-surface-100 flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <div class="w-7 h-7 rounded-lg bg-gradient-to-br from-brand-500 to-indigo-500 flex items-center justify-center shadow-sm shadow-brand-400/20">
+                  <i class="fas fa-list-check text-[10px] text-white"></i>
+                </div>
+                <div>
+                  <h3 class="font-bold text-sm text-surface-900">오늘의 할 일</h3>
+                  <p id="checklistProgress" class="text-[10px] text-surface-400">로딩 중...</p>
+                </div>
+              </div>
+              <div id="checklistBadge" class="flex items-center gap-1.5">
+                <div id="checklistProgressRing" class="w-9 h-9"></div>
+              </div>
+            </div>
+            <div id="checklistItems" class="divide-y divide-surface-50 max-h-[400px] overflow-y-auto">
+              <div class="p-4"><div class="shimmer h-12 rounded-lg w-full"></div></div>
+            </div>
+            <div id="checklistFooter" class="hidden p-3 border-t border-surface-100 bg-surface-50/50">
+              <button onclick="toggleChecklistExpand()" id="checklistToggle" class="w-full text-center text-[11px] font-semibold text-brand-600 hover:text-brand-700 py-1">
+                <span id="checklistToggleText">더 보기</span> <i id="checklistToggleIcon" class="fas fa-chevron-down text-[9px] ml-0.5"></i>
+              </button>
+            </div>
+          </div>
+        </div>
 
         {/* ====== AI DAILY INSIGHT ====== */}
         <div id="aiInsightCard" class="hidden">
@@ -67,11 +118,6 @@ export const HomePage: FC = () => {
             </div>
             <p id="aiInsightText" class="text-sm text-surface-700 leading-relaxed"></p>
           </div>
-        </div>
-
-        {/* ====== TODAY MISSION PROGRESS ====== */}
-        <div id="todayMission" class="card-premium p-4 hidden">
-          <div class="shimmer h-16 rounded-lg w-full"></div>
         </div>
 
         {/* ====== QUICK ACTIONS (2x2) ====== */}

@@ -257,7 +257,9 @@ function renderPatient(p) {
         '</div>' +
       '</div>' +
     '</div>' +
-    (esc(p.memo) ? '<p class="mt-3 text-sm text-surface-600 bg-surface-50 p-3 rounded-xl leading-relaxed">' + esc(p.memo) + '</p>' : '') +
+    (esc(p.memo) ? '<div class="mt-3"><p class="text-sm text-surface-600 bg-surface-50 p-3 rounded-xl leading-relaxed">' + esc(p.memo) + '</p>' +
+      '<button onclick="toggleMemoHistory()" class="mt-1.5 text-[10px] text-surface-400 hover:text-brand-600 font-semibold transition-colors"><i class="fas fa-clock-rotate-left mr-0.5"></i>변경 이력 보기</button>' +
+      '<div id="memoHistoryContainer" class="hidden mt-2"></div></div>' : '') +
   '</div>';
 
   // Patient Value Summary (LTV)
@@ -747,5 +749,230 @@ async function savePatientEdit() {
 }
 
 document.getElementById('editBtn').addEventListener('click', openEditModal);
+
+// ============================================
+// 메모 히스토리
+// ============================================
+var memoHistoryLoaded = false;
+window.toggleMemoHistory = function() {
+  var container = document.getElementById('memoHistoryContainer');
+  if (!container) return;
+  if (!container.classList.contains('hidden')) {
+    container.classList.add('hidden');
+    return;
+  }
+  container.classList.remove('hidden');
+  if (memoHistoryLoaded) return;
+  loadMemoHistory();
+};
+
+async function loadMemoHistory() {
+  var container = document.getElementById('memoHistoryContainer');
+  if (!container) return;
+  container.innerHTML = '<div class="flex items-center gap-2 py-2"><div class="w-3 h-3 border-2 border-brand-300 border-t-transparent rounded-full animate-spin"></div><span class="text-xs text-surface-400">이력 로딩중...</span></div>';
+  try {
+    var res = await fetch('/api/patients/' + patientId + '/memo-history');
+    var data = await res.json();
+    memoHistoryLoaded = true;
+    if (!data.success || !data.data || data.data.length === 0) {
+      container.innerHTML = '<p class="text-[11px] text-surface-400 py-2 px-1"><i class="fas fa-info-circle mr-1"></i>변경 이력이 없습니다</p>';
+      return;
+    }
+    var html = '<div class="space-y-1.5 max-h-48 overflow-y-auto">';
+    data.data.forEach(function(h) {
+      var dt = new Date(h.changed_at);
+      var dateStr = (dt.getMonth()+1) + '/' + dt.getDate() + ' ' + String(dt.getHours()).padStart(2,'0') + ':' + String(dt.getMinutes()).padStart(2,'0');
+      html += '<div class="flex gap-2 py-1.5 px-2 bg-surface-50/50 rounded-lg text-[10px]">';
+      html += '<div class="shrink-0 pt-0.5"><div class="w-1.5 h-1.5 rounded-full bg-brand-400 mt-1"></div></div>';
+      html += '<div class="flex-1 min-w-0">';
+      html += '<div class="flex items-center gap-1.5"><span class="font-bold text-surface-700">' + esc(h.user_name || '?') + '</span><span class="text-surface-400">' + dateStr + '</span></div>';
+      if (h.old_memo) html += '<p class="text-surface-400 line-through truncate">' + esc(h.old_memo) + '</p>';
+      html += '<p class="text-surface-700">' + esc(h.new_memo || '(메모 삭제)') + '</p>';
+      html += '</div></div>';
+    });
+    html += '</div>';
+    container.innerHTML = html;
+  } catch (err) {
+    container.innerHTML = '<p class="text-[11px] text-rose-500 py-2">이력 로딩 실패</p>';
+  }
+}
+
+// ============================================
+// 연락 타임라인 강화 (통합 타임라인)
+// ============================================
+var contactTimelineLoaded = false;
+var contactTimelineFilter = 'all';
+
+// Override existing loadTimeline to add enhanced contact timeline
+var _origLoadTimeline = loadTimeline;
+loadTimeline = async function() {
+  await _origLoadTimeline();
+  if (!contactTimelineLoaded) {
+    contactTimelineLoaded = true;
+    await loadContactTimeline();
+  }
+};
+
+async function loadContactTimeline() {
+  try {
+    var res = await fetch('/api/patients/' + patientId + '/contact-timeline');
+    var data = await res.json();
+    if (!data.success) return;
+    
+    var d = data.data;
+    var allEvents = [];
+    
+    // Merge all events into one timeline
+    (d.consultations || []).forEach(function(c) {
+      allEvents.push({
+        type: 'consultation', date: c.consultation_date,
+        title: (esc(c.treatment_type) || '일반') + ' 상담',
+        subtitle: c.consultant_name ? c.consultant_name + ' 실장' : '',
+        amount: c.amount, status: c.status, score: c.consult_score || c.decision_score,
+        id: c.id
+      });
+    });
+    
+    (d.contact_logs || []).forEach(function(cl) {
+      allEvents.push({
+        type: 'contact', date: cl.contacted_at,
+        title: (cl.method === 'phone' ? '전화' : cl.method === 'text' ? '문자' : '카카오') + ' 연락',
+        subtitle: cl.user_name || '', result: cl.result, notes: cl.notes
+      });
+    });
+    
+    (d.treatments || []).forEach(function(t) {
+      allEvents.push({
+        type: 'treatment', date: t.start_date || t.created_at,
+        title: (treatTypeMap[t.treatment_type] || t.treatment_type || '치료'),
+        subtitle: t.treatment_name || '',
+        status: t.status, amount: t.total_amount, paid: t.paid_amount
+      });
+    });
+    
+    (d.retention_contacts || []).forEach(function(rc) {
+      allEvents.push({
+        type: 'retention_contact', date: rc.contact_date,
+        title: '리텐션 연락 (' + (rc.contact_type === 'phone' ? '전화' : rc.contact_type === 'text' ? '문자' : '카카오') + ')',
+        subtitle: rc.staff_name || '', result: rc.result, notes: rc.notes, treatment: rc.treatment_type
+      });
+    });
+    
+    allEvents.sort(function(a, b) { return (b.date || '').localeCompare(a.date || ''); });
+    
+    // If there are enhanced timeline events, add filter UI and render
+    if (allEvents.length > 0) {
+      renderContactTimelineFilter(allEvents);
+    }
+    
+    window._contactTimelineEvents = allEvents;
+  } catch (err) {
+    console.error('Contact timeline error:', err);
+  }
+}
+
+function renderContactTimelineFilter(events) {
+  var section = document.getElementById('timelineDetail');
+  if (!section) return;
+  
+  // Count by type
+  var counts = {all: events.length, consultation: 0, contact: 0, treatment: 0, retention_contact: 0};
+  events.forEach(function(e) { if (counts[e.type] !== undefined) counts[e.type]++; });
+  
+  // Insert filter tabs before the main timeline card
+  var filterEl = document.getElementById('timelineFilterBar');
+  if (!filterEl) {
+    var filterDiv = document.createElement('div');
+    filterDiv.id = 'timelineFilterBar';
+    filterDiv.className = 'mb-3';
+    var firstCard = section.querySelector('.card-premium');
+    if (firstCard) section.insertBefore(filterDiv, firstCard);
+    else section.appendChild(filterDiv);
+    filterEl = filterDiv;
+  }
+  
+  var filterHTML = '<div class="flex gap-1.5 overflow-x-auto no-scrollbar pb-1">';
+  var filters = [
+    {key: 'all', label: '전체', icon: 'fa-layer-group', count: counts.all},
+    {key: 'consultation', label: '상담', icon: 'fa-stethoscope', count: counts.consultation},
+    {key: 'contact', label: '연락', icon: 'fa-phone', count: counts.contact + counts.retention_contact},
+    {key: 'treatment', label: '치료', icon: 'fa-tooth', count: counts.treatment}
+  ];
+  filters.forEach(function(f) {
+    var active = contactTimelineFilter === f.key;
+    filterHTML += '<button onclick="filterContactTimeline(\'' + f.key + '\')" class="shrink-0 inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition-all ' +
+      (active ? 'bg-brand-600 text-white shadow-sm' : 'bg-surface-100 text-surface-500 hover:bg-surface-200') + '">' +
+      '<i class="fas ' + f.icon + ' text-[8px]"></i>' + f.label + 
+      '<span class="' + (active ? 'bg-white/20' : 'bg-surface-200') + ' px-1 py-0.5 rounded text-[8px]">' + f.count + '</span></button>';
+  });
+  filterHTML += '</div>';
+  filterEl.innerHTML = filterHTML;
+}
+
+window.filterContactTimeline = function(type) {
+  contactTimelineFilter = type;
+  var events = window._contactTimelineEvents || [];
+  renderContactTimelineFilter(events);
+  
+  // Filter and re-render
+  var filtered = type === 'all' ? events : events.filter(function(e) {
+    if (type === 'contact') return e.type === 'contact' || e.type === 'retention_contact';
+    return e.type === type;
+  });
+  
+  renderFilteredTimeline(filtered);
+};
+
+function renderFilteredTimeline(events) {
+  var content = document.getElementById('timelineContent');
+  if (!content) return;
+  
+  if (events.length === 0) {
+    content.innerHTML = '<div class="text-center py-6"><i class="fas fa-filter-circle-xmark text-surface-300 text-xl mb-2"></i><p class="text-xs text-surface-500">해당 유형의 이벤트가 없습니다</p></div>';
+    document.getElementById('timelineCount').textContent = '0건';
+    return;
+  }
+  
+  document.getElementById('timelineCount').textContent = events.length + '건';
+  
+  var icons = {consultation:'fa-stethoscope', contact:'fa-phone', treatment:'fa-tooth', retention_contact:'fa-heart-pulse'};
+  var colors = {consultation:'bg-brand-100 text-brand-600', contact:'bg-sky-100 text-sky-600', treatment:'bg-emerald-100 text-emerald-700', retention_contact:'bg-purple-100 text-purple-600'};
+  var stBadge = {paid:'bg-emerald-50 text-emerald-700',undecided:'bg-amber-50 text-amber-700',lost:'bg-rose-50 text-rose-700',
+    completed:'bg-emerald-50 text-emerald-700',in_progress:'bg-sky-50 text-sky-700',scheduled:'bg-purple-50 text-purple-700',
+    connected:'bg-emerald-50 text-emerald-700',no_answer:'bg-rose-50 text-rose-700',appointment_booked:'bg-brand-50 text-brand-700',
+    message_sent:'bg-sky-50 text-sky-600',callback_promised:'bg-amber-50 text-amber-700',refused:'bg-rose-50 text-rose-700'};
+  var resultLabels = {connected:'통화성공',no_answer:'부재중',message_sent:'메시지발송',callback_promised:'콜백약속',appointment_booked:'예약완료',refused:'거절'};
+  var statusLabels = {paid:'결정',undecided:'미결정',lost:'이탈',completed:'완료',in_progress:'진행중',scheduled:'예약됨',consulted:'상담완료'};
+  
+  var html = '';
+  events.forEach(function(ev, i) {
+    html += '<div class="timeline-item flex gap-3 pb-4 relative">';
+    html += '<div class="timeline-dot flex flex-col items-center shrink-0">';
+    html += '<div class="w-8 h-8 rounded-lg ' + (colors[ev.type]||'bg-surface-100 text-surface-600') + ' flex items-center justify-center"><i class="fas ' + (icons[ev.type]||'fa-circle') + ' text-xs"></i></div>';
+    if (i < events.length - 1) html += '<div class="w-0.5 flex-1 bg-surface-200 mt-1 min-h-[16px]"></div>';
+    html += '</div>';
+    html += '<div class="flex-1 min-w-0 pb-1">';
+    html += '<div class="flex items-center justify-between"><span class="text-xs font-bold text-surface-900">' + esc(ev.title) + '</span><span class="text-[10px] text-surface-400">' + fmtDate(ev.date) + '</span></div>';
+    
+    if (ev.subtitle) html += '<p class="text-[10px] text-surface-500">' + esc(ev.subtitle) + '</p>';
+    
+    var badges = '';
+    if (ev.amount) badges += '<span class="text-[10px] font-semibold text-emerald-600 mr-1">' + fmtWon(ev.amount) + '만원</span>';
+    if (ev.status) badges += '<span class="text-[10px] px-1.5 py-0.5 rounded ' + (stBadge[ev.status]||'bg-surface-100 text-surface-600') + ' font-semibold">' + (statusLabels[ev.status]||ev.status) + '</span> ';
+    if (ev.result) badges += '<span class="text-[10px] px-1.5 py-0.5 rounded ' + (stBadge[ev.result]||'bg-surface-100 text-surface-600') + ' font-semibold">' + (resultLabels[ev.result]||ev.result) + '</span> ';
+    if (ev.score) badges += '<span class="text-[10px] font-bold ' + (ev.score >= 80 ? 'text-emerald-600' : ev.score >= 60 ? 'text-amber-600' : 'text-rose-600') + '">' + ev.score + '점</span>';
+    if (badges) html += '<div class="flex flex-wrap items-center gap-1 mt-0.5">' + badges + '</div>';
+    
+    if (ev.notes) html += '<p class="text-[10px] text-surface-500 mt-0.5 line-clamp-2">' + esc(ev.notes) + '</p>';
+    
+    // Clickable for consultations
+    if (ev.type === 'consultation' && ev.id) {
+      html += '<a href="/consultations/' + ev.id + '" class="inline-flex items-center gap-1 mt-1 text-[10px] text-brand-600 font-semibold hover:text-brand-700"><i class="fas fa-arrow-right text-[8px]"></i>상세 보기</a>';
+    }
+    
+    html += '</div></div>';
+  });
+  content.innerHTML = html;
+}
 
 loadPatient();

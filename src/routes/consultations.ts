@@ -104,6 +104,14 @@ consultations.get('/', async (c) => {
       'decision_desc': 'c.decision_score DESC',
     };
     const orderBy = sortMap[sort] || sortMap['date_desc'];
+
+    // Count total matching rows (before LIMIT/OFFSET)
+    const selectIdx = query.indexOf('SELECT');
+    const fromIdx = query.indexOf('FROM consultations');
+    const countQuery = 'SELECT COUNT(*) as total ' + query.substring(fromIdx);
+    const countResult = await db.prepare(countQuery).bind(...params).first<{ total: number }>();
+    const total = countResult?.total || 0;
+
     query += ` ORDER BY ${orderBy} LIMIT ? OFFSET ?`;
     params.push(safeInt(limit, 50, 1, 200), safeInt(offset, 0, 0, 100000));
 
@@ -117,7 +125,16 @@ consultations.get('/', async (c) => {
       feedback: safeParseJSON(c.feedback as string, {})
     }));
 
-    return c.json({ success: true, data });
+    const parsedLimit = safeInt(limit, 50, 1, 200);
+    const parsedOffset = safeInt(offset, 0, 0, 100000);
+    return c.json({ 
+      success: true, 
+      data, 
+      total,
+      has_more: parsedOffset + parsedLimit < total,
+      limit: parsedLimit,
+      offset: parsedOffset
+    });
   } catch (error) {
     console.error('List consultations error:', error);
     return c.json({ success: false, error: '상담 목록을 불러오는데 실패했습니다.' }, 500);
