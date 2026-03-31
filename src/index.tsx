@@ -29,6 +29,7 @@ import { SettingsPage } from './components/pages/SettingsPage'
 import { AdminDashboardPage } from './components/pages/AdminDashboardPage'
 import { ProposalPage } from './components/pages/ProposalPage'
 import { RetentionPage } from './components/pages/RetentionPage'
+import { GrowthPage } from './components/pages/GrowthPage'
 
 import type { Env } from './types'
 
@@ -71,6 +72,7 @@ app.get('/recording', (c) => c.render(<RecordingPage />, { title: '상담 녹음
 app.get('/recording/:patientId', (c) => c.render(<RecordingPage patientId={c.req.param('patientId')} />, { title: '상담 녹음 - 페이션트 터치' }))
 app.get('/settings', (c) => c.render(<SettingsPage />, { title: '설정 - 페이션트 터치' }))
 app.get('/retention', (c) => c.render(<RetentionPage />, { title: '리텐션 - 페이션트 터치' }))
+app.get('/growth', (c) => c.render(<GrowthPage />, { title: '상담 성장 추적 - 페이션트 터치' }))
 app.get('/admin', (c) => c.render(<AdminDashboardPage />, { title: '원장 대시보드 - 페이션트 터치' }))
 
 // Public Pages (no auth)

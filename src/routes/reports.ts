@@ -7,7 +7,8 @@ import {
   generateProposalContent,
   type ConsultationReport,
   type DiarizedSegment,
-  type NERExtracted
+  type NERExtracted,
+  type PreviousFeedbackContext
 } from '../lib/ai-presenter';
 import type { Env } from '../types';
 
@@ -115,6 +116,44 @@ reports.post('/:consultationId/generate', async (c) => {
       try {
         console.log('[BG Pipeline] Starting for', consultationId);
 
+        // Fetch previous feedback for growth comparison
+        let previousFeedback: PreviousFeedbackContext | null = null;
+        try {
+          const prevReports = await db.prepare(`
+            SELECT r.coaching_feedback, r.coaching_score, c.consultation_date, c.treatment_type
+            FROM consultation_reports r
+            JOIN consultations c ON r.consultation_id = c.id
+            WHERE c.user_id = ? AND c.organization_id = ? AND r.coaching_score > 0
+            ORDER BY c.consultation_date DESC
+            LIMIT 5
+          `).bind(userId, orgId).all();
+
+          if (prevReports.results.length > 0) {
+            const sessions = prevReports.results.map((r: any) => {
+              const fb = safeParseJSON(r.coaching_feedback, {});
+              return {
+                date: r.consultation_date?.split('T')[0] || '',
+                total_score: r.coaching_score || 0,
+                scores: fb.scores || { rapport: 0, spin: 0, objection_handling: 0, pricing_framing: 0, closing: 0, structure: 0 },
+                top_improvement: fb.improvements?.[0]?.issue || '없음',
+                treatment_type: r.treatment_type || undefined,
+              };
+            });
+            const avgScores = { rapport: 0, spin: 0, objection_handling: 0, pricing_framing: 0, closing: 0, structure: 0 };
+            let totalSum = 0;
+            sessions.forEach((s: any) => {
+              totalSum += s.total_score;
+              (Object.keys(avgScores) as Array<keyof typeof avgScores>).forEach(k => { avgScores[k] += (s.scores[k] || 0); });
+            });
+            const cnt = sessions.length;
+            (Object.keys(avgScores) as Array<keyof typeof avgScores>).forEach(k => { avgScores[k] = avgScores[k] / cnt; });
+            const issueCounts: Record<string, number> = {};
+            sessions.forEach((s: any) => { if (s.top_improvement !== '없음') { const k = s.top_improvement.slice(0, 30); issueCounts[k] = (issueCounts[k] || 0) + 1; } });
+            const recurring = Object.entries(issueCounts).filter(([, c]) => c >= 2).map(([i]) => i);
+            previousFeedback = { sessions, avg_scores: avgScores, avg_total: totalSum / cnt, recurring_issues: recurring.length > 0 ? recurring : sessions.slice(0, 2).map((s: any) => s.top_improvement).filter(Boolean) };
+          }
+        } catch (e) { console.warn('[BG Pipeline] Previous feedback load failed:', e); }
+
         const analysis = await runFullAnalysisPipeline(
           audioData,
           {
@@ -123,7 +162,8 @@ reports.post('/:consultationId/generate', async (c) => {
             gender: consultation.patient_gender as string
           },
           apiKey,
-          c.env as any
+          c.env as any,
+          previousFeedback
         );
 
         // Safely convert values for D1

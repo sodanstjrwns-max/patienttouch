@@ -63,27 +63,11 @@ export const RecordingPage: FC<RecordingPageProps> = ({ patientId }) => {
           <div id="timerSub" class="text-xs text-surface-500 mt-2">녹음 버튼을 눌러 시작하세요</div>
         </div>
 
-        {/* Real-time hints */}
-        <div id="hintContainer" class="px-5 mb-6 hidden">
-          <div class="glass-dark rounded-2xl p-4 border-l-4 border-l-brand-500">
-            <div class="flex items-center gap-2 mb-1">
-              <i class="fas fa-lightbulb text-brand-400 text-sm"></i>
-              <span class="text-xs font-bold text-brand-400">AI 힌트</span>
-            </div>
-            <p id="hintText" class="text-sm text-surface-300"></p>
-          </div>
-        </div>
+        {/* Quality indicator (shown after save) */}
+        <div id="qualityIndicator" class="px-5 mb-4 hidden"></div>
 
-        {/* Real-time transcript */}
-        <div id="transcriptContainer" class="px-5 mb-8 hidden">
-          <div class="glass-dark rounded-2xl p-4 max-h-32 overflow-y-auto">
-            <div class="flex items-center gap-2 mb-2">
-              <div class="w-2 h-2 bg-emerald-400 rounded-full animate-pulse-soft"></div>
-              <span class="text-xs font-bold text-surface-400">실시간 자막</span>
-            </div>
-            <p id="transcriptText" class="text-sm text-surface-300 leading-relaxed"></p>
-          </div>
-        </div>
+        {/* Analysis steps (shown after save) */}
+        <div id="analysisSteps" class="px-5 mb-8 hidden"></div>
 
         {/* Controls */}
         <div class="fixed bottom-0 left-0 right-0 pb-10 pt-6 safe-area-bottom" style="background: linear-gradient(to top, rgba(15,23,42,0.95) 60%, transparent)">

@@ -287,6 +287,79 @@ function renderReport(report) {
     html += '</div>';
   }
 
+  // ===== GROWTH COMPARISON (피드백 학습 루프) =====
+  if (report.growth_comparison && report.growth_comparison.previous_avg_score > 0) {
+    var gc = report.growth_comparison;
+    var deltaSign = gc.score_delta > 0 ? '+' : '';
+    var deltaColor = gc.score_delta > 0 ? 'emerald' : gc.score_delta < 0 ? 'rose' : 'surface';
+    var deltaIcon = gc.score_delta > 0 ? 'fa-arrow-trend-up' : gc.score_delta < 0 ? 'fa-arrow-trend-down' : 'fa-equals';
+    
+    html += '<div class="card-premium p-5 bg-gradient-to-br from-brand-50/50 to-emerald-50/30 border-2 border-brand-200/50">' +
+      '<div class="flex items-center gap-2 mb-4">' +
+        '<div class="w-7 h-7 rounded-lg bg-brand-100 flex items-center justify-center"><i class="fas fa-chart-line text-xs text-brand-600"></i></div>' +
+        '<h3 class="font-bold text-sm text-surface-900">성장 비교 분석</h3>' +
+        '<span class="ml-auto px-2.5 py-1 rounded-lg bg-' + deltaColor + '-100 text-' + deltaColor + '-700 text-xs font-black flex items-center gap-1">' +
+          '<i class="fas ' + deltaIcon + ' text-[10px]"></i>' + deltaSign + gc.score_delta.toFixed(1) + '점' +
+        '</span>' +
+      '</div>';
+    
+    // Score comparison bar
+    html += '<div class="flex items-center gap-3 mb-4 p-3 bg-white rounded-xl">' +
+      '<div class="text-center flex-1">' +
+        '<p class="text-[10px] text-surface-400 mb-1">이전 평균</p>' +
+        '<p class="text-2xl font-black text-surface-400">' + gc.previous_avg_score.toFixed(1) + '</p>' +
+      '</div>' +
+      '<div class="w-8 h-8 rounded-full bg-' + deltaColor + '-100 flex items-center justify-center">' +
+        '<i class="fas fa-arrow-right text-' + deltaColor + '-500 text-xs"></i>' +
+      '</div>' +
+      '<div class="text-center flex-1">' +
+        '<p class="text-[10px] text-surface-400 mb-1">이번 점수</p>' +
+        '<p class="text-2xl font-black text-brand-600">' + gc.current_score + '</p>' +
+      '</div>' +
+    '</div>';
+
+    // Improved areas
+    if (gc.improved_areas && gc.improved_areas.length > 0) {
+      html += '<div class="mb-3"><p class="text-xs font-semibold text-emerald-600 mb-2 flex items-center gap-1"><i class="fas fa-check-circle"></i>개선된 영역</p>' +
+        '<div class="space-y-1.5">';
+      gc.improved_areas.forEach(function(a) {
+        var adSign = a.delta > 0 ? '+' : '';
+        html += '<div class="flex items-center gap-2 p-2 bg-emerald-50/50 rounded-lg">' +
+          '<span class="text-[11px] text-surface-600 w-20 shrink-0 font-medium">' + esc(a.area) + '</span>' +
+          '<span class="text-[10px] text-surface-400">' + a.previous.toFixed(1) + ' → <span class="font-bold text-emerald-600">' + a.current.toFixed(1) + '</span></span>' +
+          '<span class="ml-auto text-[10px] font-bold text-emerald-600">' + adSign + a.delta.toFixed(1) + '</span>' +
+        '</div>';
+      });
+      html += '</div></div>';
+    }
+
+    // Still needs work
+    if (gc.still_needs_work && gc.still_needs_work.length > 0) {
+      html += '<div class="mb-3"><p class="text-xs font-semibold text-amber-600 mb-2 flex items-center gap-1"><i class="fas fa-bullseye"></i>계속 집중할 영역</p>' +
+        '<div class="space-y-2">';
+      gc.still_needs_work.forEach(function(w) {
+        html += '<div class="bg-white rounded-xl p-3 text-sm border border-amber-100">' +
+          '<p class="font-medium text-surface-800"><span class="text-amber-500 mr-1">▸</span>' + esc(w.area) + '</p>' +
+          '<p class="text-xs text-surface-500 mt-1">이전: ' + esc(w.previous_issue) + '</p>' +
+          '<p class="text-xs text-surface-600 mt-0.5">현재: ' + esc(w.current_status) + '</p>' +
+          '<p class="text-xs text-brand-600 mt-1 font-medium">💡 ' + esc(w.suggestion) + '</p>' +
+        '</div>';
+      });
+      html += '</div></div>';
+    }
+
+    // Overall growth comment
+    if (gc.overall_growth_comment) {
+      html += '<div class="p-3 bg-gradient-to-r from-brand-50 to-emerald-50 rounded-xl border border-brand-200/50">' +
+        '<div class="flex items-center gap-2 mb-1"><i class="fas fa-seedling text-brand-500 text-xs"></i><span class="text-[10px] font-bold text-brand-600 uppercase tracking-wider">성장 코멘트</span></div>' +
+        '<p class="text-sm text-surface-700 leading-relaxed">' + esc(gc.overall_growth_comment) + '</p>' +
+        (gc.streak_info ? '<p class="text-xs text-emerald-600 font-semibold mt-1.5">🔥 ' + esc(gc.streak_info) + '</p>' : '') +
+      '</div>';
+    }
+
+    html += '</div>';
+  }
+
   // Decision Factors (object, not array)
   if (report.decision_factors && typeof report.decision_factors === 'object') {
     var df = report.decision_factors;

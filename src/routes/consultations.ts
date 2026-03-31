@@ -3,7 +3,8 @@ import { Hono } from 'hono';
 import { generateId, safeParseJSON } from '../lib/utils';
 import { authMiddleware } from '../lib/auth';
 import { analyzeAudio, analyzeConsultation } from '../lib/ai';
-import { runFullAnalysisPipeline, generateRealtimeHint } from '../lib/ai-presenter';
+import { runFullAnalysisPipeline } from '../lib/ai-presenter';
+import type { PreviousFeedbackContext } from '../lib/ai-presenter';
 import { safeInt } from '../lib/middleware';
 import type { Env, Consultation } from '../types';
 
@@ -315,9 +316,74 @@ consultations.post('/:id/upload-audio', async (c) => {
         };
       }
 
+      // ===== FEEDBACK LEARNING LOOP =====
+      // Fetch previous session feedback for this consultant to enable growth comparison
+      let previousFeedback: PreviousFeedbackContext | null = null;
+      try {
+        const prevReports = await db.prepare(`
+          SELECT r.coaching_feedback, r.coaching_score, c.consultation_date, c.treatment_type
+          FROM consultation_reports r
+          JOIN consultations c ON r.consultation_id = c.id
+          WHERE c.user_id = ? AND c.organization_id = ? AND r.coaching_score > 0
+          ORDER BY c.consultation_date DESC
+          LIMIT 5
+        `).bind(userId, orgId).all();
+
+        if (prevReports.results.length > 0) {
+          const sessions = prevReports.results.map((r: any) => {
+            const fb = safeParseJSON(r.coaching_feedback, {});
+            return {
+              date: r.consultation_date?.split('T')[0] || '',
+              total_score: r.coaching_score || 0,
+              scores: fb.scores || { rapport: 0, spin: 0, objection_handling: 0, pricing_framing: 0, closing: 0, structure: 0 },
+              top_improvement: fb.improvements?.[0]?.issue || '없음',
+              treatment_type: r.treatment_type || undefined,
+            };
+          });
+
+          // Calculate averages
+          const avgScores = {
+            rapport: 0, spin: 0, objection_handling: 0, pricing_framing: 0, closing: 0, structure: 0
+          };
+          let totalSum = 0;
+          sessions.forEach((s: any) => {
+            totalSum += s.total_score;
+            (Object.keys(avgScores) as Array<keyof typeof avgScores>).forEach(k => {
+              avgScores[k] += (s.scores[k] || 0);
+            });
+          });
+          const count = sessions.length;
+          (Object.keys(avgScores) as Array<keyof typeof avgScores>).forEach(k => {
+            avgScores[k] = avgScores[k] / count;
+          });
+
+          // Find recurring issues (appear in 2+ sessions)
+          const issueCounts: Record<string, number> = {};
+          sessions.forEach((s: any) => {
+            if (s.top_improvement && s.top_improvement !== '없음') {
+              const key = s.top_improvement.slice(0, 30);
+              issueCounts[key] = (issueCounts[key] || 0) + 1;
+            }
+          });
+          const recurringIssues = Object.entries(issueCounts)
+            .filter(([, count]) => count >= 2)
+            .map(([issue]) => issue);
+
+          previousFeedback = {
+            sessions,
+            avg_scores: avgScores,
+            avg_total: totalSum / count,
+            recurring_issues: recurringIssues.length > 0 ? recurringIssues : sessions.slice(0, 2).map((s: any) => s.top_improvement).filter(Boolean),
+          };
+          console.log('[Pipeline] Loaded', count, 'previous feedback sessions, avg score:', (totalSum / count).toFixed(1));
+        }
+      } catch (e) {
+        console.warn('[Pipeline] Failed to load previous feedback:', e);
+      }
+
       // Run full AI analysis pipeline (includes report generation)
       // env를 전달하여 AI_PRIMARY_MODEL, AI_SECONDARY_MODEL 등 환경변수 기반 모델 선택
-      const fullAnalysis = await runFullAnalysisPipeline(audioData, patientInfo, apiKey, c.env as any);
+      const fullAnalysis = await runFullAnalysisPipeline(audioData, patientInfo, apiKey, c.env as any, previousFeedback);
 
       // Safely convert any value to string for D1 TEXT columns
       const toStr = (v: any): string => {
@@ -650,105 +716,6 @@ consultations.get('/unlinked/list', async (c) => {
   } catch (error) {
     console.error('Get unlinked consultations error:', error);
     return c.json({ success: false, error: '미연결 상담 목록을 불러오는데 실패했습니다.' }, 500);
-  }
-});
-
-// POST /api/consultations/:id/upload-audio-chunk - Transcribe a real-time audio chunk (STT only)
-consultations.post('/:id/upload-audio-chunk', async (c) => {
-  try {
-    const consultId = c.req.param('id');
-    const orgId = c.get('organizationId');
-    const db = c.env.DB;
-
-    const formData = await c.req.formData();
-    const audioFile = formData.get('audio') as File;
-    if (!audioFile || audioFile.size < 1000) {
-      return c.json({ success: true, data: { transcript: '' } });
-    }
-
-    const apiKey = c.env.OPENAI_API_KEY;
-    if (!apiKey) {
-      return c.json({ success: true, data: { transcript: '' } });
-    }
-
-    // Quick transcription using gpt-4o-transcribe
-    const { transcribeChunk } = await import('../lib/ai-presenter');
-    const audioData = await audioFile.arrayBuffer();
-    const transcript = await transcribeChunk(audioData, apiKey, 'ko', c.env as any);
-
-    return c.json({ success: true, data: { transcript: transcript || '' } });
-  } catch (error) {
-    console.error('Audio chunk transcription error:', error);
-    return c.json({ success: true, data: { transcript: '' } });
-  }
-});
-
-// POST /api/consultations/:id/realtime-hint - Get real-time coaching hint during recording
-consultations.post('/:id/realtime-hint', async (c) => {
-  try {
-    const consultId = c.req.param('id');
-    const orgId = c.get('organizationId');
-    const db = c.env.DB;
-
-    const { transcript_chunk, chunk_index, context } = await c.req.json();
-
-    if (!transcript_chunk || transcript_chunk.trim().length < 5) {
-      return c.json({ success: true, data: { hint: null } });
-    }
-
-    // Save STT chunk to DB for later analysis
-    const chunkId = 'chunk_' + generateId().slice(0, 8);
-    await db.prepare(`
-      INSERT INTO stt_chunks (id, consultation_id, chunk_index, transcript, created_at)
-      VALUES (?, ?, ?, ?, datetime('now'))
-    `).bind(chunkId, consultId, chunk_index || 0, transcript_chunk).run();
-
-    // Update consultation's transcript in real-time (append)
-    await db.prepare(`
-      UPDATE consultations SET 
-        transcript = COALESCE(transcript, '') || ? || '\n',
-        recording_status = 'recording',
-        updated_at = datetime('now')
-      WHERE id = ? AND organization_id = ?
-    `).bind(transcript_chunk, consultId, orgId).run();
-
-    const apiKey = c.env.OPENAI_API_KEY;
-    if (!apiKey) {
-      return c.json({ success: true, data: { hint: null } });
-    }
-
-    // Generate real-time hint using AI
-    const hint = await generateRealtimeHint(
-      transcript_chunk,
-      {
-        priceDiscussed: context?.priceDiscussed || false,
-        objectionDetected: context?.objectionDetected || undefined,
-        emotionTrend: context?.emotionTrend || 'stable',
-      },
-      apiKey,
-      c.env as any
-    );
-
-    // Save hint to AI hints log if generated
-    if (hint) {
-      const hintId = 'hint_' + generateId().slice(0, 8);
-      await db.prepare(`
-        INSERT INTO ai_hints_log (id, consultation_id, hint_type, hint_message, trigger_text, timestamp_seconds)
-        VALUES (?, ?, ?, ?, ?, ?)
-      `).bind(hintId, consultId, hint.type, hint.message, transcript_chunk.slice(0, 200), context?.elapsed_seconds || 0).run();
-    }
-
-    return c.json({
-      success: true,
-      data: {
-        hint: hint ? { type: hint.type, message: hint.message } : null,
-        chunk_saved: true
-      }
-    });
-  } catch (error) {
-    console.error('Realtime hint error:', error);
-    // Don't fail the recording if hints fail - return null hint
-    return c.json({ success: true, data: { hint: null } });
   }
 });
 

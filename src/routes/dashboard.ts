@@ -1286,6 +1286,130 @@ dashboard.get('/coaching-trend', async (c) => {
 });
 
 // ============================================
+// FEATURE 15: Growth Tracker - Session-by-session score history
+// ============================================
+dashboard.get('/growth-sessions', async (c) => {
+  try {
+    const orgId = c.get('organizationId');
+    const userId = c.get('userId');
+    const db = c.env.DB;
+    const { limit: rawLimit = '20' } = c.req.query();
+    const limit = safeInt(rawLimit, 20, 1, 100);
+
+    // Individual session scores in reverse chronological order
+    const sessions = await db.prepare(`
+      SELECT 
+        c.id, c.consultation_date, c.treatment_type, c.amount,
+        p.name as patient_name,
+        r.coaching_score as total_score,
+        json_extract(r.coaching_feedback, '$.scores.rapport') as rapport,
+        json_extract(r.coaching_feedback, '$.scores.spin') as spin,
+        json_extract(r.coaching_feedback, '$.scores.objection_handling') as objection,
+        json_extract(r.coaching_feedback, '$.scores.pricing_framing') as pricing,
+        json_extract(r.coaching_feedback, '$.scores.closing') as closing,
+        json_extract(r.coaching_feedback, '$.scores.structure') as structure,
+        json_extract(r.coaching_feedback, '$.patient_code_evaluation') as grade_text,
+        json_extract(r.coaching_feedback, '$.improvements[0].issue') as top_improvement,
+        json_extract(r.coaching_feedback, '$.strengths[0]') as top_strength,
+        r.id as report_id
+      FROM consultations c
+      JOIN consultation_reports r ON c.id = r.consultation_id
+      LEFT JOIN patients p ON c.patient_id = p.id
+      WHERE c.organization_id = ? AND c.user_id = ? AND r.coaching_score > 0
+      ORDER BY c.consultation_date DESC
+      LIMIT ?
+    `).bind(orgId, userId, limit).all();
+
+    // Calculate running averages and streaks
+    const data = sessions.results.reverse(); // chronological order
+    let runningTotal = 0;
+    let bestStreak = 0;
+    let currentStreak = 0;
+    let prevScore = 0;
+    let personalBest = 0;
+
+    const processed = data.map((s: any, i: number) => {
+      runningTotal += (s.total_score || 0);
+      const runningAvg = runningTotal / (i + 1);
+      
+      if (s.total_score > personalBest) personalBest = s.total_score;
+      
+      // Track improvement streak
+      if (i > 0 && s.total_score >= prevScore) {
+        currentStreak++;
+        if (currentStreak > bestStreak) bestStreak = currentStreak;
+      } else {
+        currentStreak = 0;
+      }
+      prevScore = s.total_score || 0;
+
+      // Extract grade from grade_text
+      let grade = '';
+      if (s.grade_text) {
+        const m = String(s.grade_text).match(/등급[：:]\s*([SABCD])/i);
+        if (m) grade = m[1].toUpperCase();
+      }
+
+      return {
+        ...s,
+        running_avg: Math.round(runningAvg * 10) / 10,
+        is_personal_best: s.total_score === personalBest && i > 0,
+        grade,
+        session_number: i + 1,
+      };
+    });
+
+    // Overall stats
+    const totalSessions = processed.length;
+    const latestScore = totalSessions > 0 ? processed[totalSessions - 1].total_score : 0;
+    const firstScore = totalSessions > 0 ? processed[0].total_score : 0;
+    const totalGrowth = latestScore - firstScore;
+    const overallAvg = totalSessions > 0 ? runningTotal / totalSessions : 0;
+
+    // Per-area trend (first 3 vs last 3 comparison)
+    const areaNames = ['rapport', 'spin', 'objection', 'pricing', 'closing', 'structure'];
+    const areaLabels: Record<string, string> = {
+      rapport: '라포형성', spin: 'SPIN질문', objection: '반론처리',
+      pricing: '가격프레이밍', closing: '클로징', structure: '상담구조'
+    };
+    const areaTrend = areaNames.map(a => {
+      const early = processed.slice(0, Math.min(3, Math.floor(totalSessions / 2)));
+      const recent = processed.slice(-Math.min(3, Math.ceil(totalSessions / 2)));
+      const earlyAvg = early.length > 0 ? early.reduce((sum: number, s: any) => sum + (s[a] || 0), 0) / early.length : 0;
+      const recentAvg = recent.length > 0 ? recent.reduce((sum: number, s: any) => sum + (s[a] || 0), 0) / recent.length : 0;
+      return {
+        area: a,
+        label: areaLabels[a],
+        early_avg: Math.round(earlyAvg * 10) / 10,
+        recent_avg: Math.round(recentAvg * 10) / 10,
+        delta: Math.round((recentAvg - earlyAvg) * 10) / 10,
+      };
+    });
+
+    return c.json({
+      success: true,
+      data: {
+        sessions: processed,
+        stats: {
+          total_sessions: totalSessions,
+          latest_score: latestScore,
+          first_score: firstScore,
+          total_growth: totalGrowth,
+          overall_avg: Math.round(overallAvg * 10) / 10,
+          personal_best: personalBest,
+          best_streak: bestStreak,
+          current_streak: currentStreak,
+        },
+        area_trend: areaTrend,
+      }
+    });
+  } catch (error) {
+    console.error('Growth sessions error:', error);
+    return c.json({ success: false, error: '성장 추적 데이터 조회에 실패했습니다.' }, 500);
+  }
+});
+
+// ============================================
 // FEATURE 14: Achievement & Alert Summary (for HomePage banners)
 // ============================================
 dashboard.get('/achievements', async (c) => {
