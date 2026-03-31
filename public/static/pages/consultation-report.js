@@ -117,7 +117,7 @@ function showError(message) {
       '<p class="text-surface-500 text-sm mb-6 px-8">' + message + '</p>' +
       '<div class="flex flex-col gap-3 items-center">' +
         '<button onclick="generateReport()" class="inline-flex items-center gap-2 bg-gradient-brand text-white font-semibold py-3 px-8 rounded-xl transition-all active:scale-[0.98] shadow-lg shadow-brand-600/30"><i class="fas fa-arrows-rotate"></i>다시 시도</button>' +
-        '<button onclick="window.location.href=\\'/consultations\\'" class="text-surface-400 text-sm hover:text-surface-600 transition-colors">상담 목록으로</button>' +
+        '<button onclick="window.location.href=\'/consultations\'" class="text-surface-400 text-sm hover:text-surface-600 transition-colors">상담 목록으로</button>' +
       '</div>' +
     '</div>';
 }
