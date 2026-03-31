@@ -741,6 +741,21 @@ dashboard.get('/today-contacts', async (c) => {
 
     for (const c of noTaskUndecided.results) {
       const dp = c.days_passed as number;
+      const ds = (c.decision_score as number) || 5;
+      const amt = (c.amount as number) || 0;
+      
+      // Smart urgency calculation based on multiple factors
+      let urgencyScore = 0;
+      if (amt >= 5000000) urgencyScore += 3;
+      else if (amt >= 1000000) urgencyScore += 2;
+      if (ds >= 7) urgencyScore += 3;
+      else if (ds >= 5) urgencyScore += 2;
+      if (dp >= 5) urgencyScore += 3;
+      else if (dp >= 3) urgencyScore += 2;
+      else urgencyScore += 1;
+      
+      const smartUrgency = urgencyScore >= 7 ? 'critical' : urgencyScore >= 4 ? 'high' : 'medium';
+      
       contacts.push({
         source: 'undecided',
         consultation_id: c.consultation_id,
@@ -753,8 +768,8 @@ dashboard.get('/today-contacts', async (c) => {
         amount: c.amount,
         decision_score: c.decision_score,
         days_passed: dp,
-        urgency: dp >= 5 ? 'critical' : dp >= 3 ? 'high' : 'medium',
-        reason: '미결정 ' + dp + '일 경과' + ((c.decision_score as number) >= 7 ? ' (결정도 높음!)' : '')
+        urgency: smartUrgency,
+        reason: '미결정 ' + dp + '일 경과' + (ds >= 7 ? ' (결정도 높음!)' : amt >= 5000000 ? ' (고액 상담)' : '')
       });
     }
 

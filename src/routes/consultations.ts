@@ -3,7 +3,7 @@ import { Hono } from 'hono';
 import { generateId, safeParseJSON } from '../lib/utils';
 import { authMiddleware } from '../lib/auth';
 import { analyzeAudio, analyzeConsultation } from '../lib/ai';
-import { runFullAnalysisPipeline } from '../lib/ai-presenter';
+import { runFullAnalysisPipeline, generateRealtimeHint } from '../lib/ai-presenter';
 import { safeInt } from '../lib/middleware';
 import type { Env, Consultation } from '../types';
 
@@ -650,6 +650,105 @@ consultations.get('/unlinked/list', async (c) => {
   } catch (error) {
     console.error('Get unlinked consultations error:', error);
     return c.json({ success: false, error: '미연결 상담 목록을 불러오는데 실패했습니다.' }, 500);
+  }
+});
+
+// POST /api/consultations/:id/upload-audio-chunk - Transcribe a real-time audio chunk (STT only)
+consultations.post('/:id/upload-audio-chunk', async (c) => {
+  try {
+    const consultId = c.req.param('id');
+    const orgId = c.get('organizationId');
+    const db = c.env.DB;
+
+    const formData = await c.req.formData();
+    const audioFile = formData.get('audio') as File;
+    if (!audioFile || audioFile.size < 1000) {
+      return c.json({ success: true, data: { transcript: '' } });
+    }
+
+    const apiKey = c.env.OPENAI_API_KEY;
+    if (!apiKey) {
+      return c.json({ success: true, data: { transcript: '' } });
+    }
+
+    // Quick transcription using gpt-4o-transcribe
+    const { transcribeChunk } = await import('../lib/ai-presenter');
+    const audioData = await audioFile.arrayBuffer();
+    const transcript = await transcribeChunk(audioData, apiKey, 'ko', c.env as any);
+
+    return c.json({ success: true, data: { transcript: transcript || '' } });
+  } catch (error) {
+    console.error('Audio chunk transcription error:', error);
+    return c.json({ success: true, data: { transcript: '' } });
+  }
+});
+
+// POST /api/consultations/:id/realtime-hint - Get real-time coaching hint during recording
+consultations.post('/:id/realtime-hint', async (c) => {
+  try {
+    const consultId = c.req.param('id');
+    const orgId = c.get('organizationId');
+    const db = c.env.DB;
+
+    const { transcript_chunk, chunk_index, context } = await c.req.json();
+
+    if (!transcript_chunk || transcript_chunk.trim().length < 5) {
+      return c.json({ success: true, data: { hint: null } });
+    }
+
+    // Save STT chunk to DB for later analysis
+    const chunkId = 'chunk_' + generateId().slice(0, 8);
+    await db.prepare(`
+      INSERT INTO stt_chunks (id, consultation_id, chunk_index, transcript, created_at)
+      VALUES (?, ?, ?, ?, datetime('now'))
+    `).bind(chunkId, consultId, chunk_index || 0, transcript_chunk).run();
+
+    // Update consultation's transcript in real-time (append)
+    await db.prepare(`
+      UPDATE consultations SET 
+        transcript = COALESCE(transcript, '') || ? || '\n',
+        recording_status = 'recording',
+        updated_at = datetime('now')
+      WHERE id = ? AND organization_id = ?
+    `).bind(transcript_chunk, consultId, orgId).run();
+
+    const apiKey = c.env.OPENAI_API_KEY;
+    if (!apiKey) {
+      return c.json({ success: true, data: { hint: null } });
+    }
+
+    // Generate real-time hint using AI
+    const hint = await generateRealtimeHint(
+      transcript_chunk,
+      {
+        priceDiscussed: context?.priceDiscussed || false,
+        objectionDetected: context?.objectionDetected || undefined,
+        emotionTrend: context?.emotionTrend || 'stable',
+      },
+      apiKey,
+      c.env as any
+    );
+
+    // Save hint to AI hints log if generated
+    if (hint) {
+      const hintId = 'hint_' + generateId().slice(0, 8);
+      await db.prepare(`
+        INSERT INTO ai_hints_log (id, consultation_id, hint_type, hint_message, trigger_text, timestamp_seconds)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `).bind(hintId, consultId, hint.type, hint.message, transcript_chunk.slice(0, 200), context?.elapsed_seconds || 0).run();
+    }
+
+    return c.json({
+      success: true,
+      data: {
+        hint: hint ? { type: hint.type, message: hint.message } : null,
+        chunk_saved: true
+      }
+    });
+  } catch (error) {
+    console.error('Realtime hint error:', error);
+    // Don't fail the recording if hints fail - return null hint
+    return c.json({ success: true, data: { hint: null } });
   }
 });
 

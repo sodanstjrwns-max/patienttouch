@@ -112,7 +112,9 @@ async function loadHomePage() {
     var [sRes, cRes, achRes] = await Promise.all([
       fetch('/api/dashboard/summary'),
       fetch('/api/dashboard/today-contacts'),
-      fetch('/api/dashboard/achievements')
+      fetch('/api/dashboard/achievements'),
+      // Auto-generate daily CRM mission silently in background
+      fetch('/api/tasks/auto-daily', { method: 'POST' }).catch(function(){ return null; })
     ]);
     var sData = await sRes.json();
     var cData = await cRes.json();
@@ -482,11 +484,25 @@ async function saveHomeContact() {
 
     // Also complete the task if it came from a task
     if (taskId && source === 'task') {
-      var taskResult = result === 'appointment_booked' ? 'booked' : result === 'callback_promised' ? 'callback' : result === 'refused' ? 'rejected' : 'hold';
+      // Map modal result to task outcome for auto follow-up
+      var outcomeMap = {
+        'appointment_booked': 'booked',
+        'callback_promised': 'callback',
+        'refused': 'rejected',
+        'no_answer': 'no_answer',
+        'connected': 'hold',
+        'message_sent': 'hold'
+      };
+      var taskOutcome = outcomeMap[result] || 'hold';
       await fetch('/api/tasks/' + taskId + '/complete', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ result: taskResult, result_note: notes })
+        body: JSON.stringify({ 
+          contact_type: hcContactType,
+          contact_result: result,
+          outcome: taskOutcome, 
+          content: notes 
+        })
       });
     }
 
