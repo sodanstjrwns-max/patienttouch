@@ -2,9 +2,7 @@ var currentPeriod = 'weekly';
 
 async function loadDashboard() {
   try {
-    var authRes = await fetch('/api/auth/me');
-    if (!authRes.ok) { window.location.href = '/login'; return; }
-    var userData = await authRes.json();
+    var userData = await requireAuth();
     if (userData.data.role !== 'admin') { showToast('관리자만 접근할 수 있습니다.','error'); window.location.href = '/'; return; }
     await Promise.all([loadSummary(), loadStaffPerformance(), loadCoachingBreakdown(), loadLowScoreConsultations(), loadProposalAnalytics(), loadAdminCharts(), loadGoalGauges(), loadHourlyDistribution(), loadWeeklyComparison()]);
   } catch (err) { console.error('Failed to load dashboard:', err); }

@@ -4,8 +4,7 @@ let allPatients = [];
 
 async function loadConsultation() {
   try {
-    const authRes = await fetch('/api/auth/me');
-    if (!authRes.ok) { window.location.href = '/login'; return; }
+    await requireAuth();
 
     const res = await fetch('/api/consultations/' + consultationId);
     if (res.status === 401) { window.location.href = '/login'; return; }
@@ -481,7 +480,7 @@ function renderPatientList(patients) {
   var colors = ['bg-brand-100 text-brand-700', 'bg-emerald-100 text-emerald-700', 'bg-amber-100 text-amber-700', 'bg-rose-100 text-rose-700', 'bg-sky-100 text-sky-700'];
   container.innerHTML = patients.map(function(p, i) {
     var c = colors[esc(p.name).charCodeAt(0) % colors.length];
-    return '<button class="w-full flex items-center gap-3 p-3 bg-surface-50 hover:bg-surface-100 rounded-xl transition-all text-left active:scale-[0.98]" onclick="linkPatient(\\'' + p.id + '\\')">' +
+    return '<button class="w-full flex items-center gap-3 p-3 bg-surface-50 hover:bg-surface-100 rounded-xl transition-all text-left active:scale-[0.98]" onclick="linkPatient(\'' + p.id + '\')">' +
       '<div class="w-10 h-10 rounded-xl ' + c + ' flex items-center justify-center font-bold text-sm shrink-0">' + esc(p.name).charAt(0) + '</div>' +
       '<div class="min-w-0"><p class="font-semibold text-surface-900 text-sm">' + esc(p.name) + '</p><p class="text-surface-500 text-xs">' + (p.phone || '연락처 없음') + '</p></div>' +
     '</button>';

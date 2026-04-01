@@ -96,10 +96,7 @@ function daysAgoLabel(dateStr) {
 
 async function loadHomePage() {
   try {
-    var authRes = await fetch('/api/auth/me');
-    if (!authRes.ok) { window.location.href = '/login'; return; }
-    var authData = await authRes.json();
-    if (!authData.success) { window.location.href = '/login'; return; }
+    var authData = await requireAuth();
 
     var h = new Date().getHours();
     var gr = h<12 ? '좋은 아침이에요' : h<18 ? '좋은 오후예요' : '좋은 저녁이에요';
@@ -110,17 +107,28 @@ async function loadHomePage() {
       '<h1 class="text-lg font-extrabold text-surface-900 tracking-tight">'+esc(authData.data.organization_name)+'</h1>';
 
     var [sRes, cRes, achRes] = await Promise.all([
-      fetch('/api/dashboard/summary'),
-      fetch('/api/dashboard/today-contacts'),
-      fetch('/api/dashboard/achievements'),
+      fetch('/api/dashboard/summary').then(function(r){ return r.ok ? r.json() : null; }).catch(function(){ return null; }),
+      fetch('/api/dashboard/today-contacts').then(function(r){ return r.ok ? r.json() : null; }).catch(function(){ return null; }),
+      fetch('/api/dashboard/achievements').then(function(r){ return r.ok ? r.json() : null; }).catch(function(){ return null; }),
       // Auto-generate daily CRM mission silently in background
       fetch('/api/tasks/auto-daily', { method: 'POST' }).catch(function(){ return null; })
     ]);
-    var sData = await sRes.json();
-    var cData = await cRes.json();
-    var achData = await achRes.json();
+    var sData = sRes || {};
+    var cData = cRes || {};
+    var achData = achRes || {};
     
-    if (!sData.success) { console.error('Summary failed', sData); return; }
+    if (!sData.success) { 
+      console.warn('Summary unavailable, showing fallback');
+      // Show fallback UI instead of blank page
+      var hero = document.getElementById('heroRevenue');
+      if (hero) hero.textContent = '0';
+      document.getElementById('heroSubStats').innerHTML = '<span class="text-xs text-white/50">데이터 로딩 중 오류</span>';
+      // Still render contacts and other sections
+      renderContacts(cData);
+      showAIInsight(null);
+      renderLevelCard({}).catch(function(e){ console.warn('Level card:', e); });
+      return; 
+    }
     
     var d = sData.data;
     var ws = d.week_stats || {};
@@ -128,8 +136,11 @@ async function loadHomePage() {
     var tm = d.today_mission || {};
     var sa = d.stale_alert || {};
 
-    // === LEVEL PROGRESS CARD (fetch growth data) ===
-    renderLevelCard(ws);
+    // === LEVEL PROGRESS CARD (fetch growth data, non-blocking) ===
+    renderLevelCard(ws).catch(function(e){ console.warn('Level card:', e); });
+
+    // Show AI insight with pre-loaded data (no duplicate API call)
+    showAIInsight(sData);
 
     // === HERO DECIDED ===
     animNum(document.getElementById('heroRevenue'), td.decided, 1200);
@@ -315,6 +326,7 @@ async function loadHomePage() {
     renderContacts(cData);
 
   } catch (err) {
+    if (err === 'auth') return; // already redirecting
     console.error('Dashboard error:', err);
     showErrorState('recentConsultations', '대시보드 데이터를 불러올 수 없습니다', loadHomePage);
     document.getElementById('heroSubStats').innerHTML = '<span class="text-xs text-white/50">데이터를 불러올 수 없습니다</span>';
@@ -840,7 +852,7 @@ document.getElementById('headerLogoutBtn').addEventListener('click', async funct
 });
 
 loadHomePage();
-showAIInsight();
+// showAIInsight is called from within loadHomePage with pre-loaded data
 
 // === LEVEL CARD RENDERER ===
 async function renderLevelCard(ws) {
@@ -913,10 +925,9 @@ async function renderLevelCard(ws) {
 // Pull-to-Refresh
 initPullToRefresh(function(){ loadHomePage(); });
 
-// AI Daily Insight - 실제 데이터 기반 코칭 팁 생성
-async function showAIInsight() {
+// AI Daily Insight - 실제 데이터 기반 코칭 팁 생성 (사전 로딩된 데이터 활용)
+async function showAIInsight(preloadedSummary) {
   try {
-    // 기본 인사이트 먼저 표시
     var staticInsights = [
       '💡 오늘의 팁: 상담 시작 후 첫 2분 안에 환자 이름을 3번 이상 부르면 라포 형성이 40% 향상됩니다.',
       '📊 페이션트 퍼널 데이터에 따르면, SPIN 질문 중 Implication(암시) 질문을 추가하면 결정률이 평균 23% 상승합니다.',
@@ -930,16 +941,17 @@ async function showAIInsight() {
     var today = new Date().getDay();
     var insight = staticInsights[today % staticInsights.length];
     
-    // 대시보드 데이터로 맞춤 인사이트 생성
-    var sRes = await fetch('/api/dashboard/summary');
-    var sData = await sRes.json();
-    if (sData.success) {
+    // 사전 로딩된 데이터 사용 → 중복 /api/dashboard/summary 호출 제거
+    var sData = preloadedSummary;
+    if (!sData) {
+      try { var r = await fetch('/api/dashboard/summary'); sData = await r.json(); } catch(e) { sData = null; }
+    }
+    if (sData && sData.success) {
       var d = sData.data;
       var ws = d.week_stats || {};
       var td = d.today || {};
       var sa = d.stale_alert || {};
       
-      // 데이터 기반 맞춤 코칭
       var dataInsights = [];
       
       if (ws.conversion_rate && ws.prev_conversion_rate) {
@@ -965,7 +977,6 @@ async function showAIInsight() {
     document.getElementById('aiInsightText').textContent = insight;
     document.getElementById('aiInsightCard').classList.remove('hidden');
   } catch(e) {
-    // fallback to static insights
     var fallback = [
       '💡 오늘의 팁: 상담 시작 후 첫 2분 안에 환자 이름을 3번 이상 부르면 라포 형성이 40% 향상됩니다.',
       '🎯 미결정 환자에게 48시간 이내 첫 연락을 하면 전환율이 2.3배 높아집니다.'

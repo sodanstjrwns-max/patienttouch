@@ -1,8 +1,6 @@
 async function loadSettings() {
   try {
-    var res = await fetch('/api/auth/me');
-    if (!res.ok) { window.location.href = '/login'; return; }
-    var data = await res.json();
+    var data = await requireAuth();
     if (data.success) {
       var user = data.data;
       var settings = user.settings || {};
@@ -128,7 +126,7 @@ async function checkDuplicates() {
       html += '<div class="flex items-center justify-between mb-2">';
       html += '<div class="flex items-center gap-2"><i class="fas fa-phone text-amber-500 text-xs"></i><span class="text-sm font-bold text-surface-900">'+(d.phone||'번호없음')+'</span>';
       html += '<span class="text-[10px] font-bold bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full">'+d.count+'명</span></div>';
-      html += '<button onclick="mergeDuplicates(\\'' + d.patient_ids[0] + '\\', ' + JSON.stringify(d.patient_ids.slice(1)) + ')" class="text-[10px] font-semibold text-brand-600 bg-brand-50 px-2 py-1 rounded-lg hover:bg-brand-100 transition-all"><i class="fas fa-merge mr-1"></i>병합</button>';
+      html += '<button onclick="mergeDuplicates(\'' + d.patient_ids[0] + '\', ' + JSON.stringify(d.patient_ids.slice(1)) + ')" class="text-[10px] font-semibold text-brand-600 bg-brand-50 px-2 py-1 rounded-lg hover:bg-brand-100 transition-all"><i class="fas fa-merge mr-1"></i>병합</button>';
       html += '</div>';
       html += '<div class="flex flex-wrap gap-1">';
       d.patient_names.forEach(function(n,i) {

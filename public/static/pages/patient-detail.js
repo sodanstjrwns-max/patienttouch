@@ -188,8 +188,7 @@ async function loadTimeline() {
 
 async function loadPatient() {
   try {
-    var authRes = await fetch('/api/auth/me');
-    if (!authRes.ok) { window.location.href = '/login'; return; }
+    await requireAuth();
 
     var res = await fetch('/api/patients/' + patientId);
     if (res.status === 401) { window.location.href = '/login'; return; }
@@ -503,7 +502,7 @@ function renderRetention(d) {
       html += '<div class="card-premium p-4 bg-gradient-to-br from-brand-50/50 to-purple-50/30 border border-brand-100/50">' +
         '<div class="flex items-center gap-2 mb-2"><i class="fas fa-sparkles text-brand-500 text-sm"></i><span class="font-bold text-xs text-brand-700">AI 추천 멘트</span></div>' +
         '<p class="text-sm text-surface-700 leading-relaxed">' + rs.recommended_contact_script + '</p>' +
-        '<button onclick="openRetContactModal(\\'\\')" class="mt-3 inline-flex items-center gap-2 px-4 py-2 bg-brand-600 text-white rounded-xl text-xs font-semibold hover:bg-brand-700 transition-all active:scale-95"><i class="fas fa-phone"></i>연락 기록하기</button>' +
+        '<button onclick="openRetContactModal(\'\')" class="mt-3 inline-flex items-center gap-2 px-4 py-2 bg-brand-600 text-white rounded-xl text-xs font-semibold hover:bg-brand-700 transition-all active:scale-95"><i class="fas fa-phone"></i>연락 기록하기</button>' +
       '</div>';
     }
   }

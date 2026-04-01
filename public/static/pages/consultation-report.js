@@ -4,14 +4,17 @@ let proposalData = null;
 
 async function loadReport() {
   try {
-    const authRes = await fetch('/api/auth/me');
-    if (!authRes.ok) { window.location.href = '/login'; return; }
+    await requireAuth();
     const reportRes = await fetch('/api/reports/' + consultationId);
     if (reportRes.status === 401) { window.location.href = '/login'; return; }
     const reportJson = await reportRes.json();
     if (reportJson.success) { reportData = reportJson.data; renderReport(reportData); }
     else { showGeneratePrompt(); }
-  } catch (err) { console.error('Failed to load report:', err); showError(); }
+  } catch (err) {
+    if (err === 'auth') return;
+    console.error('Failed to load report:', err);
+    showError();
+  }
 }
 
 function showGeneratePrompt() {

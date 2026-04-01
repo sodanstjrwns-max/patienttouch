@@ -39,8 +39,7 @@ function applyFilter(filter) {
 
 async function loadDashboard() {
   try {
-    var authRes = await fetch('/api/auth/me');
-    if (!authRes.ok) { window.location.href = '/login'; return; }
+    await requireAuth();
 
     var url = '/api/retention/dashboard';
     if (currentFilter !== 'all') url += '?filter=' + currentFilter;
@@ -109,9 +108,9 @@ function renderDashboard(d) {
         html += '<a href="tel:' + _ph + '" class="flex-1 flex items-center justify-center gap-1.5 py-2 bg-brand-600 text-white rounded-lg text-xs font-semibold hover:bg-brand-700 transition-all active:scale-95"><i class="fas fa-phone text-[10px]"></i>전화</a>';
         html += '<a href="sms:' + _ph + '" class="flex-1 flex items-center justify-center gap-1.5 py-2 bg-surface-800 text-white rounded-lg text-xs font-semibold hover:bg-surface-900 transition-all active:scale-95"><i class="fas fa-comment text-[10px]"></i>문자</a>';
       }
-      html += '<button onclick="openContactModal(\\'' + c.patient_id + '\\', \\'' + (treatments.length > 0 ? treatments[0].id : '') + '\\')" class="flex-1 flex items-center justify-center gap-1.5 py-2 bg-emerald-600 text-white rounded-lg text-xs font-semibold hover:bg-emerald-700 transition-all active:scale-95"><i class="fas fa-check text-[10px]"></i>기록</button>';
+      html += '<button onclick="openContactModal(\'' + c.patient_id + '\', \'' + (treatments.length > 0 ? treatments[0].id : '') + '\')" class="flex-1 flex items-center justify-center gap-1.5 py-2 bg-emerald-600 text-white rounded-lg text-xs font-semibold hover:bg-emerald-700 transition-all active:scale-95"><i class="fas fa-check text-[10px]"></i>기록</button>';
       // KakaoTalk template button
-      html += '<button onclick="showKakaoTemplate(\\'' + esc(c.patient_name) + '\\', \\'' + (c.recommended_contact_script || '').replace(/'/g, "\\\\'") + '\\', \\'' + (c.patient_phone || '') + '\\')" class="w-10 flex items-center justify-center py-2 bg-yellow-400 text-yellow-900 rounded-lg text-xs font-bold hover:bg-yellow-500 transition-all active:scale-95" title="카카오톡 문구"><i class="fas fa-comment-dots text-[10px]"></i></button>';
+      html += '<button onclick="showKakaoTemplate(\'' + esc(c.patient_name) + '\', \'' + (c.recommended_contact_script || '').replace(/'/g, "\\'") + '\', \'' + (c.patient_phone || '') + '\')" class="w-10 flex items-center justify-center py-2 bg-yellow-400 text-yellow-900 rounded-lg text-xs font-bold hover:bg-yellow-500 transition-all active:scale-95" title="카카오톡 문구"><i class="fas fa-comment-dots text-[10px]"></i></button>';
       html += '</div></div>';
     });
     html += '</div>';
@@ -476,9 +475,9 @@ function showKakaoTemplate(patientName, script, phone) {
   ];
 
   window._kakaoTemplates = templates;
-  var html = '<div class="fixed inset-0 bg-surface-900/60 backdrop-blur-sm z-[60] flex items-end sm:items-center justify-center" id="kakaoModal" onclick="if(event.target.id===\\'kakaoModal\\')this.remove()">';
+  var html = '<div class="fixed inset-0 bg-surface-900/60 backdrop-blur-sm z-[60] flex items-end sm:items-center justify-center" id="kakaoModal" onclick="if(event.target.id===\'kakaoModal\')this.remove()">';
   html += '<div class="bg-white rounded-t-3xl sm:rounded-3xl w-full sm:max-w-lg p-6 animate-slide-up max-h-[85vh] overflow-y-auto">';
-  html += '<div class="flex justify-between items-center mb-5"><h3 class="text-lg font-bold">💬 카카오톡 문구</h3><button onclick="document.getElementById(\\'kakaoModal\\').remove()" class="w-9 h-9 rounded-xl bg-surface-100 flex items-center justify-center text-surface-500"><i class="fas fa-xmark"></i></button></div>';
+  html += '<div class="flex justify-between items-center mb-5"><h3 class="text-lg font-bold">💬 카카오톡 문구</h3><button onclick="document.getElementById(\'kakaoModal\').remove()" class="w-9 h-9 rounded-xl bg-surface-100 flex items-center justify-center text-surface-500"><i class="fas fa-xmark"></i></button></div>';
   html += '<p class="text-xs text-surface-500 mb-4">템플릿을 선택하면 클립보드에 복사됩니다.</p>';
   html += '<div class="space-y-3">';
   templates.forEach(function(t, i) {

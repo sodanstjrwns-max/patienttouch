@@ -587,22 +587,54 @@ export const renderer = jsxRenderer(({ children, title }) => {
               el.innerHTML = '<div class="text-center py-16 px-6 animate-fade-in"><div class="w-20 h-20 mx-auto mb-5 rounded-2xl bg-surface-100 flex items-center justify-center"><i class="'+icon+' text-3xl text-surface-300"></i></div><h3 class="text-base font-bold text-surface-800 mb-1">'+title+'</h3>' + (desc ? '<p class="text-surface-500 text-sm mb-5 max-w-xs mx-auto leading-relaxed">'+desc+'</p>' : '') + (action || '') + '</div>';
             }
 
-            // === 4d. Safe Fetch with error handling ===
-            function safeFetch(url, options) {
+            // === 4d. Safe Fetch with error handling + retry ===
+            function safeFetch(url, options, retryCount) {
+              retryCount = retryCount || 0;
+              var maxRetries = (options && options._maxRetries) || 1;
               return fetch(url, options)
                 .then(function(res) {
                   if (!res.ok) {
                     if (res.status === 401) { window.location.href = '/login'; return Promise.reject('auth'); }
-                    if (res.status === 429) { showToast('\uc694\uccad\uc774 \ub108\ubb34 \ub9ce\uc2b5\ub2c8\ub2e4. \uc7a0\uc2dc \ud6c4 \ub2e4\uc2dc \uc2dc\ub3c4\ud574\uc8fc\uc138\uc694.', 'warning'); return Promise.reject('rate_limited'); }
-                    return res.json().then(function(d){ return Promise.reject(d.error || '\uc624\ub958\uac00 \ubc1c\uc0dd\ud588\uc2b5\ub2c8\ub2e4'); });
+                    if (res.status === 429) { showToast('요청이 너무 많습니다. 잠시 후 다시 시도해주세요.', 'warning'); return Promise.reject('rate_limited'); }
+                    if (res.status >= 500 && retryCount < maxRetries) {
+                      return new Promise(function(resolve){ setTimeout(resolve, 1000 * (retryCount + 1)); })
+                        .then(function(){ return safeFetch(url, options, retryCount + 1); });
+                    }
+                    return res.json().catch(function(){ return {}; }).then(function(d){ return Promise.reject(d.error || '오류가 발생했습니다 ('+res.status+')'); });
                   }
                   return res.json();
                 })
                 .catch(function(err) {
                   if (err === 'auth' || err === 'rate_limited') return Promise.reject(err);
-                  if (err instanceof TypeError) return Promise.reject('\ub124\ud2b8\uc6cc\ud06c \uc5f0\uacb0\uc744 \ud655\uc778\ud574\uc8fc\uc138\uc694');
+                  if (err instanceof TypeError && retryCount < maxRetries) {
+                    return new Promise(function(resolve){ setTimeout(resolve, 1500); })
+                      .then(function(){ return safeFetch(url, options, retryCount + 1); });
+                  }
+                  if (err instanceof TypeError) return Promise.reject('네트워크 연결을 확인해주세요');
                   return Promise.reject(err);
                 });
+            }
+
+            // === 4d-2. Common auth check ===
+            function requireAuth() {
+              return fetch('/api/auth/me')
+                .then(function(res) {
+                  if (!res.ok) { window.location.href = '/login'; return Promise.reject('auth'); }
+                  return res.json();
+                })
+                .then(function(data) {
+                  if (!data.success) { window.location.href = '/login'; return Promise.reject('auth'); }
+                  return data;
+                });
+            }
+
+            // === 4d-3. Parallel fetch with graceful degradation ===
+            function fetchAll(urls) {
+              return Promise.all(urls.map(function(url) {
+                return fetch(url)
+                  .then(function(r) { return r.ok ? r.json() : null; })
+                  .catch(function() { return null; });
+              }));
             }
 
             // === 4e. Phone masking utility ===

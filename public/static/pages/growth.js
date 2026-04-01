@@ -4,27 +4,23 @@
 
 async function loadGrowthData() {
   try {
-    // Auth check
-    var authRes = await fetch('/api/auth/me');
-    var authData = await authRes.json();
-    if (!authData.success) { window.location.href = '/login'; return; }
+    // Auth check using common utility
+    await requireAuth();
 
-    // Fetch growth data
-    var [sessionsRes, trendRes] = await Promise.all([
-      fetch('/api/dashboard/growth-sessions?limit=30'),
-      fetch('/api/dashboard/coaching-trend?weeks=12')
+    // Fetch growth data with graceful degradation
+    var [sessionsData, trendData] = await Promise.all([
+      fetch('/api/dashboard/growth-sessions?limit=30').then(function(r){ return r.ok ? r.json() : null; }).catch(function(){ return null; }),
+      fetch('/api/dashboard/coaching-trend?weeks=12').then(function(r){ return r.ok ? r.json() : null; }).catch(function(){ return null; })
     ]);
-    var sessionsData = await sessionsRes.json();
-    var trendData = await trendRes.json();
 
-    if (!sessionsData.success) {
+    if (!sessionsData || !sessionsData.success) {
       showEmpty('성장 데이터를 불러올 수 없습니다.');
       return;
     }
 
     document.getElementById('growthLoading').classList.add('hidden');
     var d = sessionsData.data;
-    var t = trendData.success ? trendData.data : null;
+    var t = (trendData && trendData.success) ? trendData.data : null;
 
     if (!d.sessions || d.sessions.length === 0) {
       showEmpty('아직 분석된 상담이 없습니다. 상담을 녹음하면 성장 데이터가 쌓입니다!');
@@ -33,6 +29,7 @@ async function loadGrowthData() {
 
     renderGrowthPage(d, t);
   } catch(e) {
+    if (e === 'auth') return;
     console.error('Growth load error:', e);
     showEmpty('데이터 로드에 실패했습니다.');
   }
@@ -45,6 +42,7 @@ function showEmpty(msg) {
       '<div class="w-16 h-16 rounded-2xl bg-surface-100 flex items-center justify-center"><i class="fas fa-seedling text-2xl text-surface-300"></i></div>' +
       '<p class="text-sm text-surface-500 text-center px-4">' + msg + '</p>' +
       '<a href="/recording" class="mt-2 px-4 py-2 rounded-xl bg-brand-500 text-white text-sm font-semibold">상담 녹음 시작</a>' +
+      '<button onclick="loadGrowthData()" class="text-xs text-surface-400 hover:text-brand-600 mt-1"><i class="fas fa-rotate mr-1"></i>다시 시도</button>' +
     '</div>';
 }
 
@@ -384,6 +382,6 @@ function renderAreaRadarChart(areaTrend) {
   });
 }
 
-function esc(s) { if (!s) return ''; var d = document.createElement('div'); d.textContent = String(s); return d.innerHTML; }
+// esc() is defined globally in renderer.tsx (escapeHtml)
 
 loadGrowthData();

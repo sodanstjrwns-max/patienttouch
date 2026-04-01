@@ -13,7 +13,7 @@ var LEVELS = [
 ];
 
 function getLevel(score) {
-  score = Math.max(0, Math.min(100, score || 0));
+  score = Math.max(0, Math.min(100, Number(score) || 0));
   for (var i = LEVELS.length - 1; i >= 0; i--) {
     if (score >= LEVELS[i].min) return LEVELS[i];
   }
@@ -90,7 +90,9 @@ function levelNudge(score, totalSessions) {
 
 // Level-up celebration check
 function checkLevelUp(prevScore, currentScore) {
-  if (!prevScore || !currentScore) return null;
+  if (prevScore === null || prevScore === undefined || currentScore === null || currentScore === undefined) return null;
+  prevScore = Number(prevScore) || 0;
+  currentScore = Number(currentScore) || 0;
   var prevLv = getLevel(prevScore);
   var curLv = getLevel(currentScore);
   if (curLv.level > prevLv.level) {

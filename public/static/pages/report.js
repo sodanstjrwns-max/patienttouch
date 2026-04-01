@@ -132,8 +132,7 @@ async function loadSmartSchedule() {
 async function loadReport(period) {
   period = period || 'week';
   try {
-    var authRes = await fetch('/api/auth/me');
-    if (!authRes.ok) { window.location.href = '/login'; return; }
+    await requireAuth();
     var res = await fetch('/api/dashboard/kpi?period=' + period);
     var data = await res.json();
     if (data.success) renderKPI(data.data);
