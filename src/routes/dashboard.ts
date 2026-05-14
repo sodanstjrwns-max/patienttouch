@@ -484,14 +484,15 @@ dashboard.get('/admin-summary', async (c) => {
         avg_coaching_score: (currentStats?.avg_coaching_score as number) || 0,
         proposal_view_rate: proposalViewRate,
         contact_rate: contactRate,
-        // Trends (percentage change)
+        // Trends (percentage change) — show delta whenever either side has data
         consultation_trend: prevTotalConsults > 0 
-          ? ((totalConsults - prevTotalConsults) / prevTotalConsults) * 100 : 0,
-        conversion_trend: prevConversionRate > 0 
+          ? ((totalConsults - prevTotalConsults) / prevTotalConsults) * 100 
+          : (totalConsults > 0 ? 100 : 0),
+        conversion_trend: (prevConversionRate > 0 || conversionRate > 0)
           ? conversionRate - prevConversionRate : 0,
-        coaching_trend: (prevStats?.avg_coaching_score as number) > 0 
+        coaching_trend: (((prevStats?.avg_coaching_score as number) || 0) > 0 || ((currentStats?.avg_coaching_score as number) || 0) > 0)
           ? ((currentStats?.avg_coaching_score as number) || 0) - ((prevStats?.avg_coaching_score as number) || 0) : 0,
-        proposal_trend: prevProposalViewRate > 0 
+        proposal_trend: (prevProposalViewRate > 0 || proposalViewRate > 0)
           ? proposalViewRate - prevProposalViewRate : 0
       }
     });
@@ -1485,6 +1486,23 @@ dashboard.get('/achievements', async (c) => {
   }
 });
 
+// Helper: properly escape a single CSV field per RFC 4180
+function csvField(v: any): string {
+  if (v === null || v === undefined) return '';
+  const s = String(v);
+  // Quote when field contains comma, double-quote, newline, or carriage return
+  if (/[",\r\n]/.test(s)) {
+    return '"' + s.replace(/"/g, '""') + '"';
+  }
+  return s;
+}
+
+function csvRow(cells: any[]): string {
+  return cells.map(csvField).join(',') + '\r\n';
+}
+
+const CSV_BOM = '\uFEFF'; // UTF-8 BOM for Excel Korean support
+
 dashboard.get('/export', async (c) => {
   try {
     const orgId = c.get('organizationId');
@@ -1506,11 +1524,19 @@ dashboard.get('/export', async (c) => {
         ORDER BY c.consultation_date DESC
       `).bind(orgId, days).all();
 
-      // BOM for Excel Korean support
-      let csv = '\\uFEFF날짜,환자명,치료항목,금액,상태,결정도,상담점수,상담사\\n';
       const statusMap: Record<string,string> = {paid:'결제완료',undecided:'미결정',lost:'이탈',pending:'대기중'};
+      let csv = CSV_BOM + csvRow(['날짜','환자명','치료항목','금액','상태','결정도','상담점수','상담사']);
       for (const r of result.results) {
-        csv += `${r.consultation_date},${r.patient_name||''},${r.treatment_type||''},${r.amount||0},${statusMap[r.status as string]||r.status},${r.decision_score||0},${r.consult_score||0},${r.consultant_name}\\n`;
+        csv += csvRow([
+          r.consultation_date,
+          r.patient_name || '',
+          r.treatment_type || '',
+          r.amount || 0,
+          statusMap[r.status as string] || r.status,
+          r.decision_score || 0,
+          r.consult_score || 0,
+          r.consultant_name || ''
+        ]);
       }
 
       return new Response(csv, {
@@ -1531,9 +1557,20 @@ dashboard.get('/export', async (c) => {
         ORDER BY p.created_at DESC
       `).bind(orgId).all();
 
-      let csv = '\\uFEFF이름,전화,나이,성별,내원경로,지역,태그,등록일,상담횟수,결제금액\\n';
+      let csv = CSV_BOM + csvRow(['이름','전화','나이','성별','내원경로','지역','태그','등록일','상담횟수','결제금액']);
       for (const r of result.results) {
-        csv += `${r.name},${maskPhone(r.phone as string)},${r.age||''},${r.gender==='male'?'남':'여'},${r.referral_source||''},${r.region||''},${r.tags||''},${(r.created_at as string||'').split('T')[0]},${r.consult_count||0},${r.total_paid||0}\\n`;
+        csv += csvRow([
+          r.name,
+          maskPhone(r.phone as string),
+          r.age || '',
+          r.gender === 'male' ? '남' : (r.gender === 'female' ? '여' : ''),
+          r.referral_source || '',
+          r.region || '',
+          r.tags || '',
+          (r.created_at as string || '').split('T')[0],
+          r.consult_count || 0,
+          r.total_paid || 0
+        ]);
       }
 
       return new Response(csv, {
@@ -1554,9 +1591,17 @@ dashboard.get('/export', async (c) => {
       `).bind(orgId).all();
 
       const sMap: Record<string,string> = {in_treatment:'치료중',unscheduled_urgent:'긴급미예약',unscheduled_warning:'주의미예약',recall_6m:'6개월리콜',recall_12m:'12개월리콜',at_risk:'이탈위험',consulted_unconverted:'상담미전환',active:'활성',completed:'완료'};
-      let csv = '\\uFEFF환자명,전화,상태,위험도,미내원일수,잔여치료비,우선도\\n';
+      let csv = CSV_BOM + csvRow(['환자명','전화','상태','위험도','미내원일수','잔여치료비','우선도']);
       for (const r of result.results) {
-        csv += `${r.patient_name},${maskPhone(r.phone as string)},${sMap[r.status as string]||r.status},${r.risk_score},${r.days_since_visit},${r.remaining_treatment_value},${r.priority_score}\\n`;
+        csv += csvRow([
+          r.patient_name,
+          maskPhone(r.phone as string),
+          sMap[r.status as string] || r.status,
+          r.risk_score,
+          r.days_since_visit,
+          r.remaining_treatment_value,
+          r.priority_score
+        ]);
       }
 
       return new Response(csv, {

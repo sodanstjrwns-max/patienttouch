@@ -602,4 +602,186 @@ patients.get('/duplicates/check-phone', async (c) => {
   }
 });
 
+// ============================================
+// v7.3: Patient Referral Network
+// ============================================
+
+// GET /api/patients/network/graph - 전체 소개 네트워크 그래프 데이터
+patients.get('/network/graph', async (c) => {
+  try {
+    const orgId = c.get('organizationId');
+    const db = c.env.DB;
+
+    const result = await db.prepare(`
+      SELECT
+        p.id, p.name, p.referral_source, p.referrer_patient_id, p.referred_at,
+        p.created_at, p.tags,
+        (SELECT COUNT(*) FROM patients child WHERE child.referrer_patient_id = p.id) as direct_referrals,
+        (SELECT COUNT(*) FROM consultations c WHERE c.patient_id = p.id) as consultation_count,
+        (SELECT COALESCE(SUM(CASE WHEN c.status='paid' THEN c.amount ELSE 0 END), 0) FROM consultations c WHERE c.patient_id = p.id) as paid_amount,
+        (SELECT COALESCE(SUM(c.amount), 0) FROM consultations c WHERE c.patient_id = p.id) as total_amount
+      FROM patients p
+      WHERE p.organization_id = ? AND p.status = 'active'
+      ORDER BY p.created_at ASC
+    `).bind(orgId).all();
+
+    const rows = result.results as any[];
+
+    // Build child map for BFS
+    const childMap = new Map<string, string[]>();
+    for (const r of rows) {
+      if (r.referrer_patient_id) {
+        const list = childMap.get(r.referrer_patient_id) || [];
+        list.push(r.id);
+        childMap.set(r.referrer_patient_id, list);
+      }
+    }
+
+    function totalDownstream(rootId: string): { count: number; revenue: number } {
+      let count = 0, revenue = 0;
+      const queue = [...(childMap.get(rootId) || [])];
+      const seen = new Set<string>();
+      while (queue.length) {
+        const id = queue.shift()!;
+        if (seen.has(id)) continue;
+        seen.add(id);
+        const node = rows.find(r => r.id === id);
+        if (!node) continue;
+        count++;
+        revenue += node.paid_amount || 0;
+        for (const k of (childMap.get(id) || [])) queue.push(k);
+      }
+      return { count, revenue };
+    }
+
+    const nodes = rows.map(r => {
+      const down = totalDownstream(r.id);
+      let depth = 0, cur = r;
+      const guard = new Set<string>([r.id]);
+      while (cur.referrer_patient_id) {
+        depth++;
+        const parent = rows.find(rr => rr.id === cur.referrer_patient_id);
+        if (!parent || guard.has(parent.id) || depth > 20) break;
+        guard.add(parent.id);
+        cur = parent;
+      }
+      const isVip = (r.paid_amount || 0) >= 5000000 || down.count >= 3;
+      return {
+        id: r.id,
+        name: r.name,
+        referral_source: r.referral_source || '미지정',
+        referrer_patient_id: r.referrer_patient_id,
+        referred_at: r.referred_at,
+        depth,
+        direct_referrals: r.direct_referrals || 0,
+        downstream_count: down.count,
+        downstream_revenue: down.revenue,
+        consultation_count: r.consultation_count || 0,
+        paid_amount: r.paid_amount || 0,
+        total_amount: r.total_amount || 0,
+        is_vip: isVip,
+        is_root: !r.referrer_patient_id,
+      };
+    });
+
+    const edges = rows
+      .filter(r => r.referrer_patient_id)
+      .map(r => ({
+        source: r.referrer_patient_id,
+        target: r.id,
+        referred_at: r.referred_at,
+      }));
+
+    const sourceBreakdown: Record<string, { count: number; revenue: number; with_referrals: number }> = {};
+    for (const n of nodes) {
+      const src = n.referral_source;
+      if (!sourceBreakdown[src]) sourceBreakdown[src] = { count: 0, revenue: 0, with_referrals: 0 };
+      sourceBreakdown[src].count++;
+      sourceBreakdown[src].revenue += n.paid_amount;
+      if (n.direct_referrals > 0) sourceBreakdown[src].with_referrals++;
+    }
+
+    const topInfluencers = [...nodes]
+      .filter(n => n.downstream_count > 0)
+      .sort((a, b) => b.downstream_count - a.downstream_count)
+      .slice(0, 5);
+
+    const totalReferrals = edges.length;
+    const totalPatients = nodes.length;
+    const kFactor = totalPatients > 0 ? Math.round((totalReferrals / totalPatients) * 100) / 100 : 0;
+
+    return c.json({
+      success: true,
+      data: {
+        nodes,
+        edges,
+        stats: {
+          total_patients: totalPatients,
+          total_referrals: totalReferrals,
+          root_patients: nodes.filter(n => n.is_root).length,
+          referred_patients: nodes.filter(n => !n.is_root).length,
+          k_factor: kFactor,
+          max_depth: Math.max(0, ...nodes.map(n => n.depth)),
+        },
+        source_breakdown: sourceBreakdown,
+        top_influencers: topInfluencers,
+      }
+    });
+  } catch (error) {
+    console.error('Referral network error:', error);
+    return c.json({ success: false, error: '소개 네트워크 데이터를 불러오는데 실패했습니다.' }, 500);
+  }
+});
+
+// PUT /api/patients/:id/referrer - 특정 환자의 소개자 설정 (cycle-safe)
+patients.put('/:id/referrer', async (c) => {
+  try {
+    const patientId = c.req.param('id');
+    const orgId = c.get('organizationId');
+    const db = c.env.DB;
+    const { referrer_patient_id, referred_at } = await c.req.json();
+
+    const target = await db.prepare('SELECT id FROM patients WHERE id=? AND organization_id=?')
+      .bind(patientId, orgId).first();
+    if (!target) return c.json({ success: false, error: '환자를 찾을 수 없습니다.' }, 404);
+
+    if (referrer_patient_id) {
+      if (referrer_patient_id === patientId) {
+        return c.json({ success: false, error: '자기 자신을 소개자로 지정할 수 없습니다.' }, 400);
+      }
+      const referrer: any = await db.prepare('SELECT id, referrer_patient_id FROM patients WHERE id=? AND organization_id=?')
+        .bind(referrer_patient_id, orgId).first();
+      if (!referrer) return c.json({ success: false, error: '소개자 환자를 찾을 수 없습니다.' }, 404);
+
+      // Cycle detection: walk up chain from referrer; if we encounter patientId, abort
+      let cur: any = referrer;
+      const seen = new Set<string>([patientId]);
+      let hops = 0;
+      while (cur && cur.referrer_patient_id && hops < 50) {
+        if (seen.has(cur.referrer_patient_id)) {
+          return c.json({ success: false, error: '순환 소개 관계가 됩니다.' }, 400);
+        }
+        seen.add(cur.referrer_patient_id);
+        cur = await db.prepare('SELECT id, referrer_patient_id FROM patients WHERE id=?')
+          .bind(cur.referrer_patient_id).first();
+        hops++;
+      }
+    }
+
+    await db.prepare(`
+      UPDATE patients SET
+        referrer_patient_id = ?,
+        referred_at = COALESCE(?, referred_at, datetime('now')),
+        referral_source = CASE WHEN ? IS NOT NULL THEN '지인소개' ELSE referral_source END,
+        updated_at = datetime('now')
+      WHERE id = ? AND organization_id = ?
+    `).bind(referrer_patient_id || null, referred_at || null, referrer_patient_id || null, patientId, orgId).run();
+
+    return c.json({ success: true });
+  } catch (error) {
+    console.error('Set referrer error:', error);
+    return c.json({ success: false, error: '소개자 설정에 실패했습니다.' }, 500);
+  }
+});
+
 export default patients;

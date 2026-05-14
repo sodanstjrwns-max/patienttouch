@@ -24,8 +24,16 @@ export async function verifyPassword(password: string, hash: string): Promise<bo
 // Secret is injected from environment (c.env.JWT_SECRET) — never hardcoded
 const FALLBACK_SECRET = 'patient-touch-dev-only-change-in-production';
 
+// Resolve JWT secret: prefer env-injected value; warn loudly if falling back.
+// Production deploy MUST inject JWT_SECRET via `wrangler pages secret put`.
+function resolveSecret(secret?: string): string {
+  if (secret && secret.length >= 16) return secret;
+  console.warn('[SECURITY] JWT secret missing or too short — using DEV fallback. MUST NOT happen in production.');
+  return FALLBACK_SECRET;
+}
+
 export async function createJWT(payload: Record<string, unknown>, secret?: string): Promise<string> {
-  const jwtSecret = secret || FALLBACK_SECRET;
+  const jwtSecret = resolveSecret(secret);
   const header = { alg: 'HS256', typ: 'JWT' };
   
   const encodedHeader = btoa(JSON.stringify(header)).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
@@ -54,7 +62,7 @@ export async function createJWT(payload: Record<string, unknown>, secret?: strin
 
 export async function verifyJWT(token: string, secret?: string): Promise<Record<string, unknown> | null> {
   try {
-    const jwtSecret = secret || FALLBACK_SECRET;
+    const jwtSecret = resolveSecret(secret);
     const parts = token.split('.');
     if (parts.length !== 3) return null;
     

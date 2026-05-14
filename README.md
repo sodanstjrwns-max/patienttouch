@@ -1,15 +1,47 @@
-# 페이션트 터치 (Patient Touch v5.1)
+# 페이션트 터치 (Patient Touch v7.3)
 
 > **"상담 종료 시 완성된 레포트가 기다리는 원스톱 프로세스"**
 > **"찾는 건 기계가, 연락은 사람이"**
+> **"한 명의 팬이 다섯 명을 데려온다 — 그 흐름을 그래프로 본다"**
 
-AI 기반 의료기관 상담 CRM + 실시간 STT + 환자용 치료 제안서 통합 서비스
+AI 기반 의료기관 상담 CRM + 실시간 STT + 환자용 치료 제안서 + **환자 소개 네트워크 시각화** 통합 서비스
 
 ## 현재 상태
 
-- **버전**: 5.1.0 (Deep Enhancement Phase 2)
-- **기술 스택**: Hono + TypeScript + Cloudflare Pages + D1 Database + R2 Storage + OpenAI
-- **디자인 시스템**: 글래스모피즘 + Indigo 브랜드 컬러 + 프리미엄 애니메이션 + Chart.js 시각화
+- **버전**: 7.3.0 (Referral Network + Hardening)
+- **프로덕션 URL**: https://patienttouch.pages.dev
+- **기술 스택**: Hono + TypeScript + Cloudflare Pages + D1 Database + R2 Storage + OpenAI + D3.js
+- **디자인 시스템**: 글래스모피즘 + Indigo 브랜드 컬러 + 프리미엄 애니메이션 + Chart.js + D3 force-directed graph
+
+## v7.3 신규 기능 (최신)
+
+### 1. 환자 소개 네트워크 시각화 (`/network`)
+- **D3 force-directed graph**: 환자 간 소개 관계를 노드/엣지로 시각화
+- **K-factor 자동 계산**: 1명당 평균 소개 환자 수 (Patient Funnel 핵심 지표)
+- **다운스트림 BFS 카운팅**: 한 환자가 직·간접적으로 데려온 전체 환자 수
+- **Top Influencers 사이드바**: 가장 많이 소개한 환자 TOP 10 + 매출 기여도
+- **소개 경로별 색상 코딩**: 지인소개(에메랄드) / 네이버광고(앰버) / 인스타(핑크) 등
+- **VIP 크라운 배지**: VIP 등급 환자 시각적 강조
+- **노드 반경 = 다운스트림 환자 수**: 영향력이 큰 환자가 한눈에 보임
+- **사이클 방지**: 부모 체인을 최대 50홉까지 추적해 순환 참조 차단
+
+### 2. v7.3 버그 수정 (코드 리뷰 기반)
+- **JWT 시크릿 fallback 보안 경고**: `resolveSecret()` 헬퍼로 16자 미만 시크릿 사용 시 콘솔 경고
+- **CSV export double-escape 버그**: 리터럴 `\uFEFF`/`\n` 문자열 → 진짜 BOM/CRLF로 교체
+- **CSV 필드 RFC 4180 이스케이프**: 환자 이름에 콤마/따옴표가 들어가도 행이 깨지지 않도록 quoting
+- **admin-summary 트렌드 로직**: `prev=0`일 때 트렌드가 숨겨지던 문제 → OR 조건으로 항상 표시
+- **마이그레이션 0006 인덱스 컬럼 오타**: `notification_type` → `channel`로 수정 (프로덕션 D1 적용 차단되던 문제)
+
+### 3. v7.3 API 엔드포인트
+- `GET /api/patients/network/graph` — 노드/엣지/통계/소개경로분포/TOP인플루언서 반환
+- `PUT /api/patients/:id/referrer` — 환자 소개자 설정 (사이클 감지 포함)
+
+## v7.2 최적화 (이전 릴리스)
+- Dashboard route 68KB 리팩토링 (Promise.all 병렬화 강화)
+- D1 쿼리 인덱스 추가 (마이그레이션 0006: 성능 인덱스 8종)
+- 메모 변경 이력 추적 (마이그레이션 0007)
+
+## v5.1 기능 고도화
 
 ## v5.1 기능 고도화 (최신)
 
@@ -176,5 +208,16 @@ pm2 start ecosystem.config.cjs
 - [ ] TTS 안내 기능
 - [ ] 다국어 지원
 - [ ] 시간대별 상담 분포 실시간 API
-- [ ] 환자 소개 추적 네트워크 시각화
+- [x] **환자 소개 추적 네트워크 시각화 (v7.3 완료)**
 - [ ] 리텐션 이탈 예측 ML 모델
+- [ ] Tailwind CSS PostCSS 빌드 전환 (현재 CDN 사용 중)
+
+## 배포 정보
+- **플랫폼**: Cloudflare Pages
+- **프로젝트명**: `patienttouch`
+- **프로덕션 URL**: https://patienttouch.pages.dev
+- **D1 데이터베이스**: `patient-touch-db` (id: `b3918de1-1d51-426d-ab33-0062e18a0de2`)
+- **R2 버킷**: `patient-touch-audio`
+- **마이그레이션**: 0001~0008 모두 적용 완료 (로컬+프로덕션)
+- **시크릿**: `JWT_SECRET`, `OPENAI_API_KEY` 등록 완료
+- **최종 업데이트**: 2026-05-14 (v7.3)
