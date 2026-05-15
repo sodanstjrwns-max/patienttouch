@@ -3,9 +3,8 @@
   'use strict';
 
   // ---- Service Worker 등록 ----
-  // v7.4: SW는 /static/sw.js에서 서빙되지만 scope 제약으로 임시 비활성화.
-  // 다음 세션에서 vite public 경로 설정으로 / 루트 서빙 활성화 예정.
-  const SW_ENABLED = false;
+  // v7.5: _routes.json에 /sw.js exclude 추가하여 활성화
+  const SW_ENABLED = true;
   if (SW_ENABLED && 'serviceWorker' in navigator) {
     window.addEventListener('load', () => {
       navigator.serviceWorker.register('/sw.js', { scope: '/' })

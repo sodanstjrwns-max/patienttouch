@@ -4,7 +4,7 @@ async function loadDashboard() {
   try {
     var userData = await requireAuth();
     if (userData.data.role !== 'admin') { showToast('관리자만 접근할 수 있습니다.','error'); window.location.href = '/'; return; }
-    await Promise.all([loadSummary(), loadStaffPerformance(), loadCoachingBreakdown(), loadLowScoreConsultations(), loadProposalAnalytics(), loadAdminCharts(), loadGoalGauges(), loadHourlyDistribution(), loadWeeklyComparison()]);
+    await Promise.all([loadSummary(), loadKFactor(), loadStaffPerformance(), loadCoachingBreakdown(), loadLowScoreConsultations(), loadProposalAnalytics(), loadAdminCharts(), loadGoalGauges(), loadHourlyDistribution(), loadWeeklyComparison()]);
   } catch (err) { console.error('Failed to load dashboard:', err); }
 }
 
@@ -160,6 +160,60 @@ function formatTrend(value) {
   if (!value) return '-';
   var sign = value > 0 ? '+' : '';
   return sign + value.toFixed(1) + '%';
+}
+
+// === K-Factor Widget (v7.5 — Patient Funnel 핵심 지표) ===
+async function loadKFactor() {
+  try {
+    var res = await fetch('/api/patients/network/graph');
+    var data = await res.json();
+    if (!data.success || !data.data || !data.data.stats) return;
+    var s = data.data.stats;
+    var k = s.k_factor || 0;
+
+    var kEl = document.getElementById('kFactorValue');
+    if (kEl) kEl.textContent = k.toFixed(2);
+
+    var setText = function(id, val) { var el = document.getElementById(id); if (el) el.textContent = (val || 0).toLocaleString(); };
+    setText('kFactorTotalPatients', s.total_patients);
+    setText('kFactorTotalReferrals', s.total_referrals);
+    setText('kFactorMaxDepth', s.max_depth);
+    setText('kFactorReferredPatients', s.referred_patients);
+
+    // 등급 배지 + 힌트 문구
+    var badgeEl = document.getElementById('kFactorBadge');
+    var hintEl = document.getElementById('kFactorHint');
+    var badge, hint;
+    if (k >= 1.0) {
+      badge = '🚀 자생 성장 구간';
+      hint = 'K≥1.0 — 환자가 환자를 데려오는 바이럴 구간입니다. 광고비 의존도를 낮출 수 있습니다.';
+    } else if (k >= 0.5) {
+      badge = '📈 성장 가속 구간';
+      hint = 'K' + k.toFixed(2) + ' — 소개 동력이 절반 이상. 0.5→1.0 구간 부스팅 전략을 적용해보세요.';
+    } else if (k >= 0.2) {
+      badge = '🌱 기반 형성 구간';
+      hint = 'K' + k.toFixed(2) + ' — 소개망 초기 단계. 상위 인플루언서 관리를 시작할 시점입니다.';
+    } else {
+      badge = '🔍 초기 진단 구간';
+      hint = '아직 소개 데이터가 부족합니다. 소개자 입력을 표준화하면 측정이 시작됩니다.';
+    }
+    if (badgeEl) badgeEl.textContent = badge;
+    if (hintEl) hintEl.textContent = hint;
+
+    // 카운트업 애니메이션 (있으면 사용)
+    if (typeof animateValue === 'function' && kEl) {
+      kEl.textContent = '0.00';
+      var start = 0; var end = k; var dur = 1200; var startT = null;
+      function step(ts) {
+        if (!startT) startT = ts;
+        var p = Math.min((ts - startT) / dur, 1);
+        var ease = 1 - Math.pow(1 - p, 3);
+        kEl.textContent = (start + (end - start) * ease).toFixed(2);
+        if (p < 1) requestAnimationFrame(step);
+      }
+      requestAnimationFrame(step);
+    }
+  } catch (e) { console.warn('K-factor load failed:', e); }
 }
 
 async function loadStaffPerformance() {

@@ -1,19 +1,78 @@
-# 페이션트 터치 (Patient Touch v7.3)
+# 페이션트 터치 (Patient Touch v7.5)
 
 > **"상담 종료 시 완성된 레포트가 기다리는 원스톱 프로세스"**
 > **"찾는 건 기계가, 연락은 사람이"**
 > **"한 명의 팬이 다섯 명을 데려온다 — 그 흐름을 그래프로 본다"**
+> **"이탈은 예측하고, 망은 측정하고, 오프라인에서도 끊기지 않는다"**
 
-AI 기반 의료기관 상담 CRM + 실시간 STT + 환자용 치료 제안서 + **환자 소개 네트워크 시각화** 통합 서비스
+AI 기반 의료기관 상담 CRM + 실시간 STT + 환자용 치료 제안서 + **환자 소개 네트워크 시각화** + **AI 이탈 예측** + **PWA 오프라인 지원** 통합 서비스
 
 ## 현재 상태
 
-- **버전**: 7.3.0 (Referral Network + Hardening)
+- **버전**: 7.5.0 (PWA Activation + Tailwind PostCSS + K-Factor Widget)
 - **프로덕션 URL**: https://patienttouch.pages.dev
-- **기술 스택**: Hono + TypeScript + Cloudflare Pages + D1 Database + R2 Storage + OpenAI + D3.js
-- **디자인 시스템**: 글래스모피즘 + Indigo 브랜드 컬러 + 프리미엄 애니메이션 + Chart.js + D3 force-directed graph
+- **기술 스택**: Hono + TypeScript + Cloudflare Pages + D1 Database + R2 Storage + OpenAI GPT-5 hybrid + D3.js + PWA (Service Worker + Manifest)
+- **디자인 시스템**: 글래스모피즘 + Indigo 브랜드 컬러 + 프리미엄 애니메이션 + Chart.js + D3 force-directed graph + **Tailwind PostCSS 정적 번들 (CDN 제거)**
 
-## v7.3 신규 기능 (최신)
+## v7.5 신규 기능 (최신)
+
+### 1. Service Worker 정식 활성화 (PWA Production Ready)
+- **활성화 트리거**: `public/_routes.json`의 exclude 패턴에 `/sw.js`, `/manifest.json` 추가하여 Cloudflare Worker 인터셉트 차단
+- **`SW_ENABLED = true`**: `pwa-register.js`에서 자동 등록 활성화
+- **캐시 전략**: API는 Network-first / `/static/*`는 Cache-first / HTML은 Network-first + 오프라인 폴백
+- **오프라인 폴백 페이지** 내장 — 네트워크 단절 시에도 앱 사용자 안내
+- **홈 화면 설치 프롬프트**: `beforeinstallprompt` 핸들링 + iOS 안내 모달
+- **검증**: `GET /sw.js` → 200 + `Content-Type: application/javascript` ✅
+
+### 2. Tailwind PostCSS 전환 (CDN 경고 제거 + 다이어트)
+- **CDN `cdn.tailwindcss.com` 완전 제거** → 프로덕션 콘솔 경고 사라짐
+- **`tailwind.config.js`**: brand/surface 컬러 팔레트 + 12개 커스텀 애니메이션 + keyframes 전부 마이그레이션
+- **`src/styles/index.css`**: `@layer base/components/utilities` 구조로 글래스모피즘, ripple, safe-area, 카드, 스켈레톤 등 22개 커스텀 컴포넌트 정리
+- **정적 번들**: `npx tailwindcss` CLI로 `public/static/tailwind.css`(약 153 KB minified)로 빌드
+- **`renderer.tsx` 정리**: 인라인 `<script>` config + 300줄 `<style>` 블록 모두 제거 → SSR 번들 444 → 428 kB로 감소
+- **safelist 정제**: innerHTML 기반 동적 클래스(`bg-emerald-500/10`, `animate-fade-in` 등)만 보존
+
+### 3. K-Factor 대시보드 위젯 (`/admin`)
+- **Patient Funnel 핵심 지표**를 원장 대시보드에 풀폭 카드로 노출
+- **그라데이션 카드** (인디고→퍼플→핑크) + 글래스 블러 + 카운트업 애니메이션
+- **표시 데이터**: K-factor 값 / 총 환자 / 총 소개 / 최대 깊이 / 소개받은 환자 수
+- **자동 등급 배지**:
+  - K≥1.0 → 🚀 자생 성장 구간 (광고비 의존도↓)
+  - K≥0.5 → 📈 성장 가속 구간
+  - K≥0.2 → 🌱 기반 형성 구간
+  - K<0.2 → 🔍 초기 진단 구간
+- **딥링크**: 카드 우상단 "망 보기 →" 버튼으로 `/network` 그래프 이동
+
+### 4. v7.4 → v7.5 안정화 작업 누적
+- v7.4 AI 이탈 예측 모델(GPT-5-mini 하이브리드) — production stable
+- v7.4 시드 데이터(김민수 다운스트림 15명, 4,115만 원 매출) — production stable
+- 모든 PWA 자산(icon-192/512, apple-touch-icon, manifest) 활성 서빙
+
+## v7.4 신규 기능 (직전 릴리스)
+
+### 1. AI 기반 이탈 예측 모델 (`/retention/churn`)
+- **하이브리드 패턴**: 규칙 기반 0-100점 스코어 + GPT-5-mini 정밀 분석 (높은 위험군만 AI 호출)
+- **Rescue Hero 카드**: 미수 치료비 총액(구조 가능 금액) 그라데이션 카드로 노출
+- **위험 등급 4단계**: critical / high / medium / low — 색상 코딩
+- **피드백 루프**: 실제 이탈 여부(유지/이탈) 버튼 → `actual_outcome` 기록 → 모델 개선 데이터 축적
+
+### 2. 풍부한 시드 데이터 (브라우저 검증 + 데모용)
+- 김민수(루트) 아래로 10명 신규 환자 + 10건 결제 상담 추가
+- **총 15명 다운스트림, 4,115만 원 매출**으로 K-factor 시각화 효과 극대화
+
+### 3. PWA 기반 구조 (v7.4 셋업 → v7.5 활성화)
+- `manifest.json`: 앱 이름, theme_color, 4종 shortcuts(녹음/이탈예측/소개망)
+- `sw.js`: 캐시 전략 + 오프라인 폴백 페이지
+- 아이콘 4종(192/512/180/32px) ImageMagick으로 SVG→PNG 변환
+
+### 4. v7.4 API 엔드포인트
+- `POST /api/retention/predictions/calculate` — 배치 예측 실행
+- `GET /api/retention/predictions` — 예측 결과 조회 (필터: risk_level, limit)
+- `GET /api/retention/predictions/:patient_id` — 개별 환자 예측 상세
+- `POST /api/retention/predictions/:id/feedback` — 실제 이탈 여부 피드백
+- `GET /api/retention/predictions/summary` — 위험도별 요약 통계
+
+## v7.3 기능 (이전 릴리스)
 
 ### 1. 환자 소개 네트워크 시각화 (`/network`)
 - **D3 force-directed graph**: 환자 간 소개 관계를 노드/엣지로 시각화

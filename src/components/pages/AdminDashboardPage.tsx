@@ -75,6 +75,51 @@ export const AdminDashboardPage: FC = () => {
           </div>
         </div>
 
+        {/* K-Factor 위젯 (v7.5 — Patient Funnel 핵심 지표) */}
+        <div class="card-premium p-5 bg-gradient-to-br from-indigo-500 via-purple-600 to-pink-500 text-white border-0 shadow-lg shadow-purple-500/30 relative overflow-hidden">
+          <div class="absolute -top-8 -right-8 w-32 h-32 bg-white/10 rounded-full blur-2xl"></div>
+          <div class="absolute -bottom-6 -left-6 w-24 h-24 bg-amber-300/20 rounded-full blur-xl"></div>
+          <div class="relative z-10">
+            <div class="flex items-center justify-between mb-3">
+              <div class="flex items-center gap-2">
+                <div class="w-7 h-7 rounded-lg bg-white/20 backdrop-blur flex items-center justify-center">
+                  <i class="fas fa-share-nodes text-xs text-white"></i>
+                </div>
+                <h3 class="font-bold text-sm text-white">소개 바이럴 지수 (K-factor)</h3>
+              </div>
+              <a href="/network" class="text-[10px] font-bold text-white/90 bg-white/15 backdrop-blur px-2.5 py-1 rounded-lg active:scale-95 transition">
+                망 보기 <i class="fas fa-arrow-right text-[9px] ml-1"></i>
+              </a>
+            </div>
+            <div class="grid grid-cols-2 gap-3 mt-4">
+              <div>
+                <p class="text-[10px] font-semibold text-white/70 mb-1">K-factor</p>
+                <p id="kFactorValue" class="text-4xl font-black tabular-nums leading-none">-</p>
+                <p id="kFactorBadge" class="text-[10px] font-bold mt-1.5 inline-block px-2 py-0.5 rounded-full bg-white/15 backdrop-blur">로딩…</p>
+              </div>
+              <div class="space-y-1.5">
+                <div class="flex items-center justify-between text-[11px]">
+                  <span class="text-white/70 font-semibold">총 환자</span>
+                  <span id="kFactorTotalPatients" class="font-bold tabular-nums">-</span>
+                </div>
+                <div class="flex items-center justify-between text-[11px]">
+                  <span class="text-white/70 font-semibold">총 소개</span>
+                  <span id="kFactorTotalReferrals" class="font-bold tabular-nums">-</span>
+                </div>
+                <div class="flex items-center justify-between text-[11px]">
+                  <span class="text-white/70 font-semibold">최대 깊이</span>
+                  <span id="kFactorMaxDepth" class="font-bold tabular-nums">-</span>
+                </div>
+                <div class="flex items-center justify-between text-[11px]">
+                  <span class="text-white/70 font-semibold">소개받은 환자</span>
+                  <span id="kFactorReferredPatients" class="font-bold tabular-nums">-</span>
+                </div>
+              </div>
+            </div>
+            <p id="kFactorHint" class="text-[10px] text-white/70 mt-3 leading-relaxed">K&gt;1.0 시 환자가 환자를 데려오는 자생 성장 구간</p>
+          </div>
+        </div>
+
         {/* Staff Performance */}
         <div class="card-premium overflow-hidden">
           <div class="p-4 border-b border-surface-100">
