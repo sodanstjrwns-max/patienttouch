@@ -1078,4 +1078,269 @@ retention.get('/predictions/accuracy', async (c) => {
   }
 });
 
+/**
+ * GET /api/retention/predictions/retraining-stats
+ * v7.6: 재학습 대시보드용 종합 통계
+ *   - 피드백 누적 추이 (주별)
+ *   - 위험 등급별 적중률
+ *   - AI vs 규칙기반 비교
+ *   - 재학습 권장 여부 판단
+ */
+retention.get('/predictions/retraining-stats', async (c) => {
+  try {
+    const orgId = c.get('organizationId' as any);
+    const db = c.env.DB;
+
+    // 1) 전체 예측 + 피드백 카운트
+    const counts = await db.prepare(`
+      SELECT
+        COUNT(*) as total_predictions,
+        SUM(CASE WHEN actual_outcome IS NOT NULL AND actual_outcome != 'unknown' THEN 1 ELSE 0 END) as total_feedback,
+        SUM(CASE WHEN actual_outcome = 'churned' THEN 1 ELSE 0 END) as churned_count,
+        SUM(CASE WHEN actual_outcome = 'retained' THEN 1 ELSE 0 END) as retained_count,
+        MIN(predicted_at) as first_predicted_at,
+        MAX(feedback_at) as last_feedback_at
+      FROM churn_predictions
+      WHERE organization_id = ?
+    `).bind(orgId).first<any>();
+
+    const totalPred = (counts?.total_predictions as number) || 0;
+    const totalFb = (counts?.total_feedback as number) || 0;
+    const feedbackRate = totalPred > 0 ? Math.round((totalFb / totalPred) * 1000) / 10 : 0;
+
+    // 2) 위험등급별 적중률 분해
+    const byRisk = await db.prepare(`
+      SELECT
+        risk_level,
+        COUNT(*) as total,
+        SUM(CASE WHEN actual_outcome IS NOT NULL AND actual_outcome != 'unknown' THEN 1 ELSE 0 END) as feedback_count,
+        SUM(CASE WHEN actual_outcome = 'churned' THEN 1 ELSE 0 END) as churned,
+        SUM(CASE WHEN actual_outcome = 'retained' THEN 1 ELSE 0 END) as retained
+      FROM churn_predictions
+      WHERE organization_id = ?
+      GROUP BY risk_level
+    `).bind(orgId).all<any>();
+
+    const riskBreakdown = ['critical', 'high', 'medium', 'low'].map((level) => {
+      const row = (byRisk.results || []).find((r: any) => r.risk_level === level) || {} as any;
+      const total = (row.total as number) || 0;
+      const fb = (row.feedback_count as number) || 0;
+      const churned = (row.churned as number) || 0;
+      const retained = (row.retained as number) || 0;
+      const predictedChurn = (level === 'critical' || level === 'high');
+      const correct = predictedChurn ? churned : retained;
+      return {
+        risk_level: level,
+        total_predictions: total,
+        feedback_count: fb,
+        actual_churned: churned,
+        actual_retained: retained,
+        accuracy: fb > 0 ? Math.round((correct / fb) * 1000) / 10 : null,
+      };
+    });
+
+    // 3) 주별 피드백 누적 추이 (최근 12주)
+    const weeklyTrend = await db.prepare(`
+      SELECT
+        strftime('%Y-%W', feedback_at) as week,
+        COUNT(*) as feedback_count,
+        SUM(CASE WHEN actual_outcome = 'churned' THEN 1 ELSE 0 END) as churned_count,
+        SUM(CASE
+          WHEN (risk_level IN ('critical','high') AND actual_outcome='churned')
+            OR (risk_level IN ('medium','low') AND actual_outcome='retained')
+          THEN 1 ELSE 0 END) as correct_count
+      FROM churn_predictions
+      WHERE organization_id = ?
+        AND actual_outcome IS NOT NULL
+        AND actual_outcome != 'unknown'
+        AND feedback_at >= date('now', '-84 days')
+      GROUP BY week
+      ORDER BY week ASC
+    `).bind(orgId).all<any>();
+
+    const trend = (weeklyTrend.results || []).map((r: any) => ({
+      week: r.week,
+      feedback_count: r.feedback_count,
+      churned_count: r.churned_count,
+      accuracy: r.feedback_count > 0
+        ? Math.round((r.correct_count / r.feedback_count) * 1000) / 10
+        : 0,
+    }));
+
+    // 4) AI vs 규칙기반 정확도
+    const compareRows = await db.prepare(`
+      SELECT churn_probability, risk_level, actual_outcome, rule_based_score
+      FROM churn_predictions
+      WHERE organization_id = ?
+        AND actual_outcome IS NOT NULL
+        AND actual_outcome != 'unknown'
+    `).bind(orgId).all<any>();
+
+    let aiCorrect = 0, ruleCorrect = 0;
+    let truePositive = 0, falsePositive = 0, trueNegative = 0, falseNegative = 0;
+    const cmpData = compareRows.results || [];
+    for (const r of cmpData as any[]) {
+      const predictedChurn = r.risk_level === 'critical' || r.risk_level === 'high';
+      const actualChurn = r.actual_outcome === 'churned';
+      if (predictedChurn && actualChurn) truePositive++;
+      else if (predictedChurn && !actualChurn) falsePositive++;
+      else if (!predictedChurn && !actualChurn) trueNegative++;
+      else falseNegative++;
+      if (predictedChurn === actualChurn) aiCorrect++;
+      const rulePredictedChurn = (r.rule_based_score || 0) >= 55;
+      if (rulePredictedChurn === actualChurn) ruleCorrect++;
+    }
+    const fbN = cmpData.length;
+    const aiAcc = fbN > 0 ? Math.round((aiCorrect / fbN) * 1000) / 10 : 0;
+    const ruleAcc = fbN > 0 ? Math.round((ruleCorrect / fbN) * 1000) / 10 : 0;
+    const precision = (truePositive + falsePositive) > 0
+      ? Math.round((truePositive / (truePositive + falsePositive)) * 1000) / 10 : 0;
+    const recall = (truePositive + falseNegative) > 0
+      ? Math.round((truePositive / (truePositive + falseNegative)) * 1000) / 10 : 0;
+    const f1 = (precision + recall) > 0
+      ? Math.round(((2 * precision * recall) / (precision + recall)) * 10) / 10 : 0;
+
+    // 5) 재학습 추천 로직
+    // - 피드백 50건 이상 누적되면 1차 재학습 신호
+    // - AI 정확도 < 70% 또는 최근 4주 트렌드가 하락이면 강력 권장
+    let recommendation: 'not_ready' | 'optional' | 'recommended' | 'urgent' = 'not_ready';
+    let recommendationReason = '';
+    let recommendationActions: string[] = [];
+
+    if (fbN < 20) {
+      recommendation = 'not_ready';
+      recommendationReason = '피드백 데이터가 부족합니다. 최소 20건 누적 시 재학습 가능.';
+      recommendationActions = ['예측 결과에 실제 이탈 여부 피드백을 적극적으로 입력하세요'];
+    } else if (fbN < 50 && aiAcc >= 75) {
+      recommendation = 'optional';
+      recommendationReason = '현재 모델 정확도가 양호합니다. 50건 누적 후 재평가 권장.';
+      recommendationActions = ['데이터 수집을 계속 유지하세요'];
+    } else if (aiAcc < 65) {
+      recommendation = 'urgent';
+      recommendationReason = `AI 정확도가 ${aiAcc}%로 낮습니다. 즉시 프롬프트 튜닝 또는 features 보강 필요.`;
+      recommendationActions = [
+        'GPT 시스템 프롬프트의 위험 가중치 재조정',
+        '오답 케이스(False Positive/Negative) 패턴 분석',
+        '규칙 기반 score 임계값(현재 55) 재검토',
+      ];
+    } else {
+      // 최근 4주 트렌드 확인
+      const recent = trend.slice(-4);
+      const earlier = trend.slice(0, Math.max(0, trend.length - 4));
+      const recentAvg = recent.length > 0
+        ? recent.reduce((s, r) => s + r.accuracy, 0) / recent.length : 0;
+      const earlierAvg = earlier.length > 0
+        ? earlier.reduce((s, r) => s + r.accuracy, 0) / earlier.length : recentAvg;
+      const trending = recentAvg - earlierAvg;
+
+      if (trending < -5) {
+        recommendation = 'recommended';
+        recommendationReason = `최근 4주 정확도가 ${Math.abs(trending).toFixed(1)}%p 하락 중입니다.`;
+        recommendationActions = [
+          '최근 4주 오답 케이스 검토',
+          'features 변동 (시즌성, 외부 요인) 점검',
+        ];
+      } else if (fbN >= 50) {
+        recommendation = 'recommended';
+        recommendationReason = `${fbN}건의 충분한 피드백이 누적되었습니다. 1차 재학습 적기.`;
+        recommendationActions = [
+          'AI 프롬프트에 누적된 정답 패턴 반영',
+          '규칙 기반 score 가중치 미세조정',
+        ];
+      } else {
+        recommendation = 'optional';
+        recommendationReason = '현재 모델이 안정적으로 동작 중입니다.';
+        recommendationActions = ['지속적 피드백 수집'];
+      }
+    }
+
+    return c.json({
+      success: true,
+      data: {
+        overview: {
+          total_predictions: totalPred,
+          total_feedback: totalFb,
+          feedback_rate: feedbackRate,
+          churned_count: counts?.churned_count || 0,
+          retained_count: counts?.retained_count || 0,
+          first_predicted_at: counts?.first_predicted_at,
+          last_feedback_at: counts?.last_feedback_at,
+        },
+        ai_metrics: {
+          accuracy: aiAcc,
+          precision,
+          recall,
+          f1_score: f1,
+          confusion_matrix: {
+            true_positive: truePositive,
+            false_positive: falsePositive,
+            true_negative: trueNegative,
+            false_negative: falseNegative,
+          },
+        },
+        rule_based_metrics: { accuracy: ruleAcc },
+        ai_vs_rule_delta: Math.round((aiAcc - ruleAcc) * 10) / 10,
+        risk_breakdown: riskBreakdown,
+        weekly_trend: trend,
+        retraining: {
+          recommendation,
+          reason: recommendationReason,
+          actions: recommendationActions,
+          threshold_met: fbN >= 20,
+          next_threshold: fbN < 20 ? 20 : (fbN < 50 ? 50 : null),
+        },
+      }
+    });
+  } catch (err: any) {
+    console.error('[GET /predictions/retraining-stats] error:', err);
+    return c.json({ success: false, error: err.message }, 500);
+  }
+});
+
+/**
+ * GET /api/retention/predictions/recent-feedback
+ * v7.6: 최근 피드백 내역 (재학습 인사이트용 — 오답 케이스 우선)
+ */
+retention.get('/predictions/recent-feedback', async (c) => {
+  try {
+    const orgId = c.get('organizationId' as any);
+    const db = c.env.DB;
+    const limit = parseInt(c.req.query('limit') || '20');
+
+    const rows = await db.prepare(`
+      SELECT
+        cp.id, cp.patient_id, cp.churn_probability, cp.risk_level,
+        cp.actual_outcome, cp.feedback_at, cp.feedback_note,
+        cp.rule_based_score, cp.key_risk_factors,
+        p.name as patient_name
+      FROM churn_predictions cp
+      LEFT JOIN patients p ON p.id = cp.patient_id
+      WHERE cp.organization_id = ?
+        AND cp.actual_outcome IS NOT NULL
+        AND cp.actual_outcome != 'unknown'
+      ORDER BY cp.feedback_at DESC
+      LIMIT ?
+    `).bind(orgId, limit).all<any>();
+
+    const data = (rows.results || []).map((r: any) => {
+      const predictedChurn = r.risk_level === 'critical' || r.risk_level === 'high';
+      const actualChurn = r.actual_outcome === 'churned';
+      return {
+        ...r,
+        is_correct: predictedChurn === actualChurn,
+        case_type: predictedChurn && actualChurn
+          ? 'true_positive'
+          : (predictedChurn && !actualChurn
+              ? 'false_positive'
+              : (!predictedChurn && actualChurn ? 'false_negative' : 'true_negative')),
+      };
+    });
+
+    return c.json({ success: true, data });
+  } catch (err: any) {
+    console.error('[GET /predictions/recent-feedback] error:', err);
+    return c.json({ success: false, error: err.message }, 500);
+  }
+});
+
 export default retention;

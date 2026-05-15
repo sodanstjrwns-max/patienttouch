@@ -1,18 +1,64 @@
-# 페이션트 터치 (Patient Touch v7.5)
+# 페이션트 터치 (Patient Touch v7.6)
 
 > **"상담 종료 시 완성된 레포트가 기다리는 원스톱 프로세스"**
 > **"찾는 건 기계가, 연락은 사람이"**
 > **"한 명의 팬이 다섯 명을 데려온다 — 그 흐름을 그래프로 본다"**
 > **"이탈은 예측하고, 망은 측정하고, 오프라인에서도 끊기지 않는다"**
+> **"모델은 학습하고, 망은 누가 만들었는지 보이고, 캐시는 미리 준비된다"**
 
-AI 기반 의료기관 상담 CRM + 실시간 STT + 환자용 치료 제안서 + **환자 소개 네트워크 시각화** + **AI 이탈 예측** + **PWA 오프라인 지원** 통합 서비스
+AI 기반 의료기관 상담 CRM + 실시간 STT + 환자용 치료 제안서 + **환자 소개 네트워크 시각화** + **AI 이탈 예측 + 모델 재학습 대시보드** + **PWA 오프라인 + 사전 캐시 워밍업** 통합 서비스
 
 ## 현재 상태
 
-- **버전**: 7.5.0 (PWA Activation + Tailwind PostCSS + K-Factor Widget)
+- **버전**: 7.6.0 (Build Pipeline + Per-Staff K-Factor + Retraining Dashboard + SW Precaching)
 - **프로덕션 URL**: https://patienttouch.pages.dev
-- **기술 스택**: Hono + TypeScript + Cloudflare Pages + D1 Database + R2 Storage + OpenAI GPT-5 hybrid + D3.js + PWA (Service Worker + Manifest)
-- **디자인 시스템**: 글래스모피즘 + Indigo 브랜드 컬러 + 프리미엄 애니메이션 + Chart.js + D3 force-directed graph + **Tailwind PostCSS 정적 번들 (CDN 제거)**
+- **기술 스택**: Hono + TypeScript + Cloudflare Pages + D1 Database + R2 Storage + OpenAI GPT-5 hybrid + D3.js + PWA (Service Worker + Manifest + Precaching)
+- **디자인 시스템**: 글래스모피즘 + Indigo 브랜드 컬러 + 프리미엄 애니메이션 + Chart.js + D3 force-directed graph + Tailwind PostCSS 정적 번들 (CDN 제거)
+
+## v7.6 신규 기능 (최신)
+
+### 1. 빌드 파이프라인 통합 (`npm run build` 한 방)
+- **`css:build`** + **`vite build`**를 `&&`로 직렬 체이닝 → 명령 하나로 CSS + SSR 번들 동시 생성
+- **`css:watch`** + `vite` 병렬 실행을 위한 `concurrently` 도입 → `npm run dev` 시 CSS 변경 즉시 반영
+- **`build:vite-only`** 보조 스크립트: CSS 변경 없을 때 빠른 빌드 (Tailwind CLI 스킵, 2초 → 1.8초)
+- **deploy:prod** 프로젝트명 오타 수정 (`patient-touch` → `patienttouch`)
+
+### 2. 상담사별 K-Factor 분해 (`/admin` 신규 위젯)
+- **신규 API**: `GET /api/patients/network/by-staff` — 환자의 "주 담당 상담사"를 첫 결제 상담의 `user_id`로 정의
+- **이중 지표**:
+  - **K-factor**: 직접 소개 / 담당 환자 — 단기 추천력
+  - **바이럴 K**: 다운스트림 누적 / 담당 환자 — 장기 누적 효과
+- **순위 시각화**: 🥇🥈🥉 메달 + 등급별 색상 (자생/가속/형성/초기 4단계) + 전사 평균 대비 +/- 표시
+- **최고 인플루언서 추적**: 각 상담사가 담당한 환자 중 가장 많이 데려온 환자 자동 노출
+- **이중 막대 그래프**: K-factor + 바이럴 K를 정규화된 막대로 동시 표시
+
+### 3. AI 이탈 예측 모델 재학습 대시보드 (`/retention/retraining`)
+- **신규 페이지**: `/retention/retraining` — Patient Funnel 식 모델 운영 본부
+- **재학습 권장 엔진** (4단계 의사결정 트리):
+  - 🔍 **not_ready** (피드백 <20건): 데이터 수집 안내
+  - ✅ **optional** (정확도 ≥75% & <50건): 안정 상태 유지
+  - 📈 **recommended** (≥50건 누적 또는 최근 4주 하락): 재학습 권장 + 액션 가이드
+  - 🚨 **urgent** (정확도 <65%): 즉시 프롬프트/임계값 튜닝 필요
+- **혼동 행렬 시각화**: True Positive / False Positive / False Negative / True Negative 4-grid
+- **메트릭 카드**: AI 정확도 / 규칙 기반 정확도 / Precision / Recall / F1 Score
+- **주별 정확도 추이 차트**: Chart.js 듀얼 Y축 (정확도% + 피드백 건수)
+- **위험 등급별 적중률**: critical/high/medium/low 등급별 예측 vs 실제 분해
+- **최근 피드백 리스트**: 오답 케이스(False Positive/Negative) 우선 노출 → 학습 자료로 활용
+- **신규 API 2종**:
+  - `GET /api/retention/predictions/retraining-stats` — 종합 통계 + 재학습 추천
+  - `GET /api/retention/predictions/recent-feedback` — 오답 우선 정렬된 피드백 내역
+
+### 4. Service Worker 사전 캐시 워밍업 (Precaching v7.6.0)
+- **PRECACHE_STATIC**: 정적 자산 11종 (Tailwind/PWA/페이지 JS/아이콘) 설치 시 즉시 캐싱
+- **PRECACHE_PAGES**: Patient Funnel 핵심 동선 6페이지 (`/`, `/recording`, `/admin`, `/retention/churn`, `/retention/retraining`, `/network`) 사전 워밍업
+- **Stale-While-Revalidate**: 정적 자산은 캐시 즉시 응답 + 백그라운드 업데이트 → 페이지 로드 속도↑
+- **3-tier 캐시**: STATIC_CACHE / RUNTIME_CACHE / PAGE_CACHE 분리 + 버전별 자동 정리
+- **오프라인 폴백 강화**: 캐시된 페이지로 빠른 링크 4종(홈/관리/이탈/네트워크) 추가
+- **로그인 후 idle 워밍업**: `requestIdleCallback`으로 첫 페인트 이후 사용자 권한 페이지 사전 캐싱
+- **캐시 상태 조회 API**: `window.pwaCacheStatus()` — SW 메시지 통신으로 캐시 건수 노출
+- **수동 재워밍업**: `WARM_PAGES` 메시지로 강제 재캐싱 가능
+
+## v7.5 기능 (이전 릴리스)
 
 ## v7.5 신규 기능 (최신)
 

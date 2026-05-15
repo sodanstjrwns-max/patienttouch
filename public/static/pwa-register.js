@@ -1,9 +1,10 @@
-// PWA Service Worker 등록 + 설치 프롬프트 핸들링 (v7.4)
+// PWA Service Worker 등록 + 설치 프롬프트 핸들링 (v7.6 — precache warmup)
 (function () {
   'use strict';
 
   // ---- Service Worker 등록 ----
   // v7.5: _routes.json에 /sw.js exclude 추가하여 활성화
+  // v7.6: 로그인 후 페이지 워밍업 트리거
   const SW_ENABLED = true;
   if (SW_ENABLED && 'serviceWorker' in navigator) {
     window.addEventListener('load', () => {
@@ -23,6 +24,10 @@
               });
             }
           });
+
+          // v7.6: 로그인 상태에서 idle 시점에 페이지 캐시 워밍업
+          //        (인증된 페이지를 SW가 사전 캐싱 — 다음 방문 시 즉시 응답)
+          schedulePageWarmup();
         })
         .catch((err) => console.warn('[PWA] SW registration failed:', err));
     });
@@ -34,7 +39,45 @@
       refreshing = true;
       window.location.reload();
     });
+
+    // v7.6: SW로부터 캐시 상태 응답 수신
+    navigator.serviceWorker.addEventListener('message', (event) => {
+      if (event.data?.type === 'CACHE_STATUS_REPLY') {
+        console.log('[PWA] Cache status:', event.data);
+        window._pwaCacheStatus = event.data;
+      }
+      if (event.data?.type === 'WARM_PAGES_DONE') {
+        console.log('[PWA] Pages warmed up ✓');
+      }
+    });
   }
+
+  // ---- v7.6: 페이지 워밍업 스케줄러 ----
+  // 로그인 페이지/오프라인 페이지에서는 패스
+  function schedulePageWarmup() {
+    const skipPaths = ['/login', '/offline'];
+    if (skipPaths.some((p) => location.pathname === p || location.pathname.startsWith(p + '/'))) return;
+
+    const trigger = () => {
+      if (!navigator.serviceWorker.controller) return;
+      // SW 활성화 후 약간 지연(첫 페인트 영향 최소화)
+      navigator.serviceWorker.controller.postMessage({ type: 'WARM_PAGES' });
+      navigator.serviceWorker.controller.postMessage({ type: 'CACHE_STATUS' });
+    };
+
+    if ('requestIdleCallback' in window) {
+      requestIdleCallback(trigger, { timeout: 4000 });
+    } else {
+      setTimeout(trigger, 2500);
+    }
+  }
+
+  // v7.6: 외부 공개 API — 디버깅/대시보드용
+  window.pwaCacheStatus = () => {
+    if (!navigator.serviceWorker?.controller) return null;
+    navigator.serviceWorker.controller.postMessage({ type: 'CACHE_STATUS' });
+    return window._pwaCacheStatus || null;
+  };
 
   // ---- Install prompt 핸들링 ----
   let deferredPrompt = null;

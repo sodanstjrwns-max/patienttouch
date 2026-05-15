@@ -120,15 +120,16 @@ export default {
       },
     },
   },
-  // v7.5: Narrowed safelist — only classes used dynamically via innerHTML in .js files
+  // v7.5/v7.6: Narrowed safelist — only classes used dynamically via innerHTML in .js files
   // (Tailwind cannot detect these via content scanning of static .ts/.tsx alone)
   safelist: [
-    // Dynamic palette colors used in churn-prediction.js, network.js, etc.
-    // Limited to commonly-used shades only (not full 50-950 range)
+    // Dynamic palette colors used in churn-prediction.js, network.js, admin-dashboard.js etc.
     { pattern: /^(bg|text|border)-(brand|surface)-(50|100|200|300|400|500|600|700|800|900)$/ },
-    { pattern: /^(bg|text|border)-(emerald|rose|amber|red|green|blue|yellow|orange|purple|pink|indigo|sky|teal|violet|slate)-(50|100|200|300|400|500|600|700|800|900)$/ },
+    { pattern: /^(bg|text|border)-(emerald|rose|amber|red|green|blue|yellow|orange|purple|pink|indigo|sky|teal|violet|slate|fuchsia)-(50|100|200|300|400|500|600|700|800|900)$/ },
+    // Gradient stops (from-/to-/via-) used in K-factor by-staff cards (v7.6)
+    { pattern: /^(from|to|via)-(emerald|rose|amber|red|green|blue|yellow|orange|purple|pink|indigo|sky|teal|violet|slate|fuchsia|brand)-(50|100|200|300|400|500|600|700|800|900)$/ },
     // Opacity variants (e.g. bg-brand-500/10) used in glass effects
-    { pattern: /^(bg|text|border)-(brand|surface|emerald|rose|amber|indigo)-(100|200|300|400|500|600)\/(10|20|30|40|50|60|70|80|90)$/ },
+    { pattern: /^(bg|text|border)-(brand|surface|emerald|rose|amber|indigo|fuchsia|purple)-(100|200|300|400|500|600)\/(10|20|30|40|50|60|70|80|90)$/ },
     // Custom animations
     'animate-float', 'animate-pulse-soft', 'animate-slide-up', 'animate-slide-down',
     'animate-scale-in', 'animate-fade-in', 'animate-shimmer', 'animate-glow-pulse',

@@ -4,7 +4,7 @@ async function loadDashboard() {
   try {
     var userData = await requireAuth();
     if (userData.data.role !== 'admin') { showToast('관리자만 접근할 수 있습니다.','error'); window.location.href = '/'; return; }
-    await Promise.all([loadSummary(), loadKFactor(), loadStaffPerformance(), loadCoachingBreakdown(), loadLowScoreConsultations(), loadProposalAnalytics(), loadAdminCharts(), loadGoalGauges(), loadHourlyDistribution(), loadWeeklyComparison()]);
+    await Promise.all([loadSummary(), loadKFactor(), loadKFactorByStaff(), loadStaffPerformance(), loadCoachingBreakdown(), loadLowScoreConsultations(), loadProposalAnalytics(), loadAdminCharts(), loadGoalGauges(), loadHourlyDistribution(), loadWeeklyComparison()]);
   } catch (err) { console.error('Failed to load dashboard:', err); }
 }
 
@@ -160,6 +160,107 @@ function formatTrend(value) {
   if (!value) return '-';
   var sign = value > 0 ? '+' : '';
   return sign + value.toFixed(1) + '%';
+}
+
+// === K-Factor by Staff (v7.6 — 상담사별 바이럴 기여도 분해) ===
+async function loadKFactorByStaff() {
+  try {
+    var res = await fetch('/api/patients/network/by-staff');
+    var data = await res.json();
+    var container = document.getElementById('kFactorByStaff');
+    if (!container) return;
+
+    if (!data.success || !data.data || !data.data.staff || data.data.staff.length === 0) {
+      container.innerHTML = '<div class="p-8 text-center"><div class="w-14 h-14 mx-auto bg-purple-50 rounded-2xl flex items-center justify-center mb-3"><i class="fas fa-user-group text-purple-300 text-xl"></i></div><p class="text-xs text-surface-500">아직 상담사별 데이터가 부족합니다</p></div>';
+      return;
+    }
+
+    var orgAvgEl = document.getElementById('kFactorByStaffOrgAvg');
+    if (orgAvgEl) orgAvgEl.textContent = '전사 평균 K=' + (data.data.org_avg_k_factor || 0).toFixed(2);
+
+    var staff = data.data.staff;
+    var orgAvg = data.data.org_avg_k_factor || 0;
+
+    // 상위 K값 기준 막대 정규화
+    var maxK = Math.max.apply(null, staff.map(function(s){ return Math.max(s.k_factor, s.viral_k_factor); })) || 1;
+
+    var html = '';
+    staff.forEach(function(s, idx) {
+      // 등급 색상
+      var k = s.k_factor || 0;
+      var gradeColor, gradeLabel, gradeIcon;
+      if (k >= 1.0) { gradeColor = 'emerald'; gradeLabel = '자생 성장'; gradeIcon = 'fa-rocket'; }
+      else if (k >= 0.5) { gradeColor = 'sky'; gradeLabel = '성장 가속'; gradeIcon = 'fa-chart-line'; }
+      else if (k >= 0.2) { gradeColor = 'amber'; gradeLabel = '기반 형성'; gradeIcon = 'fa-seedling'; }
+      else { gradeColor = 'slate'; gradeLabel = '초기 진단'; gradeIcon = 'fa-magnifying-glass'; }
+
+      var diffFromAvg = k - orgAvg;
+      var diffSign = diffFromAvg > 0 ? '+' : '';
+      var diffColor = diffFromAvg > 0.05 ? 'text-emerald-600' : (diffFromAvg < -0.05 ? 'text-rose-500' : 'text-surface-400');
+
+      // 막대 정규화 (전사 평균 대비 K값)
+      var kPct = Math.min(100, (k / maxK) * 100);
+      var vPct = Math.min(100, ((s.viral_k_factor || 0) / maxK) * 100);
+
+      // 아바타 색상
+      var avatarColors = ['bg-brand-500', 'bg-emerald-500', 'bg-amber-500', 'bg-rose-500', 'bg-sky-500', 'bg-purple-500'];
+      var avatarBg = avatarColors[(s.name || '?').charCodeAt(0) % avatarColors.length];
+      var initial = (s.name || '?').charAt(0);
+      var rankBadge = idx === 0 ? '🥇' : (idx === 1 ? '🥈' : (idx === 2 ? '🥉' : ''));
+
+      html += '<div class="p-4 hover:bg-surface-50/50 transition-all">';
+      // Header
+      html += '<div class="flex items-center justify-between mb-3">';
+      html +=   '<div class="flex items-center gap-2.5">';
+      html +=     '<div class="w-9 h-9 rounded-xl ' + avatarBg + ' text-white font-black text-sm flex items-center justify-center shadow-sm">' + esc(initial) + '</div>';
+      html +=     '<div>';
+      html +=       '<p class="text-sm font-bold text-surface-900">' + esc(s.name) + (rankBadge ? ' <span class="ml-0.5">' + rankBadge + '</span>' : '') + '</p>';
+      html +=       '<p class="text-[10px] text-surface-400">' + (s.role === 'admin' ? '원장' : '상담사') + ' · 담당 환자 <b class="text-surface-600">' + s.total_patients + '</b>명</p>';
+      html +=     '</div>';
+      html +=   '</div>';
+      html +=   '<div class="text-right">';
+      html +=     '<p class="text-[10px] font-bold text-' + gradeColor + '-700 bg-' + gradeColor + '-50 px-2 py-0.5 rounded-md inline-block"><i class="fas ' + gradeIcon + ' text-[9px] mr-1"></i>' + gradeLabel + '</p>';
+      html +=     '<p class="text-[10px] ' + diffColor + ' font-semibold mt-1">평균 대비 ' + diffSign + diffFromAvg.toFixed(2) + '</p>';
+      html +=   '</div>';
+      html += '</div>';
+
+      // K-factor 막대
+      html += '<div class="space-y-2">';
+      html +=   '<div>';
+      html +=     '<div class="flex justify-between items-center text-[10px] mb-1">';
+      html +=       '<span class="text-surface-500 font-semibold">K-factor (직접 소개)</span>';
+      html +=       '<span class="font-black text-' + gradeColor + '-700 tabular-nums">' + k.toFixed(2) + '</span>';
+      html +=     '</div>';
+      html +=     '<div class="h-1.5 bg-surface-100 rounded-full overflow-hidden"><div class="h-full bg-gradient-to-r from-' + gradeColor + '-400 to-' + gradeColor + '-600 rounded-full transition-all duration-700" style="width:' + kPct + '%"></div></div>';
+      html +=   '</div>';
+      html +=   '<div>';
+      html +=     '<div class="flex justify-between items-center text-[10px] mb-1">';
+      html +=       '<span class="text-surface-500 font-semibold">바이럴 K (다운스트림 누적)</span>';
+      html +=       '<span class="font-bold text-purple-600 tabular-nums">' + (s.viral_k_factor || 0).toFixed(2) + '</span>';
+      html +=     '</div>';
+      html +=     '<div class="h-1.5 bg-surface-100 rounded-full overflow-hidden"><div class="h-full bg-gradient-to-r from-purple-400 to-fuchsia-500 rounded-full transition-all duration-700" style="width:' + vPct + '%"></div></div>';
+      html +=   '</div>';
+      html += '</div>';
+
+      // Footer mini stats
+      html += '<div class="flex items-center gap-3 mt-2.5 text-[10px] text-surface-500">';
+      html +=   '<span><i class="fas fa-share-nodes text-purple-400 mr-1"></i>직접 <b class="text-surface-700">' + s.total_referrals + '</b></span>';
+      html +=   '<span><i class="fas fa-sitemap text-fuchsia-400 mr-1"></i>다운스트림 <b class="text-surface-700">' + s.total_downstream + '</b></span>';
+      if (s.downstream_revenue > 0) {
+        html +=   '<span><i class="fas fa-coins text-amber-400 mr-1"></i><b class="text-surface-700">' + Math.round(s.downstream_revenue / 10000).toLocaleString() + '</b>만</span>';
+      }
+      html += '</div>';
+
+      // Top influencer
+      if (s.top_influencer) {
+        html += '<div class="mt-2.5 px-2.5 py-1.5 bg-amber-50 border border-amber-100 rounded-lg flex items-center gap-2"><i class="fas fa-crown text-amber-500 text-[10px]"></i><span class="text-[10px] text-amber-800">최고 인플루언서: <b>' + esc(s.top_influencer.name) + '</b> (' + s.top_influencer.downstream + '명 데려옴)</span></div>';
+      }
+
+      html += '</div>';
+    });
+
+    container.innerHTML = html;
+  } catch (e) { console.warn('K-factor by staff load failed:', e); }
 }
 
 // === K-Factor Widget (v7.5 — Patient Funnel 핵심 지표) ===

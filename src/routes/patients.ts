@@ -733,6 +733,153 @@ patients.get('/network/graph', async (c) => {
   }
 });
 
+// GET /api/patients/network/by-staff - 상담사별 K-factor 분해 (v7.6)
+// 한 환자의 "주 담당 상담사"는 첫 결제 상담의 user_id로 정의
+patients.get('/network/by-staff', async (c) => {
+  try {
+    const orgId = c.get('organizationId');
+    const db = c.env.DB;
+
+    // 1) 모든 환자 + (첫 결제 상담 또는 첫 상담의) 주담당 상담사
+    const patientsResult = await db.prepare(`
+      SELECT
+        p.id, p.name, p.referrer_patient_id,
+        (SELECT c.user_id FROM consultations c
+          WHERE c.patient_id = p.id AND c.organization_id = p.organization_id
+          ORDER BY (CASE WHEN c.status='paid' THEN 0 ELSE 1 END), c.consultation_date ASC
+          LIMIT 1) as primary_user_id,
+        (SELECT COUNT(*) FROM patients child WHERE child.referrer_patient_id = p.id) as direct_referrals,
+        (SELECT COALESCE(SUM(CASE WHEN c.status='paid' THEN c.amount ELSE 0 END), 0)
+          FROM consultations c WHERE c.patient_id = p.id) as paid_amount
+      FROM patients p
+      WHERE p.organization_id = ? AND p.status = 'active'
+    `).bind(orgId).all();
+
+    const nodes: any[] = (patientsResult.results || []) as any[];
+    const childMap = new Map<string, string[]>();
+    for (const n of nodes) {
+      const ref = n.referrer_patient_id;
+      if (ref) {
+        if (!childMap.has(ref)) childMap.set(ref, []);
+        childMap.get(ref)!.push(n.id);
+      }
+    }
+
+    // 2) 상담사 목록
+    const usersResult = await db.prepare(`
+      SELECT id, name, role FROM users WHERE organization_id = ?
+    `).bind(orgId).all();
+    const users: any[] = (usersResult.results || []) as any[];
+    const userMap = new Map<string, any>(users.map((u: any) => [u.id, u]));
+
+    // 3) 상담사별로 그룹핑
+    type StaffStats = {
+      user_id: string;
+      name: string;
+      role: string;
+      total_patients: number;
+      total_referrals: number;
+      referred_patients: number;
+      total_downstream: number;
+      downstream_revenue: number;
+      paid_amount: number;
+      k_factor: number;
+      viral_k_factor: number;
+      top_influencer: { id: string; name: string; downstream: number } | null;
+    };
+    const byStaff = new Map<string, StaffStats>();
+
+    // BFS downstream 카운트 (한 노드 기준)
+    const downstreamCount = (rootId: string): { count: number; revenue: number } => {
+      const visited = new Set<string>();
+      const queue: string[] = [...(childMap.get(rootId) || [])];
+      let count = 0;
+      let revenue = 0;
+      while (queue.length > 0) {
+        const id = queue.shift()!;
+        if (visited.has(id)) continue;
+        visited.add(id);
+        const node = nodes.find((x: any) => x.id === id);
+        if (!node) continue;
+        count++;
+        revenue += node.paid_amount || 0;
+        for (const k of (childMap.get(id) || [])) queue.push(k);
+      }
+      return { count, revenue };
+    };
+
+    for (const n of nodes) {
+      const uid = n.primary_user_id;
+      if (!uid) continue;
+      const u = userMap.get(uid);
+      if (!u) continue;
+
+      if (!byStaff.has(uid)) {
+        byStaff.set(uid, {
+          user_id: uid,
+          name: u.name,
+          role: u.role || 'staff',
+          total_patients: 0,
+          total_referrals: 0,
+          referred_patients: 0,
+          total_downstream: 0,
+          downstream_revenue: 0,
+          paid_amount: 0,
+          k_factor: 0,
+          viral_k_factor: 0,
+          top_influencer: null,
+        });
+      }
+      const s = byStaff.get(uid)!;
+      s.total_patients++;
+      s.total_referrals += n.direct_referrals || 0;
+      if (n.referrer_patient_id) s.referred_patients++;
+      s.paid_amount += n.paid_amount || 0;
+
+      const down = downstreamCount(n.id);
+      s.total_downstream += down.count;
+      s.downstream_revenue += down.revenue;
+
+      // 이 상담사가 담당한 환자 중 최고 인플루언서 추적
+      if (!s.top_influencer || down.count > s.top_influencer.downstream) {
+        if (down.count > 0) {
+          s.top_influencer = { id: n.id, name: n.name, downstream: down.count };
+        }
+      }
+    }
+
+    // K-factor 계산
+    // 일반 K = 직접소개수 / 총환자수
+    // 바이럴 K = 전체 다운스트림 / 총환자수 (장기 누적 효과)
+    const result = Array.from(byStaff.values()).map((s) => ({
+      ...s,
+      k_factor: s.total_patients > 0
+        ? Math.round((s.total_referrals / s.total_patients) * 100) / 100
+        : 0,
+      viral_k_factor: s.total_patients > 0
+        ? Math.round((s.total_downstream / s.total_patients) * 100) / 100
+        : 0,
+    })).sort((a, b) => b.k_factor - a.k_factor);
+
+    return c.json({
+      success: true,
+      data: {
+        staff_count: result.length,
+        staff: result,
+        // 전사 평균 (비교용)
+        org_avg_k_factor: result.length > 0
+          ? Math.round(
+              (result.reduce((s, x) => s + x.k_factor, 0) / result.length) * 100
+            ) / 100
+          : 0,
+      }
+    });
+  } catch (error) {
+    console.error('Staff K-factor error:', error);
+    return c.json({ success: false, error: '상담사별 K-factor 데이터를 불러오는데 실패했습니다.' }, 500);
+  }
+});
+
 // PUT /api/patients/:id/referrer - 특정 환자의 소개자 설정 (cycle-safe)
 patients.put('/:id/referrer', async (c) => {
   try {

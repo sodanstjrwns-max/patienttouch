@@ -120,6 +120,29 @@ export const AdminDashboardPage: FC = () => {
           </div>
         </div>
 
+        {/* 상담사별 K-Factor 분해 (v7.6) */}
+        <div class="card-premium overflow-hidden">
+          <div class="p-4 border-b border-surface-100 flex items-center justify-between">
+            <div class="flex items-center gap-2">
+              <div class="w-7 h-7 rounded-lg bg-purple-50 flex items-center justify-center">
+                <i class="fas fa-user-group text-xs text-purple-600"></i>
+              </div>
+              <div>
+                <h3 class="font-bold text-sm text-surface-900">상담사별 바이럴 기여도</h3>
+                <p class="text-[10px] text-surface-400">누가 팬을 만들고 있나?</p>
+              </div>
+            </div>
+            <span id="kFactorByStaffOrgAvg" class="text-[10px] font-bold text-purple-600 bg-purple-50 px-2 py-1 rounded-lg">전사 평균 K=-</span>
+          </div>
+          <div id="kFactorByStaff" class="divide-y divide-surface-50">
+            <div class="p-4 space-y-3">
+              <div class="shimmer h-16 rounded-xl"></div>
+              <div class="shimmer h-16 rounded-xl"></div>
+              <div class="shimmer h-16 rounded-xl"></div>
+            </div>
+          </div>
+        </div>
+
         {/* Staff Performance */}
         <div class="card-premium overflow-hidden">
           <div class="p-4 border-b border-surface-100">
