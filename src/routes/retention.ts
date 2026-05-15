@@ -1,9 +1,16 @@
-// Retention Module Routes - R-1 ~ R-6
+// Retention Module Routes - R-1 ~ R-6 + v7.4 Churn Prediction
 // 스펙: "찾는 건 기계가, 연락은 사람이"
 import { Hono } from 'hono';
 import { generateId, safeParseJSON } from '../lib/utils';
 import { authMiddleware } from '../lib/auth';
 import { maskPatientData } from '../lib/middleware';
+import { 
+  predictChurn, 
+  extractChurnFeaturesFromDB, 
+  calculateRuleBasedChurnScore, 
+  scoreToRiskLevel,
+  type ChurnPrediction
+} from '../lib/ai-churn-prediction';
 import type { Env } from '../types';
 
 const retention = new Hono<{ Bindings: Env }>();
@@ -774,5 +781,301 @@ function generateContactScript(ctx: ScriptContext): { message: string; tone: str
       };
   }
 }
+
+// ============================================
+// v7.4 — 이탈 예측 ML (Churn Prediction)
+// ============================================
+
+/**
+ * POST /api/retention/predict/:patientId
+ * 단일 환자 이탈 예측 (즉시 실행 + DB 저장)
+ */
+retention.post('/predict/:patientId', async (c) => {
+  try {
+    const orgId = c.get('organizationId' as any);
+    const patientId = c.req.param('patientId');
+    const db = c.env.DB;
+
+    const features = await extractChurnFeaturesFromDB(db, orgId, patientId);
+    if (!features) {
+      return c.json({ success: false, error: '환자를 찾을 수 없습니다' }, 404);
+    }
+
+    const apiKey = c.env.OPENAI_API_KEY || '';
+    const prediction = await predictChurn(apiKey, features, c.env as any);
+
+    // DB에 예측 결과 저장
+    const predId = generateId();
+    await db.prepare(`
+      INSERT INTO churn_predictions (
+        id, organization_id, patient_id, churn_probability, risk_level,
+        predicted_window_days, key_risk_factors, recommended_action,
+        recommended_script, confidence, rule_based_score, features_snapshot
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).bind(
+      predId, orgId, patientId,
+      prediction.churn_probability, prediction.risk_level,
+      prediction.predicted_window_days,
+      JSON.stringify(prediction.key_risk_factors),
+      prediction.recommended_action,
+      prediction.recommended_script,
+      prediction.confidence,
+      prediction.rule_based_score,
+      JSON.stringify(features)
+    ).run();
+
+    return c.json({
+      success: true,
+      data: { ...prediction, prediction_id: predId, features }
+    });
+  } catch (err: any) {
+    console.error('[POST /predict/:patientId] error:', err);
+    return c.json({ success: false, error: err.message || 'prediction failed' }, 500);
+  }
+});
+
+/**
+ * POST /api/retention/predict-batch
+ * 조직 전체 환자 일괄 예측 (활성 환자 + 마지막 방문 30일 이상)
+ * 규칙 기반 fast pass로 후보 추리고, 점수 30점 이상만 OpenAI로 정밀 분석
+ */
+retention.post('/predict-batch', async (c) => {
+  try {
+    const orgId = c.get('organizationId' as any);
+    const db = c.env.DB;
+    const body = await c.req.json().catch(() => ({} as any));
+    const useAI = body.use_ai !== false; // 기본 true
+    const limit = Math.min(100, parseInt(body.limit) || 50);
+
+    // 1) 후보 환자 추출 (마지막 방문 30일 이상 or 미결정 상담 있음)
+    const candidates = await db.prepare(`
+      SELECT DISTINCT p.id FROM patients p
+      LEFT JOIN consultations c ON c.patient_id = p.id AND c.status = 'undecided'
+      WHERE p.organization_id = ?
+        AND p.status = 'active'
+        AND (
+          p.last_visit_date IS NULL 
+          OR julianday('now') - julianday(p.last_visit_date) > 30
+          OR c.id IS NOT NULL
+        )
+      LIMIT ?
+    `).bind(orgId, limit).all<any>();
+
+    const candidateIds = (candidates.results || []).map((r: any) => r.id);
+    const apiKey = c.env.OPENAI_API_KEY || '';
+    
+    const predictions: any[] = [];
+    const summary = { critical: 0, high: 0, medium: 0, low: 0, ai_used: 0, rule_only: 0 };
+
+    for (const pid of candidateIds) {
+      const features = await extractChurnFeaturesFromDB(db, orgId, pid);
+      if (!features) continue;
+      const ruleScore = calculateRuleBasedChurnScore(features);
+      
+      // Fast pass: 규칙 점수 30 미만은 AI 안 쓰고 규칙 결과만
+      let prediction: ChurnPrediction;
+      if (useAI && apiKey && ruleScore >= 30) {
+        prediction = await predictChurn(apiKey, features, c.env as any);
+        summary.ai_used++;
+      } else {
+        prediction = await predictChurn('', features, c.env as any); // 키 빈 문자열 = 규칙 기반만
+        summary.rule_only++;
+      }
+
+      const predId = generateId();
+      await db.prepare(`
+        INSERT INTO churn_predictions (
+          id, organization_id, patient_id, churn_probability, risk_level,
+          predicted_window_days, key_risk_factors, recommended_action,
+          recommended_script, confidence, rule_based_score, features_snapshot
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).bind(
+        predId, orgId, pid,
+        prediction.churn_probability, prediction.risk_level,
+        prediction.predicted_window_days,
+        JSON.stringify(prediction.key_risk_factors),
+        prediction.recommended_action,
+        prediction.recommended_script,
+        prediction.confidence,
+        prediction.rule_based_score,
+        JSON.stringify(features)
+      ).run();
+
+      summary[prediction.risk_level]++;
+      predictions.push({ patient_id: pid, patient_name: features.patient_name, ...prediction });
+    }
+
+    return c.json({
+      success: true,
+      data: {
+        total_analyzed: predictions.length,
+        summary,
+        predictions: predictions.sort((a, b) => b.churn_probability - a.churn_probability)
+      }
+    });
+  } catch (err: any) {
+    console.error('[POST /predict-batch] error:', err);
+    return c.json({ success: false, error: err.message || 'batch prediction failed' }, 500);
+  }
+});
+
+/**
+ * GET /api/retention/predictions
+ * 최근 예측 결과 조회 (위험도순 정렬, 환자 이름 조인)
+ */
+retention.get('/predictions', async (c) => {
+  try {
+    const orgId = c.get('organizationId' as any);
+    const db = c.env.DB;
+    const riskFilter = c.req.query('risk_level');
+    const limit = Math.min(200, parseInt(c.req.query('limit') || '50'));
+
+    let whereClause = 'cp.organization_id = ?';
+    const bindings: any[] = [orgId];
+    if (riskFilter && ['critical', 'high', 'medium', 'low'].includes(riskFilter)) {
+      whereClause += ' AND cp.risk_level = ?';
+      bindings.push(riskFilter);
+    }
+
+    // 각 환자의 최신 예측만 가져오기
+    const results = await db.prepare(`
+      SELECT cp.*, p.name as patient_name, p.phone, p.age, p.tags
+      FROM churn_predictions cp
+      INNER JOIN patients p ON p.id = cp.patient_id
+      INNER JOIN (
+        SELECT patient_id, MAX(predicted_at) as latest
+        FROM churn_predictions
+        WHERE organization_id = ?
+        GROUP BY patient_id
+      ) latest_pred ON latest_pred.patient_id = cp.patient_id AND latest_pred.latest = cp.predicted_at
+      WHERE ${whereClause}
+      ORDER BY cp.churn_probability DESC
+      LIMIT ?
+    `).bind(orgId, ...bindings, limit).all<any>();
+
+    const rows = (results.results || []).map((r: any) => ({
+      ...r,
+      key_risk_factors: safeParseJSON(r.key_risk_factors, []),
+      features_snapshot: safeParseJSON(r.features_snapshot, {}),
+    }));
+
+    // 요약 통계
+    const summary = { critical: 0, high: 0, medium: 0, low: 0, avg_probability: 0 };
+    let sum = 0;
+    for (const r of rows) {
+      summary[r.risk_level as keyof typeof summary] = (summary[r.risk_level as keyof typeof summary] as number) + 1;
+      sum += r.churn_probability;
+    }
+    summary.avg_probability = rows.length > 0 ? Math.round(sum / rows.length) : 0;
+
+    return c.json({ success: true, data: { predictions: rows, summary, total: rows.length } });
+  } catch (err: any) {
+    console.error('[GET /predictions] error:', err);
+    return c.json({ success: false, error: err.message }, 500);
+  }
+});
+
+/**
+ * POST /api/retention/predictions/:id/feedback
+ * 피드백 루프 — 실제 결과 기록 (이탈/유지)
+ * 나중에 정확도 측정에 활용
+ */
+retention.post('/predictions/:id/feedback', async (c) => {
+  try {
+    const orgId = c.get('organizationId' as any);
+    const predId = c.req.param('id');
+    const db = c.env.DB;
+    const body = await c.req.json().catch(() => ({} as any));
+    const outcome = body.outcome;
+    const note = body.note || null;
+
+    if (!['churned', 'retained', 'unknown'].includes(outcome)) {
+      return c.json({ success: false, error: 'outcome은 churned/retained/unknown 중 하나여야 합니다' }, 400);
+    }
+
+    const result = await db.prepare(`
+      UPDATE churn_predictions
+      SET actual_outcome = ?, feedback_at = CURRENT_TIMESTAMP, feedback_note = ?
+      WHERE id = ? AND organization_id = ?
+    `).bind(outcome, note, predId, orgId).run();
+
+    if (result.meta.changes === 0) {
+      return c.json({ success: false, error: '예측 기록을 찾을 수 없습니다' }, 404);
+    }
+
+    return c.json({ success: true, data: { id: predId, outcome } });
+  } catch (err: any) {
+    console.error('[POST /predictions/:id/feedback] error:', err);
+    return c.json({ success: false, error: err.message }, 500);
+  }
+});
+
+/**
+ * GET /api/retention/predictions/accuracy
+ * 모델 정확도 측정 (피드백된 예측 기준)
+ */
+retention.get('/predictions/accuracy', async (c) => {
+  try {
+    const orgId = c.get('organizationId' as any);
+    const db = c.env.DB;
+
+    const rows = await db.prepare(`
+      SELECT churn_probability, risk_level, actual_outcome, rule_based_score
+      FROM churn_predictions
+      WHERE organization_id = ? AND actual_outcome IS NOT NULL AND actual_outcome != 'unknown'
+    `).bind(orgId).all<any>();
+
+    const data = rows.results || [];
+    if (data.length === 0) {
+      return c.json({
+        success: true,
+        data: { total_feedback: 0, message: '아직 피드백 데이터가 없습니다. 예측 결과에 실제 결과를 기록해주세요.' }
+      });
+    }
+
+    // 위험 등급별 적중률 계산
+    // critical/high = 이탈 예측 / medium/low = 유지 예측
+    let truePositive = 0, falsePositive = 0, trueNegative = 0, falseNegative = 0;
+    let aiCorrect = 0, ruleCorrect = 0;
+    for (const r of data) {
+      const predictedChurn = r.risk_level === 'critical' || r.risk_level === 'high';
+      const actualChurn = r.actual_outcome === 'churned';
+      if (predictedChurn && actualChurn) truePositive++;
+      else if (predictedChurn && !actualChurn) falsePositive++;
+      else if (!predictedChurn && !actualChurn) trueNegative++;
+      else falseNegative++;
+
+      if (predictedChurn === actualChurn) aiCorrect++;
+      const rulePredictedChurn = (r.rule_based_score || 0) >= 55;
+      if (rulePredictedChurn === actualChurn) ruleCorrect++;
+    }
+
+    const accuracy = (truePositive + trueNegative) / data.length;
+    const precision = (truePositive + falsePositive) > 0 ? truePositive / (truePositive + falsePositive) : 0;
+    const recall = (truePositive + falseNegative) > 0 ? truePositive / (truePositive + falseNegative) : 0;
+    const f1 = (precision + recall) > 0 ? (2 * precision * recall) / (precision + recall) : 0;
+
+    return c.json({
+      success: true,
+      data: {
+        total_feedback: data.length,
+        ai_accuracy: Math.round(accuracy * 1000) / 10, // %
+        rule_accuracy: Math.round((ruleCorrect / data.length) * 1000) / 10,
+        precision: Math.round(precision * 1000) / 10,
+        recall: Math.round(recall * 1000) / 10,
+        f1_score: Math.round(f1 * 1000) / 10,
+        confusion_matrix: { 
+          true_positive: truePositive, 
+          false_positive: falsePositive, 
+          true_negative: trueNegative, 
+          false_negative: falseNegative 
+        }
+      }
+    });
+  } catch (err: any) {
+    console.error('[GET /predictions/accuracy] error:', err);
+    return c.json({ success: false, error: err.message }, 500);
+  }
+});
 
 export default retention;

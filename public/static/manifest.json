@@ -1,0 +1,50 @@
+{
+  "name": "페이션트 터치 - Patient Touch",
+  "short_name": "터치",
+  "description": "AI 기반 의료기관 상담 CRM + 환자 소개 네트워크 + 이탈 예측",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#ffffff",
+  "theme_color": "#6366f1",
+  "lang": "ko-KR",
+  "scope": "/",
+  "categories": ["medical", "business", "productivity"],
+  "icons": [
+    {
+      "src": "/static/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/static/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "녹음 시작",
+      "short_name": "녹음",
+      "description": "새 상담 녹음 즉시 시작",
+      "url": "/recording",
+      "icons": [{ "src": "/static/icons/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "이탈 예측",
+      "short_name": "이탈예측",
+      "description": "AI 이탈 위험 환자 확인",
+      "url": "/retention/churn",
+      "icons": [{ "src": "/static/icons/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "소개망",
+      "short_name": "소개망",
+      "description": "환자 소개 네트워크",
+      "url": "/network",
+      "icons": [{ "src": "/static/icons/icon-192.png", "sizes": "192x192" }]
+    }
+  ]
+}

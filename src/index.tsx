@@ -31,6 +31,7 @@ import { ProposalPage } from './components/pages/ProposalPage'
 import { RetentionPage } from './components/pages/RetentionPage'
 import { GrowthPage } from './components/pages/GrowthPage'
 import { ReferralNetworkPage } from './components/pages/ReferralNetworkPage'
+import { ChurnPredictionPage } from './components/pages/ChurnPredictionPage'
 
 import type { Env } from './types'
 
@@ -75,6 +76,7 @@ app.get('/settings', (c) => c.render(<SettingsPage />, { title: '설정 - 페이
 app.get('/retention', (c) => c.render(<RetentionPage />, { title: '리텐션 - 페이션트 터치' }))
 app.get('/growth', (c) => c.render(<GrowthPage />, { title: '상담 성장 추적 - 페이션트 터치' }))
 app.get('/network', (c) => c.render(<ReferralNetworkPage />, { title: '환자 소개 네트워크 - 페이션트 터치' }))
+app.get('/retention/churn', (c) => c.render(<ChurnPredictionPage />, { title: 'AI 이탈 예측 - 페이션트 터치' }))
 app.get('/admin', (c) => c.render(<AdminDashboardPage />, { title: '원장 대시보드 - 페이션트 터치' }))
 
 // Public Pages (no auth)

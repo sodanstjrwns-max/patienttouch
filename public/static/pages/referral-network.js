@@ -47,6 +47,29 @@
   };
   const colorFor = (src) => SOURCE_COLOR[src] || '#6366f1';
 
+  // ---- Render hero impact card (TOP 인플루언서 강조) ----
+  function renderHero(topInfluencers, stats) {
+    const hero = $('heroImpact');
+    if (!hero) return;
+    if (!topInfluencers || topInfluencers.length === 0) {
+      hero.classList.add('hidden');
+      return;
+    }
+    const top = topInfluencers[0];
+    const downstream = top.downstream_count || 0;
+    const revenue = top.downstream_revenue || 0;
+    const revenueManwon = Math.round(revenue / 10000).toLocaleString('ko-KR');
+    const nameEl = $('heroName');
+    const dsEl = $('heroDownstream');
+    const revEl = $('heroRevenue');
+    const depEl = $('heroDepth');
+    if (nameEl) nameEl.textContent = top.name || '-';
+    if (dsEl) dsEl.textContent = downstream;
+    if (revEl) revEl.textContent = revenueManwon;
+    if (depEl) depEl.textContent = stats.max_depth || 0;
+    hero.classList.remove('hidden');
+  }
+
   // ---- Render stats KPI cards ----
   function renderStats(stats) {
     const el = $('networkStats');
@@ -289,6 +312,7 @@
         return;
       }
 
+      renderHero(top_influencers, stats);
       renderStats(stats);
       renderInfluencers(top_influencers);
       renderSourceBreakdown(source_breakdown);

@@ -6,11 +6,16 @@ export const renderer = jsxRenderer(({ children, title }) => {
       <head>
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-        <meta name="theme-color" content="#0F172A" />
+        <meta name="theme-color" content="#6366f1" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-        <meta name="description" content="Patient Touch - AI 기반 치과 상담 CRM의 미래" />
+        <meta name="apple-mobile-web-app-title" content="페이션트 터치" />
+        <meta name="mobile-web-app-capable" content="yes" />
+        <meta name="description" content="Patient Touch - AI 기반 치과 상담 CRM + 환자 소개 네트워크 + 이탈 예측" />
         <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+        <link rel="icon" type="image/png" sizes="32x32" href="/static/icons/favicon-32.png" />
+        <link rel="apple-touch-icon" href="/static/icons/apple-touch-icon.png" />
+        <link rel="manifest" href="/static/manifest.json" />
         <title>{title || '페이션트 터치'}</title>
         
         {/* Tailwind CSS */}
@@ -752,6 +757,7 @@ export const renderer = jsxRenderer(({ children, title }) => {
       </head>
       <body class="bg-gradient-mesh min-h-screen text-surface-900 antialiased">
         {children}
+        <script src="/static/pwa-register.js" defer></script>
       </body>
     </html>
   )

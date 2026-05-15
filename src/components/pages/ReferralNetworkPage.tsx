@@ -27,6 +27,43 @@ export const ReferralNetworkPage: FC = () => {
           <p class="text-sm text-surface-400">소개 네트워크 데이터를 불러오는 중...</p>
         </div>
 
+        {/* Hero Impact Card — populated by JS */}
+        <section id="heroImpact" class="hidden mb-4">
+          <div class="relative overflow-hidden rounded-2xl bg-gradient-to-br from-brand-600 via-brand-500 to-indigo-600 p-5 text-white shadow-lg shadow-brand-500/20">
+            <div class="absolute -top-8 -right-8 w-32 h-32 rounded-full bg-white/10 blur-2xl"></div>
+            <div class="absolute -bottom-8 -left-8 w-24 h-24 rounded-full bg-amber-300/20 blur-2xl"></div>
+            <div class="relative">
+              <div class="flex items-center gap-2 mb-1">
+                <i class="fas fa-crown text-amber-300 text-sm"></i>
+                <span class="text-[11px] font-semibold tracking-wide text-white/80">TOP 인플루언서 임팩트</span>
+              </div>
+              <p class="text-xs text-white/70 mb-2">한 명의 팬이 만든 환자 네트워크</p>
+              <div class="flex items-end gap-3 flex-wrap">
+                <div>
+                  <p class="text-[10px] text-white/60 mb-0.5">최고 인플루언서</p>
+                  <p id="heroName" class="text-xl font-extrabold leading-tight">-</p>
+                </div>
+                <div class="ml-auto text-right">
+                  <p class="text-[10px] text-white/60 mb-0.5">데려온 환자</p>
+                  <p class="text-2xl font-extrabold leading-tight"><span id="heroDownstream">0</span><span class="text-sm font-bold ml-0.5">명</span></p>
+                </div>
+                <div class="w-full mt-3 pt-3 border-t border-white/15 flex items-end justify-between">
+                  <div>
+                    <p class="text-[10px] text-white/60 mb-0.5">소개로 만든 매출</p>
+                    <p class="text-3xl font-extrabold leading-tight tracking-tight">
+                      <span id="heroRevenue">0</span><span class="text-base font-bold ml-1">만원</span>
+                    </p>
+                  </div>
+                  <div class="text-right">
+                    <p class="text-[10px] text-white/60 mb-0.5">최대 소개 깊이</p>
+                    <p class="text-xl font-extrabold leading-tight"><span id="heroDepth">0</span><span class="text-xs font-bold ml-0.5">단계</span></p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
         {/* Stats KPI cards — populated by JS */}
         <section id="networkStats" class="hidden grid grid-cols-2 md:grid-cols-4 gap-3 mb-5"></section>
 
