@@ -1,3 +1,32 @@
+# 페이션트 터치 (Patient Touch v7.7)
+
+## 🎬 데모 계정 (v7.7 추가)
+
+**모든 기능을 풀패키지로 체험할 수 있는 데모 계정:**
+
+| 역할 | 이메일 | 비밀번호 | 이름 |
+|------|--------|----------|------|
+| 원장 (admin) | `demo@patienttouch.kr` | `test1234` | 문석준 원장 |
+| 상담사 | `yujin@patienttouch.kr` | `test1234` | 김유진 실장 |
+| 상담사 | `seoyeon@patienttouch.kr` | `test1234` | 박서연 상담 |
+| 상담사 | `jiwon@patienttouch.kr` | `test1234` | 이지원 상담 |
+
+**데모 데이터 규모:**
+- 환자 25명 + 5단계 다단계 소개 네트워크 (Tree depth 5)
+- 상담 30건 (paid/undecided/lost/pending 분포)
+- 보고서 7건 + 제안서 7건 + STT 청크 + AI 코칭 힌트
+- 이탈 예측 60건 (피드백 50건 누적 → 재학습 대시보드 즉시 작동)
+- 안부 컨택 12건 (다양한 result 분포)
+
+**확인할 수 있는 핵심 화면:**
+- `/admin` → 전체 K-factor + **상담사별 K-factor 위젯** (김유진 실장이 viral K=1.55로 1위)
+- `/network` → 25노드 18엣지 D3.js 소개 네트워크 그래프 (top: 김민수)
+- `/retention/churn` → AI 이탈 예측 환자 리스트
+- `/retention/retraining` → **AI 정확도 85.7%, 혼동행렬, 주별 추이, 재학습 권장 엔진**
+- `/retention` → 안부 컨택 대상자 우선순위 리스트
+
+---
+
 # 페이션트 터치 (Patient Touch v7.6)
 
 > **"상담 종료 시 완성된 레포트가 기다리는 원스톱 프로세스"**
