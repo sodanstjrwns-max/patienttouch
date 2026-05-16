@@ -85,6 +85,7 @@ export const ConsultationDetailPage: FC<Props> = ({ id }) => {
         </div>
       </div>
 
+      <script dangerouslySetInnerHTML={{ __html: `window.__CONSULTATION_ID__ = ${JSON.stringify(id)};` }} />
       <script src="/static/pages/consultation-detail.js"></script>
     </Layout>
   )

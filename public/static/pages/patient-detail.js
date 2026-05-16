@@ -1,4 +1,4 @@
-var patientId = '${id}';
+var patientId = window.__PATIENT_ID__ || (location.pathname.match(/\/patients\/([^/]+)/) || [])[1] || '';
 var currentTab = 'info';
 var retentionData = null;
 var retContactType = 'phone';

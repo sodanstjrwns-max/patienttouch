@@ -1,4 +1,4 @@
-const consultationId = '${id}';
+const consultationId = window.__CONSULTATION_ID__ || (location.pathname.match(/\/consultations\/([^/]+)/) || [])[1] || '';
 let currentConsultation = null;
 let allPatients = [];
 

@@ -277,6 +277,7 @@ export const PatientDetailPage: FC<Props> = ({ id }) => {
         </div>
       </div>
 
+      <script dangerouslySetInnerHTML={{ __html: `window.__PATIENT_ID__ = ${JSON.stringify(id)};` }} />
       <script src="/static/pages/patient-detail.js"></script>
     </Layout>
   )
