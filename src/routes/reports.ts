@@ -16,8 +16,8 @@ const reports = new Hono<{ Bindings: Env }>();
 
 // Apply auth middleware to all routes except public proposal view
 reports.use('*', async (c, next) => {
-  // Skip auth for public proposal view
-  if (c.req.path.startsWith('/api/proposals/view/')) {
+  // Skip auth for public proposal view (path can be /api/reports/proposals/view/... or /proposals/view/... depending on mount)
+  if (c.req.path.includes('/proposals/view/')) {
     return next();
   }
   return authMiddleware(c, next);
