@@ -1,4 +1,44 @@
-# 페이션트 터치 (Patient Touch v7.7)
+# 페이션트 터치 (Patient Touch v8.0)
+
+## 🚀 v8.0 슈퍼 업그레이드 (2026-07-01)
+
+**핵심 목적 재정렬: 상담실장이 녹음 → 개선 → 병원 매출 성과로 연결**
+
+### 1. 녹음 신뢰성 (데이터 손실 제로)
+- 60초 세그먼트 분할 녹음 → 즉시 R2 업로드 (`consultations/{id}/segments/NNNN.webm`)
+- 세그먼트별 STT 병렬 처리 + finalize 시 병합 (25MB STT 한계 해결)
+- 탭 종료/브라우저 크래시에도 업로드된 세그먼트는 보존
+- API: `POST /:id/segments`, `POST /:id/finalize`, `GET /:id/analysis-status`, `POST /:id/reanalyze`, `GET /:id/audio`
+
+### 2. 비동기 분석 파이프라인
+- `waitUntil` 백그라운드 분석 + 3초 폴링 진행률 UI (음성인식→화자분리→NER/SPIN→리포트)
+- 실패 시 `failed:<step>` 기록 + 상담 상세에서 원클릭 재분석
+- 녹음 다시듣기 (단일 파일 + 세그먼트 순차 자동재생)
+
+### 3. 블라인드 채점 (점수 신뢰성)
+- 이전 피드백은 growth_comparison 필드 전용 — 채점에 영향 차단
+- 루브릭 앵커로 세션 간 점수 일관성 확보
+- growth_comparison 리포트 영속화 (개선/미개선 영역 추적)
+
+### 4. 오늘의 미션 카드
+- 녹음 시작 화면에 직전 상담 개선과제 리마인드
+
+### 5. 점수 → 매출 증명
+- `GET /api/dashboard/score-revenue` — 코칭 점수 구간별(60미만/60-69/70-79/80+) 결제 전환율·결제금액
+- 성장 페이지 + 관리자 대시보드 위젯: "점수가 오르면 전환율이 오른다" 시각화
+
+### 6. 보안 강화
+- PBKDF2 비밀번호 해싱 + 로그인 시 레거시 SHA-256 자동 재해싱
+- JWT_SECRET 미설정 시 하드페일 (fallback 제거)
+- CORS 허용목록, CSP unsafe-eval 제거, kakao.ts 컨텍스트 버그 6곳 수정
+
+### DB 변경
+- migration 0010: `consultations.analysis_step / analysis_error / segment_count` + 인덱스 2개
+- 프로덕션 배포 시: `npx wrangler d1 migrations apply patient-touch-db` 필수
+
+---
+
+# (이전) Patient Touch v7.7
 
 ## 🎬 데모 계정 (v7.7 추가)
 
