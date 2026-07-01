@@ -369,9 +369,12 @@ ${previousFeedback.recurring_issues.map(i => `- ${i}`).join('\n')}
 최근 세션 기록:
 ${previousFeedback.sessions.map(s => `- ${s.date}: ${s.total_score}점 (${s.treatment_type || '일반'}) — 주요 개선점: ${s.top_improvement}`).join('\n')}
 
-🎯 **중요**: 이 상담사의 이전 피드백을 반드시 참고하여:
-1. 이전에 지적받은 부분이 이번에 개선되었는지 구체적으로 비교
-2. 반복적으로 나타나는 약점이 있다면 더 강하게 강조
+🎯 **중요 — 이 이력의 사용 범위 (채점 방화벽)**:
+- 이 이력은 **오직 growth_comparison 필드와 격려 코멘트 작성에만** 사용하세요.
+- **coaching_feedback.scores와 total_score는 절대 이전 점수에 영향받으면 안 됩니다.** 오직 이번 상담 스크립트만으로, 루브릭 앞커 기준으로 블라인드 채점하세요.
+- "성장 스토리"를 만들기 위해 점수를 올리거나 내리지 마세요. 실제로 지난번보다 못했으면 점수는 낮게, 격려는 코멘트로 하세요.
+1. 이전에 지적받은 부분이 이번에 개선되었는지 구체적으로 비교 (growth_comparison에만 기록)
+2. 반복적으로 나타나는 약점이 있다면 still_needs_work에 강조
 3. 개선된 부분은 칭찬하고 구체적으로 어떻게 나아졌는지 설명
 4. growth_comparison 필드를 반드시 채워주세요`
     : '';
@@ -385,6 +388,12 @@ ${previousFeedback.sessions.map(s => `- ${s.date}: ${s.total_score}점 (${s.trea
 4. **가격 프레이밍 (15점)**: 앵커링(비싼 옵션 먼저), 분납 안내 타이밍, 가치 대비 가격 제시, 일당 환산
 5. **클로징 (10점)**: 시험 클로징("그러면 언제가 좋으세요?"), 양자택일, 다음 단계 유도
 6. **전체 구조 (10점)**: 도입(5분)-본론(15분)-마무리(5분) 흐름, 핵심 메시지 반복
+
+## 채점 앞커 (회차 간 일관성 기준 — 반드시 이 잣대로 채점)
+- **라포 16-20점**: 이름을 3회 이상 부르고, 환자 발언에 공감 표현("그러셨구나", "많이 불편하셨겠어요")을 보임 / **11-15점**: 인사는 있으나 공감 표현이 기계적 / **10점 이하**: 바로 시술 설명으로 직행
+- **SPIN 20-25점**: 4단계 질문이 순서대로 2세트 이상 / **13-19점**: 상황·문제 질문은 있으나 암시·필요보상 누락 / **12점 이하**: 질문 없이 설명 위주
+- **반론 처리 16-20점**: 모든 반론에 인정→공감 선행 / **11-15점**: 일부 반론에 방어적 대응 / **10점 이하**: 반론을 무시하거나 맞받아침
+- 반론·가격 논의가 아예 없는 짧은 상담은 해당 영역 중간점(반론 10, 가격 7)을 부여하고 "평가 불가"를 명시
 
 ## 분석 원칙
 - **코치처럼 대화하기**: 분석 보고서가 아닌, 옆에서 응원하는 선배 상담사가 쓴 것처럼. "이 부분 정말 잘하셨어요!" "여기서 살짝만 바꾸면 훨씬 좋아질 거예요" 같은 톤
@@ -610,59 +619,69 @@ JSON 형식으로 제안서 내용 생성:
 // Full Analysis Pipeline (End-to-End)
 // ============================================
 
-export async function runFullAnalysisPipeline(
-  audioData: ArrayBuffer,
-  patientInfo: { name: string; age?: number; gender?: string; previousHistory?: string },
-  apiKey: string,
-  env?: Record<string, any>,
-  previousFeedback?: PreviousFeedbackContext | null
-): Promise<{
+export interface FullAnalysisResult {
   transcript: string;
   diarizedSegments: DiarizedSegment[];
   nerData: NERExtracted;
   spinAnalysis: SPINAnalysis;
   report: ConsultationReport;
-}> {
-  const config = getAIConfig(env || {});
-  console.log('[Pipeline] Starting full analysis with models:', config.primaryModel, '/', config.secondaryModel);
+}
 
-  // Step 1: Transcribe with gpt-4o-transcribe (치과 전문용어 힌트 포함)
-  console.log('[Pipeline] Step 1: Transcribing audio with', config.transcriptionModel, '...');
-  const { text: transcript } = await transcribeWithTimestamps(audioData, apiKey, env);
-  console.log('[Pipeline] Transcription complete:', transcript.length, 'chars');
-  
-  // Step 2: Diarize speakers with GPT-5
-  console.log('[Pipeline] Step 2: Diarizing speakers with', config.primaryModel, '...');
+// v8.0: Analysis from an already-merged transcript (segment-based recording flow)
+// onStep: 진행 단계 콜백 — DB에 analysis_step을 기록해 프론트 폴링에 사용
+export async function runAnalysisFromTranscript(
+  transcript: string,
+  patientInfo: { name: string; age?: number; gender?: string; previousHistory?: string },
+  apiKey: string,
+  env?: Record<string, any>,
+  previousFeedback?: PreviousFeedbackContext | null,
+  onStep?: (step: string) => Promise<void>
+): Promise<FullAnalysisResult> {
+  const config = getAIConfig(env || {});
+
+  // Step 2: Diarize speakers
+  console.log('[Pipeline] Diarizing speakers with', config.primaryModel, '...');
+  if (onStep) await onStep('diarizing');
   const diarizedSegments = await diarizeSpeakers(transcript, apiKey, env);
   console.log('[Pipeline] Diarization complete:', diarizedSegments.length, 'segments');
-  
-  // Step 3 & 4: NER + SPIN in parallel with GPT-5-mini (속도 최적화)
-  console.log('[Pipeline] Step 3-4: Extracting entities + SPIN analysis (parallel) with', config.secondaryModel, '...');
+
+  // Step 3 & 4: NER + SPIN in parallel
+  console.log('[Pipeline] Extracting entities + SPIN analysis (parallel) with', config.secondaryModel, '...');
+  if (onStep) await onStep('extracting');
   const [nerData, spinAnalysis] = await Promise.all([
     extractEntities(transcript, apiKey, env),
     analyzeSPIN(diarizedSegments, apiKey, env),
   ]);
   console.log('[Pipeline] NER + SPIN complete');
-  
-  // Step 5: Generate full report with GPT-5
-  console.log('[Pipeline] Step 5: Generating report with', config.primaryModel, '...');
+
+  // Step 5: Generate full report
+  console.log('[Pipeline] Generating report with', config.primaryModel, '...');
+  if (onStep) await onStep('reporting');
   const report = await generateConsultationReport(
-    transcript,
-    diarizedSegments,
-    nerData,
-    spinAnalysis,
-    patientInfo,
-    apiKey,
-    env,
-    previousFeedback
+    transcript, diarizedSegments, nerData, spinAnalysis,
+    patientInfo, apiKey, env, previousFeedback
   );
   console.log('[Pipeline] Report generation complete. Score:', report.coaching_feedback?.total_score);
-  
-  return {
-    transcript,
-    diarizedSegments,
-    nerData,
-    spinAnalysis,
-    report
-  };
+
+  return { transcript, diarizedSegments, nerData, spinAnalysis, report };
+}
+
+export async function runFullAnalysisPipeline(
+  audioData: ArrayBuffer,
+  patientInfo: { name: string; age?: number; gender?: string; previousHistory?: string },
+  apiKey: string,
+  env?: Record<string, any>,
+  previousFeedback?: PreviousFeedbackContext | null,
+  onStep?: (step: string) => Promise<void>
+): Promise<FullAnalysisResult> {
+  const config = getAIConfig(env || {});
+  console.log('[Pipeline] Starting full analysis with models:', config.primaryModel, '/', config.secondaryModel);
+
+  // Step 1: Transcribe with gpt-4o-transcribe (치과 전문용어 힌트 포함)
+  console.log('[Pipeline] Step 1: Transcribing audio with', config.transcriptionModel, '...');
+  if (onStep) await onStep('transcribing');
+  const { text: transcript } = await transcribeWithTimestamps(audioData, apiKey, env);
+  console.log('[Pipeline] Transcription complete:', transcript.length, 'chars');
+
+  return runAnalysisFromTranscript(transcript, patientInfo, apiKey, env, previousFeedback, onStep);
 }

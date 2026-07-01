@@ -42,7 +42,18 @@ const app = new Hono<{ Bindings: Env }>()
 app.use('*', logger())
 app.use('*', securityHeaders)
 app.use('*', auditLog)
-app.use('/api/*', cors())
+// v8.0: CORS restricted — same-origin cookie auth; allow only known origins
+app.use('/api/*', cors({
+  origin: (origin) => {
+    if (!origin) return origin; // same-origin/no-origin requests
+    try {
+      const host = new URL(origin).hostname;
+      if (host === 'localhost' || host === '127.0.0.1' || host.endsWith('.pages.dev') || host.endsWith('.e2b.dev')) return origin;
+    } catch {}
+    return '';
+  },
+  credentials: true,
+}))
 app.use('/api/*', csrfProtection())
 app.use('/api/auth/login', authRateLimit)
 app.use('/api/auth/register', authRateLimit)

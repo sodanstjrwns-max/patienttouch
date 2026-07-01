@@ -1619,4 +1619,116 @@ dashboard.get('/export', async (c) => {
   }
 });
 
+// ============================================
+// v8.0: Score-Revenue Correlation — "코칭 점수가 매출로 이어진다"는 증명
+// ============================================
+dashboard.get('/score-revenue', async (c) => {
+  try {
+    const orgId = c.get('organizationId');
+    const auth = c.get('auth') as { role?: string } | undefined;
+    const role = auth?.role || 'staff';
+    const userId = c.get('userId');
+    const db = c.env.DB;
+    const { days: rawDays = '90', user_id } = c.req.query();
+    const days = safeInt(rawDays, 90, 7, 365);
+
+    // 일반 스태프는 본인 데이터만, 관리자는 조직 전체 (user_id 지정 시 해당 유저)
+    let userFilter = '';
+    const params: (string | number)[] = [orgId, days];
+    if (role !== 'admin' && role !== 'owner') {
+      userFilter = 'AND c.user_id = ?';
+      params.push(userId);
+    } else if (user_id) {
+      userFilter = 'AND c.user_id = ?';
+      params.push(user_id);
+    }
+
+    // 점수 구간별 전환율/매출 집계
+    const bucketResult = await db.prepare(`
+      SELECT
+        CASE
+          WHEN r.coaching_score >= 80 THEN '80점 이상'
+          WHEN r.coaching_score >= 70 THEN '70-79점'
+          WHEN r.coaching_score >= 60 THEN '60-69점'
+          ELSE '60점 미만'
+        END as bucket,
+        CASE
+          WHEN r.coaching_score >= 80 THEN 3
+          WHEN r.coaching_score >= 70 THEN 2
+          WHEN r.coaching_score >= 60 THEN 1
+          ELSE 0
+        END as bucket_order,
+        COUNT(c.id) as consultation_count,
+        SUM(CASE WHEN c.status = 'paid' THEN 1 ELSE 0 END) as paid_count,
+        ROUND(AVG(r.coaching_score), 1) as avg_score,
+        SUM(CASE WHEN c.status = 'paid' THEN COALESCE(c.amount, 0) ELSE 0 END) as paid_amount,
+        ROUND(AVG(CASE WHEN c.status = 'paid' THEN c.amount END), 0) as avg_paid_amount
+      FROM consultations c
+      JOIN consultation_reports r ON c.id = r.consultation_id
+      WHERE c.organization_id = ?
+        AND r.coaching_score IS NOT NULL
+        AND c.consultation_date >= datetime('now', '-' || ? || ' days')
+        ${userFilter}
+      GROUP BY bucket_order
+      ORDER BY bucket_order ASC
+    `).bind(...params).all();
+
+    const buckets = (bucketResult.results as any[]).map(b => ({
+      ...b,
+      conversion_rate: b.consultation_count > 0
+        ? Math.round((b.paid_count / b.consultation_count) * 1000) / 10
+        : 0
+    }));
+
+    // 월별 평균 점수 vs 매출 추이 (같은 축에 놓고 상관 시각화)
+    const trendResult = await db.prepare(`
+      SELECT
+        strftime('%Y-%m', c.consultation_date) as month,
+        COUNT(c.id) as consultation_count,
+        ROUND(AVG(r.coaching_score), 1) as avg_score,
+        SUM(CASE WHEN c.status = 'paid' THEN COALESCE(c.amount, 0) ELSE 0 END) as paid_amount,
+        ROUND(
+          SUM(CASE WHEN c.status = 'paid' THEN 1.0 ELSE 0 END) / COUNT(c.id) * 100, 1
+        ) as conversion_rate
+      FROM consultations c
+      JOIN consultation_reports r ON c.id = r.consultation_id
+      WHERE c.organization_id = ?
+        AND r.coaching_score IS NOT NULL
+        AND c.consultation_date >= datetime('now', '-' || ? || ' days')
+        ${userFilter}
+      GROUP BY month
+      ORDER BY month ASC
+    `).bind(...params).all();
+
+    // 인사이트: 최고 구간 vs 최저 구간 전환율 격차 → "점수 X점 오르면 전환율 Y%p 상승"
+    let insight = null;
+    const withData = buckets.filter(b => b.consultation_count >= 2);
+    if (withData.length >= 2) {
+      const low = withData[0];
+      const high = withData[withData.length - 1];
+      const convGap = Math.round((high.conversion_rate - low.conversion_rate) * 10) / 10;
+      const scoreGap = Math.round((high.avg_score - low.avg_score) * 10) / 10;
+      const amountGap = (high.paid_amount || 0) - (low.paid_amount || 0);
+      insight = {
+        low_bucket: low.bucket,
+        high_bucket: high.bucket,
+        conversion_gap: convGap,
+        score_gap: scoreGap,
+        amount_gap: amountGap,
+        message: convGap > 0
+          ? `코칭 점수 ${high.bucket} 구간의 결제 전환율이 ${low.bucket} 구간보다 ${convGap}%p 높습니다. 점수 개선이 곧 매출입니다.`
+          : `아직 점수-전환율 상관이 뚜렷하지 않습니다. 데이터가 더 쌓이면 패턴이 보입니다.`
+      };
+    }
+
+    return c.json({
+      success: true,
+      data: { buckets, trend: trendResult.results, insight, period_days: days }
+    });
+  } catch (error) {
+    console.error('Score-revenue error:', error);
+    return c.json({ success: false, error: '점수-매출 상관 조회에 실패했습니다.' }, 500);
+  }
+});
+
 export default dashboard;

@@ -188,7 +188,7 @@ export async function securityHeaders(c: Context, next: Next) {
   // Content Security Policy — allow CDNs we use, block everything else
   const cspDirectives = [
     "default-src 'self'",
-    "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.tailwindcss.com https://cdn.jsdelivr.net",
+    "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net",
     "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net",
     "font-src 'self' https://cdn.jsdelivr.net data:",
     "img-src 'self' data: blob: https:",

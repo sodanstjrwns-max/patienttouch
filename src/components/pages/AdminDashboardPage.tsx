@@ -237,6 +237,17 @@ export const AdminDashboardPage: FC = () => {
           <canvas id="coachingTrendChart" height="180"></canvas>
         </div>
 
+        {/* v8.0: Score-Revenue Correlation */}
+        <div class="card-premium p-5" id="score-revenue-card">
+          <div class="flex items-center gap-2 mb-4">
+            <div class="w-7 h-7 rounded-lg bg-emerald-50 flex items-center justify-center"><i class="fas fa-coins text-xs text-emerald-600"></i></div>
+            <h3 class="font-bold text-sm text-surface-900">점수 → 매출 상관</h3>
+          </div>
+          <div id="scoreRevenueAdmin">
+            <div class="shimmer h-32 rounded-xl"></div>
+          </div>
+        </div>
+
         {/* Hourly Distribution Chart */}
         <div class="card-premium p-5">
           <div class="flex items-center gap-2 mb-4">

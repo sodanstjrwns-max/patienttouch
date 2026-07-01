@@ -4,7 +4,7 @@ async function loadDashboard() {
   try {
     var userData = await requireAuth();
     if (userData.data.role !== 'admin') { showToast('관리자만 접근할 수 있습니다.','error'); window.location.href = '/'; return; }
-    await Promise.all([loadSummary(), loadKFactor(), loadKFactorByStaff(), loadStaffPerformance(), loadCoachingBreakdown(), loadLowScoreConsultations(), loadProposalAnalytics(), loadAdminCharts(), loadGoalGauges(), loadHourlyDistribution(), loadWeeklyComparison()]);
+    await Promise.all([loadSummary(), loadKFactor(), loadKFactorByStaff(), loadStaffPerformance(), loadCoachingBreakdown(), loadLowScoreConsultations(), loadProposalAnalytics(), loadAdminCharts(), loadGoalGauges(), loadHourlyDistribution(), loadWeeklyComparison(), loadScoreRevenueAdmin()]);
   } catch (err) { console.error('Failed to load dashboard:', err); }
 }
 
@@ -504,6 +504,53 @@ async function loadWeeklyComparison() {
         '<div class="flex items-center justify-between"><p class="text-lg font-black text-surface-900">' + item.value + '</p>' + trendHtml + '</div></div>';
     }).join('');
   } catch(e) { console.error('Weekly comparison error:', e); }
+}
+
+// =========================================
+// v8.0: 점수 → 매출 상관 (관리자용 — 조직 전체)
+// =========================================
+async function loadScoreRevenueAdmin() {
+  var el = document.getElementById('scoreRevenueAdmin');
+  if (!el) return;
+  try {
+    var res = await fetch('/api/dashboard/score-revenue?days=90');
+    var json = await res.json();
+    if (!json.success || !json.data || !json.data.buckets || json.data.buckets.length === 0) {
+      el.innerHTML = '<p class="text-xs text-surface-400 text-center py-6">아직 분석된 상담 데이터가 부족합니다</p>';
+      return;
+    }
+    var d = json.data;
+    var html = '';
+
+    // 인사이트 배너
+    if (d.insight && d.insight.message) {
+      var positive = d.insight.conversion_gap > 0;
+      html += '<div class="rounded-xl px-3 py-2.5 mb-3 text-xs font-medium ' +
+        (positive ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-surface-50 text-surface-500 border border-surface-100') + '">' +
+        '<i class="fas ' + (positive ? 'fa-arrow-trend-up' : 'fa-hourglass-half') + ' mr-1"></i>' +
+        esc(d.insight.message) + '</div>';
+    }
+
+    // 구간별 전환율 바
+    var maxConv = Math.max.apply(null, d.buckets.map(function(b){ return b.conversion_rate || 0; }).concat([1]));
+    var colors = { '60점 미만': 'bg-red-400', '60-69점': 'bg-amber-400', '70-79점': 'bg-sky-400', '80점 이상': 'bg-emerald-500' };
+    html += '<div class="space-y-2">';
+    d.buckets.forEach(function(b) {
+      var w = Math.max(4, Math.round((b.conversion_rate / maxConv) * 100));
+      var amt = b.paid_amount ? Math.round(b.paid_amount / 10000).toLocaleString() + '만원' : '0원';
+      html += '<div class="flex items-center gap-2">' +
+        '<span class="text-[10px] font-semibold text-surface-500 w-14 shrink-0">' + esc(b.bucket) + '</span>' +
+        '<div class="flex-1 h-6 bg-surface-50 rounded-lg overflow-hidden relative">' +
+          '<div class="h-full rounded-lg ' + (colors[b.bucket] || 'bg-surface-300') + '" style="width:' + w + '%"></div>' +
+          '<span class="absolute inset-y-0 left-2 flex items-center text-[10px] font-bold text-surface-700">' + b.conversion_rate + '%</span>' +
+        '</div>' +
+        '<span class="text-[10px] text-surface-400 w-20 text-right shrink-0">' + b.paid_count + '/' + b.consultation_count + '건 · ' + amt + '</span>' +
+      '</div>';
+    });
+    html += '</div><p class="text-[9px] text-surface-300 mt-2">코칭 점수 구간별 결제 전환율 (최근 90일, 조직 전체)</p>';
+
+    el.innerHTML = html;
+  } catch(e) { console.error('Score-revenue admin error:', e); }
 }
 
 loadDashboard();

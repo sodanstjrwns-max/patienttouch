@@ -12,28 +12,10 @@ export const ProposalPage: FC<Props> = ({ token }) => {
         <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
         <meta name="theme-color" content="#4F46E5" />
         <title>치료 제안서</title>
-        <script src="https://cdn.tailwindcss.com"></script>
+        {/* v8.0: static Tailwind bundle (CDN + runtime config removed — CSP-safe, no unsafe-eval) */}
+        <link rel="stylesheet" href="/static/tailwind.css" />
         <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.5.1/css/all.min.css" rel="stylesheet" />
         <link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" rel="stylesheet" />
-        <script dangerouslySetInnerHTML={{
-          __html: `
-            tailwind.config = {
-              theme: {
-                extend: {
-                  fontFamily: { sans: ['Pretendard Variable', 'Pretendard', '-apple-system', 'sans-serif'] },
-                  colors: {
-                    brand: { 50:'#eef2ff', 100:'#e0e7ff', 200:'#c7d2fe', 300:'#a5b4fc', 400:'#818cf8', 500:'#6366f1', 600:'#4f46e5', 700:'#4338ca', 800:'#3730a3', 900:'#312e81' },
-                  },
-                  animation: { 'slide-up': 'slideUp 0.5s ease-out', 'fade-in': 'fadeIn 0.4s ease-out' },
-                  keyframes: {
-                    slideUp: { from: { transform: 'translateY(20px)', opacity: '0' }, to: { transform: 'translateY(0)', opacity: '1' } },
-                    fadeIn: { from: { opacity: '0' }, to: { opacity: '1' } },
-                  },
-                }
-              }
-            }
-          `
-        }} />
         <style dangerouslySetInnerHTML={{
           __html: `
             * { -webkit-tap-highlight-color: transparent; box-sizing: border-box; }

@@ -5,31 +5,72 @@ export function generateId(): string {
   return crypto.randomUUID();
 }
 
-// Simple password hashing (for demo - use bcrypt in production)
-export async function hashPassword(password: string): Promise<string> {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(password);
-  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+// ============================================
+// Password Hashing — PBKDF2 (v8.0)
+// Format: pbkdf2$<iterations>$<salt_hex>$<hash_hex>
+// Legacy SHA-256 hex (64 chars) still verifiable → auto-rehash on login
+// ============================================
+const PBKDF2_ITERATIONS = 100000;
+
+function bytesToHex(bytes: Uint8Array): string {
+  return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
-// Verify password
+function hexToBytes(hex: string): Uint8Array {
+  const bytes = new Uint8Array(hex.length / 2);
+  for (let i = 0; i < bytes.length; i++) bytes[i] = parseInt(hex.substr(i * 2, 2), 16);
+  return bytes;
+}
+
+async function pbkdf2Hash(password: string, salt: Uint8Array, iterations: number): Promise<string> {
+  const encoder = new TextEncoder();
+  const keyMaterial = await crypto.subtle.importKey(
+    'raw', encoder.encode(password), 'PBKDF2', false, ['deriveBits']
+  );
+  const bits = await crypto.subtle.deriveBits(
+    { name: 'PBKDF2', salt: salt as BufferSource, iterations, hash: 'SHA-256' },
+    keyMaterial, 256
+  );
+  return bytesToHex(new Uint8Array(bits));
+}
+
+export async function hashPassword(password: string): Promise<string> {
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const hash = await pbkdf2Hash(password, salt, PBKDF2_ITERATIONS);
+  return `pbkdf2$${PBKDF2_ITERATIONS}$${bytesToHex(salt)}$${hash}`;
+}
+
+// Legacy SHA-256 (unsalted) — verification only, for migration
+async function legacySha256(password: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const hashBuffer = await crypto.subtle.digest('SHA-256', encoder.encode(password));
+  return bytesToHex(new Uint8Array(hashBuffer));
+}
+
+// Verify password. Returns { valid, needsRehash } so callers can auto-upgrade legacy hashes.
+export async function verifyPasswordDetailed(password: string, storedHash: string): Promise<{ valid: boolean; needsRehash: boolean }> {
+  if (storedHash.startsWith('pbkdf2$')) {
+    const [, iterStr, saltHex, hashHex] = storedHash.split('$');
+    const computed = await pbkdf2Hash(password, hexToBytes(saltHex), parseInt(iterStr, 10));
+    return { valid: computed === hashHex, needsRehash: false };
+  }
+  // Legacy unsalted SHA-256 (64 hex chars)
+  const legacy = await legacySha256(password);
+  const valid = legacy === storedHash;
+  return { valid, needsRehash: valid }; // valid legacy → rehash with PBKDF2
+}
+
 export async function verifyPassword(password: string, hash: string): Promise<boolean> {
-  const passwordHash = await hashPassword(password);
-  return passwordHash === hash;
+  const result = await verifyPasswordDetailed(password, hash);
+  return result.valid;
 }
 
 // JWT functions using Web Crypto API
-// Secret is injected from environment (c.env.JWT_SECRET) — never hardcoded
-const FALLBACK_SECRET = 'patient-touch-dev-only-change-in-production';
-
-// Resolve JWT secret: prefer env-injected value; warn loudly if falling back.
-// Production deploy MUST inject JWT_SECRET via `wrangler pages secret put`.
+// v8.0: HARD FAIL when JWT_SECRET is missing — no silent fallback.
+// Local dev: .dev.vars provides JWT_SECRET. Production: `wrangler pages secret put JWT_SECRET`.
 function resolveSecret(secret?: string): string {
   if (secret && secret.length >= 16) return secret;
-  console.warn('[SECURITY] JWT secret missing or too short — using DEV fallback. MUST NOT happen in production.');
-  return FALLBACK_SECRET;
+  throw new Error('JWT_SECRET is not configured (min 16 chars). Set it in .dev.vars (local) or via `wrangler pages secret put JWT_SECRET` (production).');
 }
 
 export async function createJWT(payload: Record<string, unknown>, secret?: string): Promise<string> {

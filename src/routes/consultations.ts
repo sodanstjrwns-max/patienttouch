@@ -2,9 +2,8 @@
 import { Hono } from 'hono';
 import { generateId, safeParseJSON } from '../lib/utils';
 import { authMiddleware } from '../lib/auth';
-import { analyzeAudio, analyzeConsultation } from '../lib/ai';
-import { runFullAnalysisPipeline } from '../lib/ai-presenter';
-import type { PreviousFeedbackContext } from '../lib/ai-presenter';
+import { analyzeConsultation } from '../lib/ai';
+import { runAnalysisJob, transcribeSegmentJob } from '../lib/analysis-runner';
 import { safeInt } from '../lib/middleware';
 import type { Env, Consultation } from '../types';
 
@@ -250,243 +249,363 @@ consultations.post('/', async (c) => {
   }
 });
 
-// POST /api/consultations/:id/upload-audio - Upload and analyze audio
-consultations.post('/:id/upload-audio', async (c) => {
+// ============================================================
+// v8.0 RELIABLE RECORDING & ASYNC ANALYSIS
+// - 세그먼트 업로드 (긴 상담도 안전: 탭 죽어도 마지막 세그먼트만 손실)
+// - 비동기 분석 (waitUntil) + analysis_step 폴링
+// - 재분석 / 오디오 다시듣기
+// ============================================================
+
+// POST /api/consultations/:id/segments - Upload one recording segment (v8.0)
+consultations.post('/:id/segments', async (c) => {
   try {
     const consultId = c.req.param('id');
     const orgId = c.get('organizationId');
     const db = c.env.DB;
 
-    // Verify consultation exists
     const consultation = await db.prepare(
       'SELECT id FROM consultations WHERE id = ? AND organization_id = ?'
     ).bind(consultId, orgId).first();
-
     if (!consultation) {
       return c.json({ success: false, error: '상담 기록을 찾을 수 없습니다.' }, 404);
     }
 
-    // Get audio data from request
+    const formData = await c.req.formData();
+    const audioFile = formData.get('audio') as File;
+    const indexStr = formData.get('index') as string;
+    if (!audioFile || indexStr === null) {
+      return c.json({ success: false, error: '세그먼트 데이터가 없습니다.' }, 400);
+    }
+    const segIndex = parseInt(indexStr, 10);
+
+    // R2에 세그먼트 저장
+    const segKey = `consultations/${consultId}/segments/${String(segIndex).padStart(4, '0')}.webm`;
+    const audioData = await audioFile.arrayBuffer();
+    await c.env.R2.put(segKey, audioData, { httpMetadata: { contentType: audioFile.type || 'audio/webm' } });
+
+    // stt_chunks 레코드 (transcript는 백그라운드 STT가 채움)
+    const chunkId = 'seg_' + generateId().slice(0, 12);
+    await db.prepare(`
+      INSERT INTO stt_chunks (id, consultation_id, chunk_index, audio_url, transcript)
+      VALUES (?, ?, ?, ?, NULL)
+    `).bind(chunkId, consultId, segIndex, segKey).run();
+
+    await db.prepare('UPDATE consultations SET segment_count = MAX(COALESCE(segment_count,0), ?), recording_status = \'recording\', updated_at = datetime(\'now\') WHERE id = ?')
+      .bind(segIndex + 1, consultId).run();
+
+    // 백그라운드 STT (응답 차단 없음) — 실패해도 finalize에서 재시도
+    const apiKey = c.env.OPENAI_API_KEY;
+    if (apiKey) {
+      c.executionCtx.waitUntil(transcribeSegmentJob(db, c.env as any, apiKey, chunkId, audioData));
+    }
+
+    return c.json({ success: true, data: { segment_index: segIndex, chunk_id: chunkId } });
+  } catch (error) {
+    console.error('Segment upload error:', error);
+    return c.json({ success: false, error: '세그먼트 업로드에 실패했습니다.' }, 500);
+  }
+});
+
+// POST /api/consultations/:id/finalize - Finish segmented recording → async full analysis (v8.0)
+consultations.post('/:id/finalize', async (c) => {
+  try {
+    const consultId = c.req.param('id');
+    const orgId = c.get('organizationId');
+    const userId = c.get('userId');
+    const db = c.env.DB;
+
+    const consultation = await db.prepare(`
+      SELECT c.id, c.patient_id, p.name as patient_name, p.age as patient_age, p.gender as patient_gender
+      FROM consultations c LEFT JOIN patients p ON c.patient_id = p.id
+      WHERE c.id = ? AND c.organization_id = ?
+    `).bind(consultId, orgId).first();
+    if (!consultation) {
+      return c.json({ success: false, error: '상담 기록을 찾을 수 없습니다.' }, 404);
+    }
+
+    const body = await c.req.json().catch(() => ({}));
+    const duration = body.duration ? parseInt(String(body.duration), 10) : null;
+
+    const apiKey = c.env.OPENAI_API_KEY;
+    if (!apiKey) {
+      return c.json({ success: false, error: 'OpenAI API 키가 설정되지 않았습니다.' }, 500);
+    }
+
+    // 상태 전환: 즉시 응답 → 백그라운드 분석
+    await db.prepare(`
+      UPDATE consultations SET ai_analysis_status = 'processing', analysis_step = 'transcribing',
+        analysis_error = NULL, duration = COALESCE(?, duration), recording_status = 'completed', updated_at = datetime('now')
+      WHERE id = ?
+    `).bind(duration, consultId).run();
+
+    const patientInfo = {
+      name: (consultation.patient_name as string) || '미지정',
+      age: consultation.patient_age as number | undefined,
+      gender: consultation.patient_gender as string | undefined,
+    };
+
+    // 백그라운드 잡: 미완료 세그먼트 STT 재시도 → transcript 병합 → 분석
+    const env = c.env as any;
+    const job = (async () => {
+      try {
+        const chunks = await db.prepare(
+          'SELECT id, chunk_index, audio_url, transcript FROM stt_chunks WHERE consultation_id = ? ORDER BY chunk_index ASC'
+        ).bind(consultId).all();
+
+        if (!chunks.results.length) {
+          throw new Error('업로드된 녹음 세그먼트가 없습니다.');
+        }
+
+        // 누락 STT 재시도 (세그먼트 업로드 시 백그라운드 STT 실패분)
+        for (const ch of chunks.results as any[]) {
+          if (!ch.transcript && ch.audio_url) {
+            const obj = await env.R2.get(ch.audio_url);
+            if (obj) {
+              const buf = await obj.arrayBuffer();
+              await transcribeSegmentJob(db, env, apiKey, ch.id, buf);
+            }
+          }
+        }
+
+        // 병합
+        const refreshed = await db.prepare(
+          'SELECT chunk_index, transcript FROM stt_chunks WHERE consultation_id = ? ORDER BY chunk_index ASC'
+        ).bind(consultId).all();
+        const mergedTranscript = (refreshed.results as any[])
+          .map(r => (r.transcript || '').trim())
+          .filter(Boolean)
+          .join(' ');
+
+        if (!mergedTranscript) {
+          throw new Error('음성 인식 결과가 없습니다. 녹음 상태를 확인해주세요.');
+        }
+
+        await runAnalysisJob({
+          db, env, apiKey, consultId, orgId, userId, patientInfo,
+          transcript: mergedTranscript,
+          audioKey: `consultations/${consultId}/segments/0000.webm`,
+        });
+      } catch (err: any) {
+        console.error('[Finalize] job failed:', err?.message);
+        await db.prepare(`
+          UPDATE consultations SET ai_analysis_status = 'failed', analysis_step = 'failed:transcribing', analysis_error = ?, updated_at = datetime('now')
+          WHERE id = ?
+        `).bind(String(err?.message || '알 수 없는 오류').slice(0, 500), consultId).run();
+      }
+    })();
+    c.executionCtx.waitUntil(job);
+
+    return c.json({ success: true, data: { consultation_id: consultId, status: 'processing' } });
+  } catch (error) {
+    console.error('Finalize error:', error);
+    return c.json({ success: false, error: '녹음 마무리에 실패했습니다.' }, 500);
+  }
+});
+
+// GET /api/consultations/:id/analysis-status - Poll analysis progress (v8.0)
+consultations.get('/:id/analysis-status', async (c) => {
+  try {
+    const consultId = c.req.param('id');
+    const orgId = c.get('organizationId');
+    const db = c.env.DB;
+
+    const row = await db.prepare(`
+      SELECT c.ai_analysis_status, c.analysis_step, c.analysis_error,
+        (SELECT r.id FROM consultation_reports r WHERE r.consultation_id = c.id) as report_id,
+        (SELECT r.coaching_score FROM consultation_reports r WHERE r.consultation_id = c.id) as coaching_score
+      FROM consultations c WHERE c.id = ? AND c.organization_id = ?
+    `).bind(consultId, orgId).first();
+
+    if (!row) return c.json({ success: false, error: '상담 기록을 찾을 수 없습니다.' }, 404);
+
+    const stepLabels: Record<string, { label: string; pct: number }> = {
+      'transcribing': { label: '음성 인식 중', pct: 25 },
+      'diarizing': { label: '화자 분리 중', pct: 50 },
+      'extracting': { label: 'NER + SPIN 분석 중', pct: 70 },
+      'reporting': { label: '코칭 리포트 생성 중', pct: 88 },
+      'done': { label: '분석 완료', pct: 100 },
+    };
+    const step = (row.analysis_step as string) || '';
+    const info = stepLabels[step] || { label: step.startsWith('failed') ? '분석 실패' : '대기 중', pct: step.startsWith('failed') ? 0 : 10 };
+
+    return c.json({
+      success: true,
+      data: {
+        status: row.ai_analysis_status,
+        step, step_label: info.label, progress: info.pct,
+        error: row.analysis_error || null,
+        report_id: row.report_id || null,
+        coaching_score: row.coaching_score || null,
+      }
+    });
+  } catch (error) {
+    console.error('Analysis status error:', error);
+    return c.json({ success: false, error: '상태 조회에 실패했습니다.' }, 500);
+  }
+});
+
+// POST /api/consultations/:id/reanalyze - Re-run analysis from stored audio/segments (v8.0)
+consultations.post('/:id/reanalyze', async (c) => {
+  try {
+    const consultId = c.req.param('id');
+    const orgId = c.get('organizationId');
+    const userId = c.get('userId');
+    const db = c.env.DB;
+
+    const consultation = await db.prepare(`
+      SELECT c.id, c.audio_url, c.transcript, p.name as patient_name, p.age as patient_age, p.gender as patient_gender
+      FROM consultations c LEFT JOIN patients p ON c.patient_id = p.id
+      WHERE c.id = ? AND c.organization_id = ?
+    `).bind(consultId, orgId).first();
+    if (!consultation) return c.json({ success: false, error: '상담 기록을 찾을 수 없습니다.' }, 404);
+
+    const apiKey = c.env.OPENAI_API_KEY;
+    if (!apiKey) return c.json({ success: false, error: 'OpenAI API 키가 설정되지 않았습니다.' }, 500);
+
+    const patientInfo = {
+      name: (consultation.patient_name as string) || '미지정',
+      age: consultation.patient_age as number | undefined,
+      gender: consultation.patient_gender as string | undefined,
+    };
+
+    await db.prepare(`
+      UPDATE consultations SET ai_analysis_status = 'processing', analysis_step = 'transcribing', analysis_error = NULL, updated_at = datetime('now')
+      WHERE id = ?
+    `).bind(consultId).run();
+
+    const env = c.env as any;
+    const job = (async () => {
+      // 소스 우선순위: 세그먼트 transcript → 기존 transcript → 단일 오디오 파일
+      const chunks = await db.prepare(
+        'SELECT chunk_index, transcript FROM stt_chunks WHERE consultation_id = ? AND transcript IS NOT NULL ORDER BY chunk_index ASC'
+      ).bind(consultId).all();
+      const mergedTranscript = (chunks.results as any[]).map(r => (r.transcript || '').trim()).filter(Boolean).join(' ');
+
+      if (mergedTranscript) {
+        await runAnalysisJob({ db, env, apiKey, consultId, orgId, userId, patientInfo, transcript: mergedTranscript, audioKey: null });
+      } else if (consultation.transcript) {
+        await runAnalysisJob({ db, env, apiKey, consultId, orgId, userId, patientInfo, transcript: consultation.transcript as string, audioKey: null });
+      } else if (consultation.audio_url) {
+        const obj = await env.R2.get(consultation.audio_url as string);
+        if (!obj) {
+          await db.prepare('UPDATE consultations SET ai_analysis_status = \'failed\', analysis_step = \'failed:transcribing\', analysis_error = \'저장된 녹음 파일을 찾을 수 없습니다.\' WHERE id = ?').bind(consultId).run();
+          return;
+        }
+        const buf = await obj.arrayBuffer();
+        await runAnalysisJob({ db, env, apiKey, consultId, orgId, userId, patientInfo, audioData: buf, audioKey: consultation.audio_url as string });
+      } else {
+        await db.prepare('UPDATE consultations SET ai_analysis_status = \'failed\', analysis_step = \'failed:transcribing\', analysis_error = \'분석할 녹음이나 스크립트가 없습니다.\' WHERE id = ?').bind(consultId).run();
+      }
+    })();
+    c.executionCtx.waitUntil(job);
+
+    return c.json({ success: true, data: { consultation_id: consultId, status: 'processing' } });
+  } catch (error) {
+    console.error('Reanalyze error:', error);
+    return c.json({ success: false, error: '재분석 시작에 실패했습니다.' }, 500);
+  }
+});
+
+// GET /api/consultations/:id/audio - Stream recording for playback (v8.0)
+// ?segment=N 지정 시 해당 세그먼트, 미지정 시 단일 녹음 파일 또는 세그먼트 목록 반환
+consultations.get('/:id/audio', async (c) => {
+  try {
+    const consultId = c.req.param('id');
+    const orgId = c.get('organizationId');
+    const db = c.env.DB;
+    const segParam = c.req.query('segment');
+
+    const consultation = await db.prepare(
+      'SELECT id, audio_url FROM consultations WHERE id = ? AND organization_id = ?'
+    ).bind(consultId, orgId).first();
+    if (!consultation) return c.json({ success: false, error: '상담 기록을 찾을 수 없습니다.' }, 404);
+
+    // 세그먼트 지정 재생
+    if (segParam !== undefined && segParam !== null && segParam !== '') {
+      const chunk = await db.prepare(
+        'SELECT audio_url FROM stt_chunks WHERE consultation_id = ? AND chunk_index = ?'
+      ).bind(consultId, parseInt(segParam, 10)).first();
+      if (!chunk?.audio_url) return c.json({ success: false, error: '세그먼트를 찾을 수 없습니다.' }, 404);
+      const obj = await c.env.R2.get(chunk.audio_url as string);
+      if (!obj) return c.json({ success: false, error: '오디오 파일이 없습니다.' }, 404);
+      return new Response(obj.body, { headers: { 'Content-Type': 'audio/webm', 'Cache-Control': 'private, max-age=3600' } });
+    }
+
+    // 단일 파일 재생 (레거시 녹음)
+    if (consultation.audio_url) {
+      const obj = await c.env.R2.get(consultation.audio_url as string);
+      if (obj) {
+        return new Response(obj.body, { headers: { 'Content-Type': 'audio/webm', 'Cache-Control': 'private, max-age=3600' } });
+      }
+    }
+
+    // 세그먼트 목록 반환 (프론트가 순차 재생)
+    const chunks = await db.prepare(
+      'SELECT chunk_index FROM stt_chunks WHERE consultation_id = ? AND audio_url IS NOT NULL ORDER BY chunk_index ASC'
+    ).bind(consultId).all();
+    if (chunks.results.length > 0) {
+      return c.json({ success: true, data: { type: 'segments', segments: chunks.results.map((r: any) => r.chunk_index) } });
+    }
+
+    return c.json({ success: false, error: '재생 가능한 녹음이 없습니다.' }, 404);
+  } catch (error) {
+    console.error('Audio fetch error:', error);
+    return c.json({ success: false, error: '오디오 로드에 실패했습니다.' }, 500);
+  }
+});
+
+// POST /api/consultations/:id/upload-audio - Upload single audio → async analysis (v8.0 rewrite)
+consultations.post('/:id/upload-audio', async (c) => {
+  try {
+    const consultId = c.req.param('id');
+    const orgId = c.get('organizationId');
+    const userId = c.get('userId');
+    const db = c.env.DB;
+
+    const consultation = await db.prepare(`
+      SELECT c.id, p.name as patient_name, p.age as patient_age, p.gender as patient_gender
+      FROM consultations c LEFT JOIN patients p ON c.patient_id = p.id
+      WHERE c.id = ? AND c.organization_id = ?
+    `).bind(consultId, orgId).first();
+    if (!consultation) {
+      return c.json({ success: false, error: '상담 기록을 찾을 수 없습니다.' }, 404);
+    }
+
     const formData = await c.req.formData();
     const audioFile = formData.get('audio') as File;
     const duration = formData.get('duration') as string;
-
     if (!audioFile) {
       return c.json({ success: false, error: '녹음 파일이 없습니다.' }, 400);
     }
 
-    // Update status to processing
-    await db.prepare(
-      'UPDATE consultations SET ai_analysis_status = ?, duration = ? WHERE id = ?'
-    ).bind('processing', duration ? parseInt(duration) : null, consultId).run();
-
-    // Upload to R2
-    const audioKey = `consultations/${consultId}/recording.webm`;
-    const audioData = await audioFile.arrayBuffer();
-    
-    await c.env.R2.put(audioKey, audioData, {
-      httpMetadata: { contentType: audioFile.type }
-    });
-
     const apiKey = c.env.OPENAI_API_KEY;
     if (!apiKey) {
-      console.error('OPENAI_API_KEY not found. Env keys:', Object.keys(c.env));
-      await db.prepare(
-        'UPDATE consultations SET ai_analysis_status = ?, audio_url = ? WHERE id = ?'
-      ).bind('failed', audioKey, consultId).run();
-      return c.json({ success: false, error: 'OpenAI API 키가 설정되지 않았습니다. (env: ' + Object.keys(c.env).join(',') + ')' }, 500);
+      return c.json({ success: false, error: 'OpenAI API 키가 설정되지 않았습니다.' }, 500);
     }
 
-    try {
-      // Get patient info for full analysis
-      let patientInfo = { name: '미지정', age: undefined, gender: undefined };
-      
-      const consultWithPatient = await db.prepare(`
-        SELECT c.*, p.name as patient_name, p.age as patient_age, p.gender as patient_gender
-        FROM consultations c
-        LEFT JOIN patients p ON c.patient_id = p.id
-        WHERE c.id = ?
-      `).bind(consultId).first();
-      
-      if (consultWithPatient?.patient_name) {
-        patientInfo = {
-          name: consultWithPatient.patient_name as string,
-          age: consultWithPatient.patient_age as number,
-          gender: consultWithPatient.patient_gender as string
-        };
-      }
+    // R2 저장
+    const audioKey = `consultations/${consultId}/recording.webm`;
+    const audioData = await audioFile.arrayBuffer();
+    await c.env.R2.put(audioKey, audioData, { httpMetadata: { contentType: audioFile.type } });
 
-      // ===== FEEDBACK LEARNING LOOP =====
-      // Fetch previous session feedback for this consultant to enable growth comparison
-      let previousFeedback: PreviousFeedbackContext | null = null;
-      try {
-        const prevReports = await db.prepare(`
-          SELECT r.coaching_feedback, r.coaching_score, c.consultation_date, c.treatment_type
-          FROM consultation_reports r
-          JOIN consultations c ON r.consultation_id = c.id
-          WHERE c.user_id = ? AND c.organization_id = ? AND r.coaching_score > 0
-          ORDER BY c.consultation_date DESC
-          LIMIT 5
-        `).bind(userId, orgId).all();
+    // 즉시 processing 전환 후 응답 — 분석은 백그라운드
+    await db.prepare(`
+      UPDATE consultations SET ai_analysis_status = 'processing', analysis_step = 'transcribing',
+        analysis_error = NULL, duration = ?, audio_url = ?, updated_at = datetime('now')
+      WHERE id = ?
+    `).bind(duration ? parseInt(duration) : null, audioKey, consultId).run();
 
-        if (prevReports.results.length > 0) {
-          const sessions = prevReports.results.map((r: any) => {
-            const fb = safeParseJSON(r.coaching_feedback, {});
-            return {
-              date: r.consultation_date?.split('T')[0] || '',
-              total_score: r.coaching_score || 0,
-              scores: fb.scores || { rapport: 0, spin: 0, objection_handling: 0, pricing_framing: 0, closing: 0, structure: 0 },
-              top_improvement: fb.improvements?.[0]?.issue || '없음',
-              treatment_type: r.treatment_type || undefined,
-            };
-          });
+    const patientInfo = {
+      name: (consultation.patient_name as string) || '미지정',
+      age: consultation.patient_age as number | undefined,
+      gender: consultation.patient_gender as string | undefined,
+    };
 
-          // Calculate averages
-          const avgScores = {
-            rapport: 0, spin: 0, objection_handling: 0, pricing_framing: 0, closing: 0, structure: 0
-          };
-          let totalSum = 0;
-          sessions.forEach((s: any) => {
-            totalSum += s.total_score;
-            (Object.keys(avgScores) as Array<keyof typeof avgScores>).forEach(k => {
-              avgScores[k] += (s.scores[k] || 0);
-            });
-          });
-          const count = sessions.length;
-          (Object.keys(avgScores) as Array<keyof typeof avgScores>).forEach(k => {
-            avgScores[k] = avgScores[k] / count;
-          });
+    c.executionCtx.waitUntil(runAnalysisJob({
+      db, env: c.env as any, apiKey, consultId, orgId, userId, patientInfo, audioData, audioKey,
+    }));
 
-          // Find recurring issues (appear in 2+ sessions)
-          const issueCounts: Record<string, number> = {};
-          sessions.forEach((s: any) => {
-            if (s.top_improvement && s.top_improvement !== '없음') {
-              const key = s.top_improvement.slice(0, 30);
-              issueCounts[key] = (issueCounts[key] || 0) + 1;
-            }
-          });
-          const recurringIssues = Object.entries(issueCounts)
-            .filter(([, count]) => count >= 2)
-            .map(([issue]) => issue);
-
-          previousFeedback = {
-            sessions,
-            avg_scores: avgScores,
-            avg_total: totalSum / count,
-            recurring_issues: recurringIssues.length > 0 ? recurringIssues : sessions.slice(0, 2).map((s: any) => s.top_improvement).filter(Boolean),
-          };
-          console.log('[Pipeline] Loaded', count, 'previous feedback sessions, avg score:', (totalSum / count).toFixed(1));
-        }
-      } catch (e) {
-        console.warn('[Pipeline] Failed to load previous feedback:', e);
-      }
-
-      // Run full AI analysis pipeline (includes report generation)
-      // env를 전달하여 AI_PRIMARY_MODEL, AI_SECONDARY_MODEL 등 환경변수 기반 모델 선택
-      const fullAnalysis = await runFullAnalysisPipeline(audioData, patientInfo, apiKey, c.env as any, previousFeedback);
-
-      // Safely convert any value to string for D1 TEXT columns
-      const toStr = (v: any): string => {
-        if (v === null || v === undefined) return '';
-        if (typeof v === 'string') return v;
-        if (Array.isArray(v)) return v.join('\n');
-        if (typeof v === 'object') return JSON.stringify(v);
-        return String(v);
-      };
-      const toJsonStr = (v: any): string => {
-        if (typeof v === 'string') return v;
-        return JSON.stringify(v ?? null);
-      };
-
-      // Update consultation with analysis
-      await db.prepare(`
-        UPDATE consultations SET
-          audio_url = ?,
-          transcript = ?,
-          transcript_diarized = ?,
-          ner_extracted = ?,
-          spin_analysis = ?,
-          summary = ?,
-          treatment_type = COALESCE(treatment_type, ?),
-          treatment_area = COALESCE(treatment_area, ?),
-          amount = COALESCE(amount, ?),
-          patient_psychology = ?,
-          emotion_flow = ?,
-          key_quotes = ?,
-          feedback = ?,
-          decision_score = ?,
-          ai_analysis_status = 'completed',
-          recording_status = 'completed',
-          updated_at = datetime('now')
-        WHERE id = ?
-      `).bind(
-        audioKey,
-        toStr(fullAnalysis.transcript),
-        toJsonStr(fullAnalysis.diarizedSegments),
-        toJsonStr(fullAnalysis.nerData),
-        toJsonStr(fullAnalysis.spinAnalysis),
-        toStr(fullAnalysis.report.consultation_summary),
-        fullAnalysis.nerData.treatment_type || null,
-        fullAnalysis.nerData.treatment_area || null,
-        fullAnalysis.nerData.amount || null,
-        toJsonStr(fullAnalysis.report.decision_factors),
-        toJsonStr({
-          overall_tone: fullAnalysis.report.overall_sentiment,
-          decision_score: fullAnalysis.report.decision_score,
-          timeline: fullAnalysis.report.emotion_timeline,
-          summary: fullAnalysis.report.emotion_summary
-        }),
-        toJsonStr(fullAnalysis.report.patient_concerns?.map((c: any) => c.concern) || []),
-        toJsonStr(fullAnalysis.report.coaching_feedback),
-        fullAnalysis.report.decision_score || 5,
-        consultId
-      ).run();
-
-      // Auto-create consultation report
-      const reportId = 'report_' + generateId().slice(0, 8);
-      await db.prepare(`
-        INSERT INTO consultation_reports (
-          id, organization_id, consultation_id,
-          consultation_summary, treatment_options, discussed_amount, payment_options,
-          patient_concerns, emotion_timeline, emotion_summary, overall_sentiment,
-          decision_factors, decision_score, decision_prediction,
-          next_actions, recommended_followup_date, followup_message,
-          coaching_feedback, coaching_score, generation_model
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'gpt-4o')
-      `).bind(
-        reportId, orgId, consultId,
-        toStr(fullAnalysis.report.consultation_summary),
-        toJsonStr(fullAnalysis.report.treatment_options),
-        fullAnalysis.report.discussed_amount || null,
-        toJsonStr(fullAnalysis.report.payment_options),
-        toJsonStr(fullAnalysis.report.patient_concerns),
-        toJsonStr(fullAnalysis.report.emotion_timeline),
-        toStr(fullAnalysis.report.emotion_summary),
-        toStr(fullAnalysis.report.overall_sentiment),
-        toJsonStr(fullAnalysis.report.decision_factors),
-        fullAnalysis.report.decision_score || 5,
-        toStr(fullAnalysis.report.decision_prediction),
-        toJsonStr(fullAnalysis.report.next_actions),
-        toStr(fullAnalysis.report.recommended_followup_date),
-        toStr(fullAnalysis.report.followup_message),
-        toJsonStr(fullAnalysis.report.coaching_feedback),
-        fullAnalysis.report.coaching_feedback?.total_score || 0
-      ).run();
-
-      return c.json({ 
-        success: true, 
-        data: {
-          ...fullAnalysis,
-          report_id: reportId
-        }
-      });
-    } catch (aiError: any) {
-      console.error('AI analysis error:', aiError?.message || aiError);
-      await db.prepare(
-        'UPDATE consultations SET ai_analysis_status = ?, audio_url = ? WHERE id = ?'
-      ).bind('failed', audioKey, consultId).run();
-      return c.json({ success: false, error: 'AI 분석에 실패했습니다: ' + (aiError?.message || '알 수 없는 오류') }, 500);
-    }
+    return c.json({ success: true, data: { consultation_id: consultId, status: 'processing', async: true } });
   } catch (error) {
     console.error('Upload audio error:', error);
     return c.json({ success: false, error: '녹음 업로드에 실패했습니다.' }, 500);

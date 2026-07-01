@@ -54,6 +54,33 @@ function renderConsultation(c) {
   const isUnlinked = !c.patient_id;
   let html = '<div class="space-y-3 stagger-children">';
 
+  // === v8.0: Analysis status banner (processing → poll / failed → reanalyze) ===
+  if (c.ai_analysis_status === 'processing') {
+    html += '<div class="card-premium p-4 border-l-4 border-l-brand-400 bg-gradient-to-r from-brand-50/50 to-transparent">' +
+      '<div class="flex items-center gap-3">' +
+        '<div class="w-10 h-10 rounded-xl bg-brand-100 flex items-center justify-center shrink-0"><i class="fas fa-circle-notch fa-spin text-brand-600"></i></div>' +
+        '<div class="flex-1 min-w-0">' +
+          '<p class="font-bold text-surface-900 text-sm">AI 분석 진행 중</p>' +
+          '<p id="analysisStepLabel" class="text-surface-500 text-xs mt-0.5">진행 상태 확인 중...</p>' +
+        '</div>' +
+      '</div>' +
+    '</div>';
+    startStatusPolling();
+  } else if (c.ai_analysis_status === 'failed') {
+    html += '<div class="card-premium p-4 border-l-4 border-l-rose-400 bg-gradient-to-r from-rose-50/50 to-transparent">' +
+      '<div class="flex items-start gap-3">' +
+        '<div class="w-10 h-10 rounded-xl bg-rose-100 flex items-center justify-center shrink-0"><i class="fas fa-triangle-exclamation text-rose-600"></i></div>' +
+        '<div class="flex-1 min-w-0">' +
+          '<p class="font-bold text-surface-900 text-sm">AI 분석 실패</p>' +
+          '<p class="text-surface-500 text-xs mt-0.5">' + esc(c.analysis_error || '녹음은 안전하게 저장되어 있습니다. 다시 분석할 수 있어요.') + '</p>' +
+          '<button id="reanalyzeBtn" onclick="reanalyzeConsultation()" class="mt-2.5 inline-flex items-center gap-1.5 bg-rose-600 hover:bg-rose-700 text-white px-3.5 py-2 rounded-lg text-xs font-semibold transition-all active:scale-95 shadow-sm">' +
+            '<i class="fas fa-rotate-right text-[10px]"></i>다시 분석하기' +
+          '</button>' +
+        '</div>' +
+      '</div>' +
+    '</div>';
+  }
+
   // Unlinked warning
   if (isUnlinked) {
     html += '<div class="card-premium p-4 border-l-4 border-l-amber-400 bg-gradient-to-r from-amber-50/50 to-transparent">' +
@@ -100,6 +127,23 @@ function renderConsultation(c) {
       '<span class="text-brand-600 text-xs font-semibold">상담 금액</span>' +
       '<span class="text-xl font-black text-brand-700">' + (c.amount / 10000).toFixed(0) + '<span class="text-sm font-semibold text-brand-500 ml-0.5">만원</span></span>' +
     '</div>' : '') +
+  '</div>';
+
+  // === v8.0: Audio Playback (녹음 다시듣기 — 성장의 핵심 도구) ===
+  html += '<div class="card-premium p-4" id="audioPlayerCard">' +
+    '<div class="flex items-center gap-3">' +
+      '<div class="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-blue-600 flex items-center justify-center shrink-0 shadow-sm">' +
+        '<i class="fas fa-headphones text-white text-sm"></i>' +
+      '</div>' +
+      '<div class="flex-1 min-w-0">' +
+        '<p class="font-bold text-sm text-surface-900">녹음 다시듣기</p>' +
+        '<p class="text-xs text-surface-500 mt-0.5">내 상담을 직접 들으며 복기하세요</p>' +
+      '</div>' +
+      '<button id="loadAudioBtn" onclick="loadAudioPlayer()" class="px-3.5 py-2 rounded-lg bg-indigo-50 text-indigo-600 text-xs font-semibold hover:bg-indigo-100 transition-colors">' +
+        '<i class="fas fa-play mr-1 text-[10px]"></i>재생' +
+      '</button>' +
+    '</div>' +
+    '<div id="audioPlayerBody" class="hidden mt-3"></div>' +
   '</div>';
 
   // Report Link
@@ -536,5 +580,123 @@ async function createAndLinkPatient(e) {
 }
 
 function toggleTranscript() { document.getElementById('fullTranscript').classList.toggle('hidden'); }
+
+// =========================================
+// v8.0: Analysis Status Polling
+// =========================================
+var _statusPollTimer = null;
+function startStatusPolling() {
+  if (_statusPollTimer) return;
+  var attempts = 0;
+  _statusPollTimer = setInterval(function () {
+    attempts++;
+    if (attempts > 120) { clearInterval(_statusPollTimer); _statusPollTimer = null; return; }
+    fetch('/api/consultations/' + consultationId + '/analysis-status')
+      .then(function (r) { return r.json(); })
+      .then(function (res) {
+        if (!res.success) return;
+        var d = res.data;
+        var label = document.getElementById('analysisStepLabel');
+        if (label) label.textContent = d.step_label + ' (' + d.progress + '%)';
+        if (d.status === 'completed' || d.status === 'failed') {
+          clearInterval(_statusPollTimer); _statusPollTimer = null;
+          loadConsultation(); // 배너/리포트 갱신
+        }
+      })
+      .catch(function () {});
+  }, 3000);
+}
+
+// =========================================
+// v8.0: Re-analyze
+// =========================================
+async function reanalyzeConsultation() {
+  var btn = document.getElementById('reanalyzeBtn');
+  if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-circle-notch fa-spin text-[10px] mr-1"></i>분석 시작 중...'; }
+  try {
+    var res = await fetch('/api/consultations/' + consultationId + '/reanalyze', { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+    var data = await res.json();
+    if (data.success) {
+      showToast('재분석을 시작했습니다. 잠시 후 자동으로 갱신됩니다.', 'success');
+      loadConsultation();
+    } else {
+      showToast(data.error || '재분석 시작에 실패했습니다.', 'error');
+      if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-rotate-right text-[10px]"></i>다시 분석하기'; }
+    }
+  } catch (e) {
+    showToast('네트워크 오류가 발생했습니다.', 'error');
+    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-rotate-right text-[10px]"></i>다시 분석하기'; }
+  }
+}
+
+// =========================================
+// v8.0: Audio Playback (단일 파일 + 세그먼트 순차 재생)
+// =========================================
+var _audioSegments = null;
+var _currentSegIdx = 0;
+
+async function loadAudioPlayer() {
+  var body = document.getElementById('audioPlayerBody');
+  var btn = document.getElementById('loadAudioBtn');
+  if (!body) return;
+  if (!body.classList.contains('hidden')) { body.classList.add('hidden'); return; }
+  body.classList.remove('hidden');
+  body.innerHTML = '<p class="text-xs text-surface-400"><i class="fas fa-circle-notch fa-spin mr-1"></i>녹음 불러오는 중...</p>';
+
+  try {
+    var res = await fetch('/api/consultations/' + consultationId + '/audio');
+    var contentType = res.headers.get('content-type') || '';
+
+    if (contentType.indexOf('audio') !== -1) {
+      // 단일 파일 스트리밍
+      var blob = await res.blob();
+      renderSingleAudio(body, URL.createObjectURL(blob));
+    } else {
+      var data = await res.json();
+      if (data.success && data.data.type === 'segments' && data.data.segments.length > 0) {
+        _audioSegments = data.data.segments;
+        _currentSegIdx = 0;
+        renderSegmentAudio(body);
+      } else {
+        body.innerHTML = '<p class="text-xs text-surface-400">재생 가능한 녹음이 없습니다.</p>';
+      }
+    }
+  } catch (e) {
+    body.innerHTML = '<p class="text-xs text-rose-500">오디오 로드에 실패했습니다.</p>';
+  }
+}
+
+function renderSingleAudio(body, url) {
+  body.innerHTML = '<audio controls preload="metadata" class="w-full" style="height:40px" src="' + url + '"></audio>' +
+    '<p class="text-[10px] text-surface-400 mt-1.5"><i class="fas fa-lightbulb text-amber-400 mr-1"></i>AI가 지적한 구간을 직접 들으며 복기하면 성장 속도가 2배입니다</p>';
+}
+
+function renderSegmentAudio(body) {
+  var total = _audioSegments.length;
+  body.innerHTML =
+    '<audio id="segAudio" controls preload="auto" class="w-full" style="height:40px"></audio>' +
+    '<div class="flex items-center justify-between mt-2">' +
+      '<button onclick="playSegment(_currentSegIdx-1)" class="px-2.5 py-1.5 rounded-lg bg-surface-100 text-surface-600 text-[10px] font-semibold"><i class="fas fa-backward-step mr-1"></i>이전</button>' +
+      '<span id="segLabel" class="text-[11px] font-semibold text-surface-600">구간 1 / ' + total + ' (각 1분)</span>' +
+      '<button onclick="playSegment(_currentSegIdx+1)" class="px-2.5 py-1.5 rounded-lg bg-surface-100 text-surface-600 text-[10px] font-semibold">다음<i class="fas fa-forward-step ml-1"></i></button>' +
+    '</div>' +
+    '<p class="text-[10px] text-surface-400 mt-1.5"><i class="fas fa-lightbulb text-amber-400 mr-1"></i>구간이 끝나면 자동으로 다음 구간이 재생됩니다</p>';
+
+  var audio = document.getElementById('segAudio');
+  audio.addEventListener('ended', function () {
+    if (_currentSegIdx < total - 1) playSegment(_currentSegIdx + 1, true);
+  });
+  playSegment(0);
+}
+
+function playSegment(idx, autoplay) {
+  if (!_audioSegments || idx < 0 || idx >= _audioSegments.length) return;
+  _currentSegIdx = idx;
+  var audio = document.getElementById('segAudio');
+  var label = document.getElementById('segLabel');
+  if (label) label.textContent = '구간 ' + (idx + 1) + ' / ' + _audioSegments.length + ' (각 1분)';
+  audio.src = '/api/consultations/' + consultationId + '/audio?segment=' + _audioSegments[idx];
+  if (autoplay) audio.play().catch(function () {});
+}
 
 loadConsultation();

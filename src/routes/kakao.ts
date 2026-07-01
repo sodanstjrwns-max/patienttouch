@@ -16,7 +16,7 @@ kakao.use('*', authMiddleware);
 // GET /api/kakao/config - Get KakaoTalk configuration status
 kakao.get('/config', async (c) => {
   try {
-    const { orgId } = c.get('user' as any);
+    const orgId = c.get('organizationId');
     const db = c.env.DB;
     
     // Check if kakao config exists in organization settings
@@ -42,7 +42,7 @@ kakao.get('/config', async (c) => {
 // PUT /api/kakao/config - Update KakaoTalk configuration
 kakao.put('/config', async (c) => {
   try {
-    const { orgId, role } = c.get('user' as any);
+    const orgId = c.get('organizationId'); const role = (c.get('auth') as any)?.role;
     if (role !== 'admin') return c.json({ success: false, error: '관리자만 설정할 수 있습니다' }, 403);
     
     const { api_key, sender_key, channel_id } = await c.req.json();
@@ -120,7 +120,7 @@ kakao.get('/templates', async (c) => {
 // POST /api/kakao/send - Send KakaoTalk message  
 kakao.post('/send', async (c) => {
   try {
-    const { userId, orgId } = c.get('user' as any);
+    const userId = c.get('userId'); const orgId = c.get('organizationId');
     const db = c.env.DB;
     const { 
       patient_id, 
@@ -216,7 +216,7 @@ kakao.post('/send', async (c) => {
 // POST /api/kakao/send-proposal - Send treatment proposal via KakaoTalk
 kakao.post('/send-proposal', async (c) => {
   try {
-    const { userId, orgId } = c.get('user' as any);
+    const userId = c.get('userId'); const orgId = c.get('organizationId');
     const db = c.env.DB;
     const { proposal_id, channel } = await c.req.json();
     
@@ -273,7 +273,7 @@ kakao.post('/send-proposal', async (c) => {
 // POST /api/kakao/send-batch - Send batch messages (retention contacts)
 kakao.post('/send-batch', async (c) => {
   try {
-    const { userId, orgId } = c.get('user' as any);
+    const userId = c.get('userId'); const orgId = c.get('organizationId');
     const db = c.env.DB;
     const { patient_ids, template_id, variables_map } = await c.req.json();
     
@@ -326,7 +326,7 @@ kakao.post('/send-batch', async (c) => {
 // GET /api/kakao/logs - Get notification logs
 kakao.get('/logs', async (c) => {
   try {
-    const { orgId } = c.get('user' as any);
+    const orgId = c.get('organizationId');
     const db = c.env.DB;
     const limit = parseInt(c.req.query('limit') || '50');
     const offset = parseInt(c.req.query('offset') || '0');

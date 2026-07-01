@@ -240,13 +240,74 @@ function renderGrowthPage(data, trend) {
   });
   html += '</div></div>';
 
+  // === v8.0: SCORE-REVENUE PROOF (placeholder, async fill) ===
+  html += '<div id="scoreRevenueSection"></div>';
+
   container.innerHTML = html;
 
   // === RENDER CHARTS ===
   setTimeout(function() {
     renderScoreLineChart(sessions);
     renderAreaRadarChart(areaTrend);
+    loadScoreRevenue();
   }, 100);
+}
+
+// =========================================
+// v8.0: 점수-매출 상관 위젯 — "내 점수가 오르면 매출이 오른다"
+// =========================================
+async function loadScoreRevenue() {
+  var el = document.getElementById('scoreRevenueSection');
+  if (!el) return;
+  try {
+    var res = await fetch('/api/dashboard/score-revenue?days=90');
+    if (!res.ok) return;
+    var json = await res.json();
+    if (!json.success || !json.data) return;
+    renderScoreRevenue(el, json.data);
+  } catch(e) { console.error('score-revenue error:', e); }
+}
+
+function renderScoreRevenue(el, d) {
+  var buckets = d.buckets || [];
+  if (buckets.length === 0) return;
+
+  var html = '<div class="bg-white rounded-2xl border border-surface-100 p-4 mt-4">' +
+    '<div class="flex items-center justify-between mb-3">' +
+      '<h3 class="text-sm font-bold text-surface-800"><i class="fas fa-coins text-amber-500 mr-1.5"></i>점수가 매출이 되는 증거</h3>' +
+      '<span class="text-[10px] text-surface-400">최근 90일</span>' +
+    '</div>';
+
+  // 인사이트 배너
+  if (d.insight && d.insight.message) {
+    var positive = d.insight.conversion_gap > 0;
+    html += '<div class="rounded-xl px-3 py-2.5 mb-3 text-xs font-medium ' +
+      (positive ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-surface-50 text-surface-500 border border-surface-100') + '">' +
+      '<i class="fas ' + (positive ? 'fa-arrow-trend-up' : 'fa-hourglass-half') + ' mr-1"></i>' +
+      esc(d.insight.message) + '</div>';
+  }
+
+  // 구간별 바
+  var maxConv = Math.max.apply(null, buckets.map(function(b){ return b.conversion_rate || 0; }).concat([1]));
+  var colors = { '60점 미만': 'bg-red-400', '60-69점': 'bg-amber-400', '70-79점': 'bg-sky-400', '80점 이상': 'bg-emerald-500' };
+  html += '<div class="space-y-2">';
+  buckets.forEach(function(b) {
+    var w = Math.max(4, Math.round((b.conversion_rate / maxConv) * 100));
+    var amt = b.paid_amount ? (b.paid_amount >= 10000000 ? (Math.round(b.paid_amount / 1000000) / 10) + '천만' : Math.round(b.paid_amount / 10000).toLocaleString() + '만') : '0';
+    html += '<div class="flex items-center gap-2">' +
+      '<span class="text-[10px] font-semibold text-surface-500 w-14 shrink-0">' + esc(b.bucket) + '</span>' +
+      '<div class="flex-1 h-6 bg-surface-50 rounded-lg overflow-hidden relative">' +
+        '<div class="h-full rounded-lg ' + (colors[b.bucket] || 'bg-surface-300') + ' transition-all" style="width:' + w + '%"></div>' +
+        '<span class="absolute inset-y-0 left-2 flex items-center text-[10px] font-bold text-surface-700">' + b.conversion_rate + '%</span>' +
+      '</div>' +
+      '<span class="text-[10px] text-surface-400 w-16 text-right shrink-0">' + b.paid_count + '/' + b.consultation_count + '건 · ' + amt + '</span>' +
+    '</div>';
+  });
+  html += '</div>' +
+    '<p class="text-[9px] text-surface-300 mt-2">구간별 결제 전환율 · 건수 · 결제금액</p>' +
+  '</div>';
+
+  el.innerHTML = html;
 }
 
 function renderScoreLineChart(sessions) {

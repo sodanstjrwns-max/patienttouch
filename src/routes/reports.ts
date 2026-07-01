@@ -56,7 +56,8 @@ reports.get('/:consultationId', async (c) => {
         emotion_timeline: safeParseJSON(report.emotion_timeline as string, []),
         decision_factors: safeParseJSON(report.decision_factors as string, {}),
         next_actions: safeParseJSON(report.next_actions as string, []),
-        coaching_feedback: safeParseJSON(report.coaching_feedback as string, {})
+        coaching_feedback: safeParseJSON(report.coaching_feedback as string, {}),
+        growth_comparison: (safeParseJSON(report.coaching_feedback as string, {}) as any).growth_comparison || null
       }
     });
   } catch (error) {

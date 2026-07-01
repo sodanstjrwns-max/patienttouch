@@ -1,6 +1,6 @@
 // Authentication Routes
 import { Hono } from 'hono';
-import { generateId, hashPassword, verifyPassword, safeParseJSON } from '../lib/utils';
+import { generateId, hashPassword, verifyPassword, verifyPasswordDetailed, safeParseJSON } from '../lib/utils';
 import { setAuthCookie, clearAuthCookie, authMiddleware } from '../lib/auth';
 import { sanitize, isValidEmail } from '../lib/middleware';
 import type { Env, User, Organization } from '../types';
@@ -98,10 +98,19 @@ auth.post('/login', async (c) => {
       return c.json({ success: false, error: '이메일 또는 비밀번호가 올바르지 않습니다.' }, 401);
     }
 
-    // Verify password
-    const valid = await verifyPassword(password, user.password_hash);
+    // Verify password (v8.0: PBKDF2 + auto-rehash of legacy SHA-256 hashes)
+    const { valid, needsRehash } = await verifyPasswordDetailed(password, user.password_hash);
     if (!valid) {
       return c.json({ success: false, error: '이메일 또는 비밀번호가 올바르지 않습니다.' }, 401);
+    }
+
+    // Auto-upgrade legacy hash → PBKDF2 (transparent to user)
+    if (needsRehash) {
+      try {
+        const newHash = await hashPassword(password);
+        await db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').bind(newHash, user.id).run();
+        console.log(`[SECURITY] Rehashed legacy password for user ${user.id}`);
+      } catch (e) { console.error('Password rehash failed:', e); }
     }
 
     // Update last login
