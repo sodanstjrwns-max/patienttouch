@@ -1,4 +1,28 @@
-# 페이션트 터치 (Patient Touch v8.3)
+# 페이션트 터치 (Patient Touch v8.4)
+
+## 🔔 v8.4 아침 브리핑 푸시 알림 (2026-07-02)
+
+**핵심 철학: "앱을 열지 않아도, 매일 아침 폰에 오늘 할 일이 도착한다"**
+
+### 1. Web Push 아침 브리핑 (매일 설정 시각, 기본 09:00 KST)
+- 알림 내용: **☀️ 오늘 연락 N건이 기다려요** — 예상 금액 X만원 · 최우선: OOO님 · ⏰ 이월 M건
+- 알림 탭 → 앱 열리며 `/today` 오늘의 액션 페이지로 바로 이동
+- 연락할 건이 0건이면 발송 스킵 (방해 금지), 주말 알림은 설정에서 별도 ON/OFF
+- 사용자 설정 반영: `notification_enabled` / `notification_time`(시각) / `weekend_notification`
+
+### 2. 구독 관리 & 클라이언트
+- `public/static/push-client.js` — `ptPush` 유틸 (enable/disable/test/getState), VAPID 공개키 기반 구독
+- 설정 페이지: "아침 브리핑 푸시 알림" 토글 + 상태 표시 + **테스트 발송 버튼** (실제 브리핑 데이터로 즉시 발송)
+- `/today` 상단: 미구독 사용자에게 푸시 켜기 넛지 배너 (닫으면 localStorage로 재표시 방지)
+- `sw.js` (pt-v8.4.0): `push` 수신 → 알림 표시, `notificationclick` → 기존 창 포커스+이동 또는 새 창
+
+### 3. 서버 & 인프라
+- `/api/push` 라우트 6종: vapid-public-key / status / subscribe / unsubscribe / test / **send-morning-briefings** (크론 전용, X-Cron-Secret 인증)
+- 암호화: `@block65/webcrypto-web-push` (Workers 호환 Web Crypto, VAPID)
+- D1 `push_subscriptions` 테이블 (migration 0012): endpoint UNIQUE upsert, 실패 5회 누적 시 자동 제외, 404/410 응답 시 구독 자동 삭제
+- **크론 워커** `patient-touch-briefing-cron` (별도 Worker): KST 06~22시 매시 정각 Pages 엔드포인트 호출 → 각 사용자의 설정 시각과 일치할 때만 발송
+
+---
 
 ## ☀️ v8.3 아침 루틴 완성 (2026-07-02)
 
