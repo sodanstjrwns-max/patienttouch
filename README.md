@@ -1,4 +1,36 @@
-# 페이션트 터치 (Patient Touch v8.1)
+# 페이션트 터치 (Patient Touch v8.2)
+
+## 🔄 v8.2 녹음→피드백→다음 연락 루프 완성 (2026-07-02)
+
+**핵심 철학: "녹음하면 끝이 아니라, AI가 '누구한테 언제 뭐라고 연락할지'까지 자동으로 확정한다"**
+
+### 1. AI 분석 → 연락 태스크 자동 동기화 (`syncFollowupTask`)
+- 상담 분석이 끝나는 순간, AI 리포트의 `recommended_followup_date` + `followup_message` + `next_actions`가 **contact_tasks에 자동 등록**
+- 팔로업 날짜 검증: 과거/무효 날짜 → 결정도 기반 스마트 보정 (결정도 8+ → 내일, 5-7 → 2일, 그 외 → 3일 / 14일 초과 추천 → 7일로 당김)
+- 재분석 시 기존 자동 태스크는 최신 AI 추천으로 교체 (수동 태스크는 보존)
+- 이미 결제(paid)/이탈(lost) 확정 상담은 태스크 생성 안 함
+- 적용 경로: 세그먼트 finalize, 재분석, 수동 리포트 생성 3곳 모두
+
+### 2. 녹음 전 브리핑 API (`GET /api/dashboard/pre-consultation-briefing`)
+- **코치 미션**: 최근 5회 리포트 분석 → 직전 개선과제 + 반복 지적사항 + **최약 영역(만점 대비 달성률) + Patient Code 기반 실천 팁**
+- **환자 브리핑** (`?patient_id=`): 재상담 환자의 지난 상담 핵심 장벽·미해소 우려·결정권자·결정 예측을 녹음 시작 전에 리마인드
+- 녹음 화면에 2개 카드로 표시: 재상담 브리핑(sky) + 오늘의 미션(amber)
+
+### 3. 연락 태스크 출처 추적 (migration 0011)
+- `contact_tasks.origin`: `manual` / `auto_rule` / `ai_analysis`
+- `contact_tasks.ai_reason`: AI 추천 근거 (결정도 + 핵심 장벽 + 결정 예측)
+- 홈 "오늘의 연락" 카드에 **🤖 AI 추천 배지 + 추천 근거** 노출
+- `GET /api/tasks?consultation_id=` 필터 추가
+
+### 4. 리포트 페이지 팔로업 위젯
+- 추천 팔로업 섹션에 **연락 예약 상태 배지** (AI 자동 등록 / 수동 등록 + 예약일)
+- 태스크가 없으면 **원클릭 "연락 태스크 등록" 버튼** (AI 추천 날짜/멘트/포인트 그대로 사용)
+
+### DB 변경
+- migration 0011: `contact_tasks.origin`, `contact_tasks.ai_reason`, `idx_contact_tasks_consultation`
+- 프로덕션 배포 시: `npx wrangler d1 migrations apply patient-touch-db` 필수
+
+---
 
 ## 🛡️ v8.1 보안·성능 심층 감사 (2026-07-02)
 

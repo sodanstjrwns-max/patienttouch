@@ -269,6 +269,10 @@ reports.post('/:consultationId/generate', async (c) => {
           consultationId
         ).run();
 
+        // v8.2: 리포트 생성 완료 즉시 AI 팔로업 태스크 동기화
+        const { syncFollowupTask } = await import('../lib/analysis-runner');
+        await syncFollowupTask(db, orgId, userId, consultationId, analysis.report);
+
         console.log('[BG Pipeline] Complete for', consultationId, '— Score:', analysis.report.coaching_feedback?.total_score);
       } catch (error: any) {
         console.error('[BG Pipeline] Failed for', consultationId, ':', error?.message || error);

@@ -780,8 +780,8 @@ consultations.put('/:id', async (c) => {
             const treatType = (consult.treatment_type || '치료') as string;
             
             await db.prepare(`
-              INSERT INTO contact_tasks (id, organization_id, consultation_id, user_id, patient_id, task_type, recommended_date, recommended_message, points)
-              VALUES (?, ?, ?, ?, ?, 'closing', ?, ?, ?)
+              INSERT INTO contact_tasks (id, organization_id, consultation_id, user_id, patient_id, task_type, recommended_date, recommended_message, points, origin)
+              VALUES (?, ?, ?, ?, ?, 'closing', ?, ?, ?, 'auto_rule')
             `).bind(
               taskId, orgId, consultId, userId, consult.patient_id, taskDateStr,
               `${pName}님, 지난번 ${treatType} 상담 후 고민은 좀 정리되셨나요? 궁금하신 점이 있으시면 편하게 말씀해주세요.`,

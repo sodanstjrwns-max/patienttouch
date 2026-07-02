@@ -7,7 +7,7 @@
 //      - /static/*: Stale-While-Revalidate (즉시 캐시 응답 + 백그라운드 업데이트)
 //      - HTML 페이지: Network-first + 오프라인 fallback
 
-const CACHE_VERSION = 'pt-v8.1.0';
+const CACHE_VERSION = 'pt-v8.2.0';
 const STATIC_CACHE = `pt-static-${CACHE_VERSION}`;
 const RUNTIME_CACHE = `pt-runtime-${CACHE_VERSION}`;
 const PAGE_CACHE = `pt-pages-${CACHE_VERSION}`;

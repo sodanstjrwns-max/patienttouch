@@ -398,6 +398,7 @@ function renderContacts(data) {
     html += '<span class="inline-flex items-center gap-0.5 px-1 py-0.5 rounded text-[9px] font-bold '+u.bg+' '+u.tx+'">';
     if(u.pu) html += '<span class="w-1 h-1 rounded-full bg-rose-500 animate-pulse"></span>';
     html += '<i class="fas '+u.ic+' text-[7px]"></i>'+u.lb+'</span>';
+    if(c.origin === 'ai_analysis') html += '<span class="inline-flex items-center gap-0.5 px-1 py-0.5 rounded text-[9px] font-bold bg-purple-50 text-purple-700"><i class="fas fa-robot text-[7px]"></i>AI 추천</span>';
     // Last contact date tag
     html += daysAgoLabel(c.last_contact_date);
     html += '</div>';
@@ -414,6 +415,7 @@ function renderContacts(data) {
     if(c.region) html += '<span class="text-[9px] px-1 py-0.5 rounded bg-slate-100 text-slate-600 font-medium"><i class="fas fa-location-dot text-[7px] mr-0.5"></i>'+c.region+'</span>';
     if(c.decision_score) html += '<span class="text-[9px] px-1 py-0.5 rounded bg-purple-50 text-purple-600 font-medium">결정도 '+c.decision_score+'</span>';
     html += '</div>';
+    if(c.ai_reason) html += '<p class="text-[10px] text-purple-600 mt-1 line-clamp-1"><i class="fas fa-wand-magic-sparkles mr-1 text-[8px]"></i>'+esc(c.ai_reason)+'</p>';
     if(esc(c.points) && esc(c.points).length > 0) html += '<p class="text-[10px] text-surface-500 mt-1 line-clamp-1"><i class="fas fa-lightbulb text-amber-400 mr-1 text-[8px]"></i>'+esc(c.points)[0]+'</p>';
     else if(esc(c.recommended_script)) html += '<p class="text-[10px] text-surface-500 mt-1 line-clamp-1"><i class="fas fa-sparkles text-brand-400 mr-1 text-[8px]"></i>'+esc(c.recommended_script)+'</p>';
     html += '</div>';

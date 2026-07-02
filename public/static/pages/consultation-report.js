@@ -414,12 +414,13 @@ function renderReport(report) {
     html += '</div></div>';
   }
 
-  // Followup
+  // Followup (v8.2: 연락 태스크 등록 상태 + 원클릭 등록)
   if (report.recommended_followup_date || esc(report.followup_message)) {
     html += '<div class="card-premium p-5 bg-gradient-to-br from-sky-50/50 to-brand-50/30">' +
       sec('추천 팔로업', 'fas fa-phone text-sky-600', 'bg-sky-50') +
       (report.recommended_followup_date ? '<div class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-sky-100 text-sky-700 text-xs font-semibold mb-2"><i class="fas fa-calendar"></i>' + report.recommended_followup_date + '</div>' : '') +
       (esc(report.followup_message) ? '<p class="text-sm text-surface-700 bg-white p-3 rounded-xl border border-surface-100 italic">"' + esc(report.followup_message) + '"</p>' : '') +
+      '<div id="followupTaskStatus" class="mt-3"></div>' +
     '</div>';
   }
 
@@ -437,6 +438,77 @@ function renderReport(report) {
   '</div>';
 
   container.innerHTML = html;
+
+  // v8.2: 팔로업 태스크 등록 상태 로드
+  loadFollowupTaskStatus(report);
+}
+
+// ===== v8.2: 팔로업 연락 태스크 상태 + 원클릭 등록 =====
+async function loadFollowupTaskStatus(report) {
+  var box = document.getElementById('followupTaskStatus');
+  if (!box) return;
+  try {
+    var res = await fetch('/api/tasks?consultation_id=' + encodeURIComponent(consultationId) + '&status=pending');
+    var data = await res.json();
+    if (data.success && data.data && data.data.length > 0) {
+      var t = data.data[0];
+      var originLabel = t.origin === 'ai_analysis' ? 'AI 자동 등록' : t.origin === 'auto_rule' ? '자동 등록' : '수동 등록';
+      box.innerHTML =
+        '<div class="flex items-center gap-2 p-2.5 rounded-xl bg-emerald-50 border border-emerald-200/50">' +
+          '<i class="fas fa-circle-check text-emerald-500 text-sm"></i>' +
+          '<div class="flex-1 min-w-0">' +
+            '<p class="text-xs font-bold text-emerald-700">연락 예약 완료 · ' + esc(t.recommended_date) + '</p>' +
+            '<p class="text-[10px] text-emerald-600/80">' + originLabel + ' · 홈 화면 "오늘의 연락"에 자동으로 표시됩니다</p>' +
+          '</div>' +
+          '<a href="/" class="text-[10px] font-semibold text-emerald-700 bg-white px-2 py-1 rounded-lg border border-emerald-200 shrink-0">연락 목록</a>' +
+        '</div>';
+    } else {
+      box.innerHTML =
+        '<button onclick="registerFollowupTask()" id="regFollowupBtn" class="w-full flex items-center justify-center gap-2 p-2.5 rounded-xl bg-sky-600 text-white text-xs font-bold hover:bg-sky-700 transition-all active:scale-[0.98]">' +
+          '<i class="fas fa-calendar-plus"></i>이 날짜에 연락 태스크 등록하기' +
+        '</button>';
+    }
+  } catch (e) { /* 조용히 무시 */ }
+}
+
+async function registerFollowupTask() {
+  var btn = document.getElementById('regFollowupBtn');
+  if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>등록 중...'; }
+  try {
+    var r = reportData || {};
+    var followDate = r.recommended_followup_date;
+    // 날짜 검증: 과거/무효면 +2일
+    var today = new Date(); today.setHours(0,0,0,0);
+    var d = followDate ? new Date(followDate + 'T00:00:00') : null;
+    if (!d || isNaN(d.getTime()) || d.getTime() < today.getTime()) {
+      d = new Date(today); d.setDate(d.getDate() + 2);
+    }
+    var dateStr = d.toISOString().split('T')[0];
+    var actions = (r.next_actions || []).slice(0, 3).map(function(a){ return a.action; }).filter(Boolean);
+    var res = await fetch('/api/tasks', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        patient_id: r.patient_id,
+        consultation_id: consultationId,
+        task_type: 'closing',
+        recommended_date: dateStr,
+        recommended_message: r.followup_message || '',
+        points: actions.length ? actions : ['상담 후 고민 포인트 확인', '결정 장벽 해소']
+      })
+    });
+    var data = await res.json();
+    if (data.success) {
+      showToast('연락 태스크가 등록되었습니다!', 'success');
+      loadFollowupTaskStatus(r);
+    } else {
+      showToast(data.error || '등록에 실패했습니다.', 'error');
+      if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-calendar-plus"></i>이 날짜에 연락 태스크 등록하기'; }
+    }
+  } catch (e) {
+    showToast('오류가 발생했습니다.', 'error');
+    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-calendar-plus"></i>이 날짜에 연락 태스크 등록하기'; }
+  }
 }
 
 // Create Proposal

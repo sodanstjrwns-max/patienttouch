@@ -665,7 +665,7 @@ dashboard.get('/today-contacts', async (c) => {
     const [pendingTasks, noTaskUndecided, retentionNeed] = await Promise.all([
       // 1. contact_tasks: 오늘 이전까지 pending인 클로징/안부 태스크
       db.prepare(`
-        SELECT t.id as task_id, t.task_type, t.recommended_date, t.recommended_message, t.points,
+        SELECT t.id as task_id, t.task_type, t.recommended_date, t.recommended_message, t.points, t.origin, t.ai_reason,
                p.id as patient_id, p.name as patient_name, p.phone as patient_phone, p.referral_source, p.region,
                c.treatment_type, c.amount, c.decision_score, c.consultation_date,
                (SELECT MAX(ct2.completed_at) FROM contact_tasks ct2 
@@ -731,9 +731,13 @@ dashboard.get('/today-contacts', async (c) => {
         points: safeParseJSON(t.points as string, []),
         days_overdue: daysPassed,
         last_contact_date: t.last_contact_date || null,
+        origin: t.origin || 'manual',
+        ai_reason: t.ai_reason || null,
         urgency: t.task_type === 'closing' ? (daysPassed > 3 ? 'critical' : 'high') : 'medium',
-        reason: t.task_type === 'closing' 
-          ? '미결정 클로징 (예정일' + (daysPassed > 0 ? ' ' + daysPassed + '일 초과' : ' 오늘') + ')' 
+        reason: t.origin === 'ai_analysis'
+          ? 'AI 상담 분석 추천' + (daysPassed > 0 ? ' (예정일 ' + daysPassed + '일 초과)' : '')
+          : t.task_type === 'closing'
+          ? '미결정 클로징 (예정일' + (daysPassed > 0 ? ' ' + daysPassed + '일 초과' : ' 오늘') + ')'
           : '안부 연락'
       });
     }
@@ -1728,6 +1732,126 @@ dashboard.get('/score-revenue', async (c) => {
   } catch (error) {
     console.error('Score-revenue error:', error);
     return c.json({ success: false, error: '점수-매출 상관 조회에 실패했습니다.' }, 500);
+  }
+});
+
+// ============================================
+// v8.2: 녹음 전 브리핑 — 코치 미션 + 환자 컨텍스트
+// "이번 상담에서 뭘 의식할지 + 이 환자에게 뭘 풀어야 하는지"를 한 번에
+// ============================================
+dashboard.get('/pre-consultation-briefing', async (c) => {
+  try {
+    const orgId = c.get('organizationId');
+    const userId = c.get('userId');
+    const db = c.env.DB;
+    const patientId = c.req.query('patient_id') || null;
+
+    // === 1. 코치 미션: 최근 5회 리포트에서 최약 영역 + 반복 지적 추출 ===
+    const recentReports = await db.prepare(`
+      SELECT r.coaching_feedback, r.coaching_score, c.consultation_date
+      FROM consultation_reports r
+      JOIN consultations c ON r.consultation_id = c.id
+      WHERE c.user_id = ? AND c.organization_id = ? AND r.coaching_score > 0
+      ORDER BY c.consultation_date DESC
+      LIMIT 5
+    `).bind(userId, orgId).all();
+
+    let coachMission: any = null;
+    if (recentReports.results.length > 0) {
+      const MAX_SCORES: Record<string, number> = { rapport: 20, spin: 25, objection_handling: 20, pricing_framing: 15, closing: 10, structure: 10 };
+      const AREA_LABELS: Record<string, string> = {
+        rapport: '라포 형성', spin: 'SPIN 질문', objection_handling: '반론 처리',
+        pricing_framing: '가격 프레이밍', closing: '클로징', structure: '상담 구조'
+      };
+      // 영역별 실천 팁 (Patient Code 기반 — 최약 영역에 즉시 적용 가능한 액션)
+      const AREA_TIPS: Record<string, string> = {
+        rapport: '첫 2분 안에 환자 이름을 3번 부르고, 환자 말에 "그러셨구나" 공감 표현을 먼저 하세요',
+        spin: '설명 전에 질문부터: "이대로 두시면 어떻게 될까 걱정되신 적 있으세요?" (암시 질문)',
+        objection_handling: '반론이 나오면 무조건 "네, 그렇게 생각하실 수 있어요"로 시작 — 인정→공감→재프레이밍',
+        pricing_framing: '비싼 옵션부터 제시(앵커링)하고, 월 분납액으로 환산해서 말하세요 ("하루 커피 한 잔 값")',
+        closing: '설명 끝나면 시험 클로징: "그러면 다음 주 화요일이랑 목요일 중 언제가 편하세요?"',
+        structure: '마무리 5분에 핵심 메시지를 한 번 더 반복하고, 다음 단계를 명확히 안내하세요'
+      };
+
+      const sums: Record<string, number> = { rapport: 0, spin: 0, objection_handling: 0, pricing_framing: 0, closing: 0, structure: 0 };
+      const issueCounts: Record<string, number> = {};
+      let latestImprovement: string | null = null;
+
+      recentReports.results.forEach((r: any, idx: number) => {
+        const fb = safeParseJSON<any>(r.coaching_feedback as string, {});
+        const scores = fb.scores || {};
+        Object.keys(sums).forEach(k => { sums[k] += (scores[k] || 0); });
+        const issue = fb.improvements?.[0]?.issue;
+        if (issue) {
+          if (idx === 0) latestImprovement = issue;
+          const key = String(issue).slice(0, 40);
+          issueCounts[key] = (issueCounts[key] || 0) + 1;
+        }
+      });
+
+      const cnt = recentReports.results.length;
+      // 최약 영역: 만점 대비 달성률이 가장 낮은 영역
+      let weakest = 'spin'; let weakestRatio = 1;
+      Object.keys(sums).forEach(k => {
+        const ratio = (sums[k] / cnt) / MAX_SCORES[k];
+        if (ratio < weakestRatio) { weakestRatio = ratio; weakest = k; }
+      });
+
+      const recurring = Object.entries(issueCounts).filter(([, n]) => n >= 2).map(([i]) => i);
+
+      coachMission = {
+        latest_improvement: latestImprovement,
+        recurring_issues: recurring.slice(0, 2),
+        weakest_area: {
+          key: weakest,
+          label: AREA_LABELS[weakest],
+          avg_score: Math.round((sums[weakest] / cnt) * 10) / 10,
+          max_score: MAX_SCORES[weakest],
+          tip: AREA_TIPS[weakest]
+        },
+        sessions_analyzed: cnt
+      };
+    }
+
+    // === 2. 환자 브리핑: 재상담 환자면 지난 상담의 장벽/미해소 우려/결정 요인 ===
+    let patientBriefing: any = null;
+    if (patientId) {
+      const lastConsult = await db.prepare(`
+        SELECT c.id, c.consultation_date, c.treatment_type, c.amount, c.status, c.decision_score,
+               r.decision_factors, r.patient_concerns, r.decision_prediction, r.followup_message
+        FROM consultations c
+        LEFT JOIN consultation_reports r ON r.consultation_id = c.id
+        WHERE c.patient_id = ? AND c.organization_id = ?
+        ORDER BY c.consultation_date DESC
+        LIMIT 1
+      `).bind(patientId, orgId).first();
+
+      if (lastConsult) {
+        const factors = safeParseJSON<any>(lastConsult.decision_factors as string, {});
+        const concerns = safeParseJSON<any[]>(lastConsult.patient_concerns as string, []);
+        const unresolved = concerns.filter((x: any) => x && x.addressed === false).map((x: any) => x.concern).slice(0, 3);
+        const daysSinceLast = Math.floor((Date.now() - new Date(lastConsult.consultation_date as string).getTime()) / 86400000);
+
+        patientBriefing = {
+          last_consultation_id: lastConsult.id,
+          days_since_last: daysSinceLast,
+          treatment_type: lastConsult.treatment_type || null,
+          amount: lastConsult.amount || null,
+          status: lastConsult.status,
+          decision_score: lastConsult.decision_score || null,
+          main_concern: factors.main_concern || null,
+          decision_maker: factors.decision_maker || null,
+          budget_range: factors.budget_range || null,
+          unresolved_concerns: unresolved,
+          decision_prediction: lastConsult.decision_prediction ? String(lastConsult.decision_prediction).slice(0, 150) : null
+        };
+      }
+    }
+
+    return c.json({ success: true, data: { coach_mission: coachMission, patient_briefing: patientBriefing } });
+  } catch (error) {
+    console.error('Pre-consultation briefing error:', error);
+    return c.json({ success: false, error: '브리핑 정보를 불러오는데 실패했습니다.' }, 500);
   }
 });
 

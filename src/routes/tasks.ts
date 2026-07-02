@@ -143,7 +143,7 @@ tasks.get('/', async (c) => {
     const userId = c.get('userId');
     const db = c.env.DB;
 
-    const { status, type, limit = '50', offset = '0' } = c.req.query();
+    const { status, type, consultation_id, limit = '50', offset = '0' } = c.req.query();
 
     let query = `
       SELECT t.*, p.name as patient_name, p.phone as patient_phone
@@ -161,6 +161,12 @@ tasks.get('/', async (c) => {
     if (type && type !== 'all') {
       query += ` AND t.task_type = ?`;
       params.push(type);
+    }
+
+    // v8.2: 리포트 페이지에서 상담별 팔로업 태스크 상태 확인용
+    if (consultation_id) {
+      query += ` AND t.consultation_id = ?`;
+      params.push(consultation_id);
     }
 
     query += ` ORDER BY t.recommended_date DESC LIMIT ? OFFSET ?`;
@@ -292,8 +298,8 @@ tasks.post('/generate', async (c) => {
       await db.prepare(`
         INSERT INTO contact_tasks (
           id, organization_id, consultation_id, user_id, patient_id,
-          task_type, recommended_date, recommended_message, points
-        ) VALUES (?, ?, ?, ?, ?, 'closing', ?, ?, ?)
+          task_type, recommended_date, recommended_message, points, origin
+        ) VALUES (?, ?, ?, ?, ?, 'closing', ?, ?, ?, 'auto_rule')
       `).bind(
         taskId, orgId, consult.id, userId, consult.patient_id,
         taskDateStr, message, JSON.stringify(points)
@@ -312,8 +318,8 @@ tasks.post('/generate', async (c) => {
       await db.prepare(`
         INSERT INTO contact_tasks (
           id, organization_id, consultation_id, user_id, patient_id,
-          task_type, recommended_date, recommended_message, points
-        ) VALUES (?, ?, ?, ?, ?, 'proactive', ?, ?, ?)
+          task_type, recommended_date, recommended_message, points, origin
+        ) VALUES (?, ?, ?, ?, ?, 'proactive', ?, ?, ?, 'auto_rule')
       `).bind(
         taskId, orgId, consult.id, userId, consult.patient_id,
         today, message, JSON.stringify(points)
@@ -445,8 +451,8 @@ tasks.post('/auto-daily', async (c) => {
       }
 
       await db.prepare(`
-        INSERT INTO contact_tasks (id, organization_id, consultation_id, user_id, patient_id, task_type, recommended_date, recommended_message, points)
-        VALUES (?, ?, ?, ?, ?, 'closing', ?, ?, ?)
+        INSERT INTO contact_tasks (id, organization_id, consultation_id, user_id, patient_id, task_type, recommended_date, recommended_message, points, origin)
+        VALUES (?, ?, ?, ?, ?, 'closing', ?, ?, ?, 'auto_rule')
       `).bind(taskId, orgId, consult.id, userId, consult.patient_id, today, message, JSON.stringify(points)).run();
       generated++;
     }
@@ -461,8 +467,8 @@ tasks.post('/auto-daily', async (c) => {
       const points = ['치료 후 상태 확인', '다음 내원일 안내', '추가 치료 필요 여부 탐색'];
 
       await db.prepare(`
-        INSERT INTO contact_tasks (id, organization_id, consultation_id, user_id, patient_id, task_type, recommended_date, recommended_message, points)
-        VALUES (?, ?, ?, ?, ?, 'proactive', ?, ?, ?)
+        INSERT INTO contact_tasks (id, organization_id, consultation_id, user_id, patient_id, task_type, recommended_date, recommended_message, points, origin)
+        VALUES (?, ?, ?, ?, ?, 'proactive', ?, ?, ?, 'auto_rule')
       `).bind(taskId, orgId, consult.id, userId, consult.patient_id, today, message, JSON.stringify(points)).run();
       generated++;
     }
@@ -551,8 +557,8 @@ tasks.put('/:id/complete', async (c) => {
         : ['콜백 약속 이행 확인', '추가 궁금점 해소', '결정 유도'];
 
       await db.prepare(`
-        INSERT INTO contact_tasks (id, organization_id, consultation_id, user_id, patient_id, task_type, recommended_date, recommended_message, points)
-        VALUES (?, ?, ?, ?, ?, 'closing', ?, ?, ?)
+        INSERT INTO contact_tasks (id, organization_id, consultation_id, user_id, patient_id, task_type, recommended_date, recommended_message, points, origin)
+        VALUES (?, ?, ?, ?, ?, 'closing', ?, ?, ?, 'auto_rule')
       `).bind(
         followUpId, orgId, task.consultation_id || null, userId, task.patient_id,
         tomorrowStr, followUpMessage, JSON.stringify(followUpPoints)
@@ -571,8 +577,8 @@ tasks.put('/:id/complete', async (c) => {
       const pName = (patient?.name || '환자') as string;
 
       await db.prepare(`
-        INSERT INTO contact_tasks (id, organization_id, consultation_id, user_id, patient_id, task_type, recommended_date, recommended_message, points)
-        VALUES (?, ?, ?, ?, ?, 'closing', ?, ?, ?)
+        INSERT INTO contact_tasks (id, organization_id, consultation_id, user_id, patient_id, task_type, recommended_date, recommended_message, points, origin)
+        VALUES (?, ?, ?, ?, ?, 'closing', ?, ?, ?, 'auto_rule')
       `).bind(
         followUpId, orgId, task.consultation_id || null, userId, task.patient_id,
         followDateStr,
@@ -593,8 +599,8 @@ tasks.put('/:id/complete', async (c) => {
       const pName = (patient?.name || '환자') as string;
 
       await db.prepare(`
-        INSERT INTO contact_tasks (id, organization_id, consultation_id, user_id, patient_id, task_type, recommended_date, recommended_message, points)
-        VALUES (?, ?, ?, ?, ?, 'proactive', ?, ?, ?)
+        INSERT INTO contact_tasks (id, organization_id, consultation_id, user_id, patient_id, task_type, recommended_date, recommended_message, points, origin)
+        VALUES (?, ?, ?, ?, ?, 'proactive', ?, ?, ?, 'auto_rule')
       `).bind(
         followUpId, orgId, task.consultation_id || null, userId, task.patient_id,
         followDateStr,

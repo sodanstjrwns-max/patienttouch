@@ -165,6 +165,91 @@ export async function persistAnalysisResults(
   return reportId;
 }
 
+// ============================================
+// v8.2: AI 분석 → 팔로업 연락 태스크 자동 동기화
+// "누구한테, 언제, 뭐라고 연락할지"를 분석이 끝나는 순간 자동 확정
+// ============================================
+export async function syncFollowupTask(
+  db: D1Database,
+  orgId: string,
+  userId: string,
+  consultId: string,
+  report: FullAnalysisResult['report']
+): Promise<boolean> {
+  try {
+    // 상담 상태 확인 — 이미 결제/이탈 확정이면 클로징 태스크 불필요
+    const consult = await db.prepare(
+      'SELECT patient_id, status FROM consultations WHERE id = ?'
+    ).bind(consultId).first();
+    if (!consult?.patient_id) return false;
+    if (consult.status === 'paid' || consult.status === 'lost') return false;
+
+    // 팔로업 날짜 검증: AI 추천일 사용, 과거/무효면 +2일
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    let followDate: Date | null = null;
+    const raw = (report.recommended_followup_date || '').trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+      const d = new Date(raw + 'T00:00:00');
+      if (!isNaN(d.getTime()) && d.getTime() >= today.getTime()) {
+        // 14일 초과 추천은 7일로 당김 (이탈 골든타임 보호)
+        const maxD = new Date(today); maxD.setDate(maxD.getDate() + 14);
+        followDate = d.getTime() > maxD.getTime() ? (() => { const x = new Date(today); x.setDate(x.getDate() + 7); return x; })() : d;
+      }
+    }
+    if (!followDate) {
+      followDate = new Date(today);
+      // 결정도 높으면 빨리, 낮으면 여유 (결정도 8+ → 내일, 5-7 → 2일, 그 외 → 3일)
+      const ds = report.decision_score || 5;
+      followDate.setDate(followDate.getDate() + (ds >= 8 ? 1 : ds >= 5 ? 2 : 3));
+    }
+    const followDateStr = followDate.toISOString().split('T')[0];
+
+    // 연락 포인트: next_actions 상위 3개 (high 우선)
+    const actions = Array.isArray(report.next_actions) ? [...report.next_actions] : [];
+    const prioOrder: Record<string, number> = { high: 0, medium: 1, low: 2 };
+    actions.sort((a, b) => (prioOrder[a?.priority] ?? 3) - (prioOrder[b?.priority] ?? 3));
+    const points = actions.slice(0, 3).map(a => a?.action).filter(Boolean);
+    if (points.length === 0) points.push('상담 후 고민 포인트 확인', '결정 장벽 해소');
+
+    // AI 추천 근거 (연락 리스트에서 "왜 이 환자인지" 노출용)
+    const dsVal = report.decision_score || 5;
+    const aiReason = [
+      `결정도 ${dsVal}/10`,
+      report.decision_factors?.main_concern ? `핵심 장벽: ${report.decision_factors.main_concern}` : null,
+      report.decision_prediction ? String(report.decision_prediction).slice(0, 120) : null,
+    ].filter(Boolean).join(' · ');
+
+    const message = (report.followup_message || '').trim()
+      || '지난 상담 관련해서 궁금하신 점 있으시면 편하게 말씀해주세요.';
+
+    // 재분석 대응: 이 상담의 기존 자동 생성 pending 클로징 태스크는 AI 최신본으로 교체
+    // (수동 생성 태스크는 보존)
+    await db.prepare(`
+      DELETE FROM contact_tasks
+      WHERE consultation_id = ? AND task_type = 'closing' AND status = 'pending'
+        AND (origin IS NULL OR origin != 'manual')
+    `).bind(consultId).run();
+
+    const taskId = 'task_' + generateId().slice(0, 8);
+    await db.prepare(`
+      INSERT INTO contact_tasks (
+        id, organization_id, consultation_id, user_id, patient_id,
+        task_type, recommended_date, recommended_message, points, origin, ai_reason
+      ) VALUES (?, ?, ?, ?, ?, 'closing', ?, ?, ?, 'ai_analysis', ?)
+    `).bind(
+      taskId, orgId, consultId, userId, consult.patient_id,
+      followDateStr, message, JSON.stringify(points), aiReason
+    ).run();
+
+    console.log('[AnalysisRunner] AI followup task created:', taskId, '→', followDateStr);
+    return true;
+  } catch (e) {
+    console.warn('[AnalysisRunner] syncFollowupTask failed:', e);
+    return false;
+  }
+}
+
 async function setStep(db: D1Database, consultId: string, step: string) {
   try {
     await db.prepare('UPDATE consultations SET analysis_step = ?, updated_at = datetime(\'now\') WHERE id = ?')
@@ -205,6 +290,10 @@ export async function runAnalysisJob(params: AnalysisJobParams): Promise<void> {
     }
 
     await persistAnalysisResults(db, orgId, consultId, audioKey || null, result);
+
+    // v8.2: 분석 완료 즉시 "다음 연락" 태스크 자동 생성 (AI 추천 날짜+멘트+포인트)
+    await syncFollowupTask(db, orgId, userId, consultId, result.report);
+
     console.log('[AnalysisRunner] Analysis job complete for', consultId, 'score:', result.report.coaching_feedback?.total_score);
   } catch (err: any) {
     console.error('[AnalysisRunner] Analysis job failed at', currentStep, ':', err?.message || err);

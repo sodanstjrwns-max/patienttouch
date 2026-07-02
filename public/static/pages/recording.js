@@ -46,31 +46,85 @@ if (selectedPatientId) {
   }).catch(function () {});
 }
 
-// ===== 오늘의 미션 카드 (Phase C: 직전 개선과제 리마인드) =====
-(function loadMissionCard() {
-  fetch('/api/dashboard/growth-sessions?limit=3').then(function(r){ return r.ok ? r.json() : null; }).then(function (res) {
-    if (!res || !res.success || !res.data.sessions || res.data.sessions.length === 0) return;
-    var latest = res.data.sessions[res.data.sessions.length - 1];
-    var mission = latest && latest.top_improvement;
-    if (!mission || mission === '없음') return;
-
+// ===== v8.2 녹음 전 브리핑: 코치 미션 + 환자 컨텍스트 =====
+(function loadBriefing() {
+  var url = '/api/dashboard/pre-consultation-briefing' + (selectedPatientId ? '?patient_id=' + encodeURIComponent(selectedPatientId) : '');
+  fetch(url).then(function(r){ return r.ok ? r.json() : null; }).then(function (res) {
+    if (!res || !res.success) return;
     var host = document.getElementById('patientInfo');
     if (!host) return;
-    var card = document.createElement('div');
-    card.id = 'missionCard';
-    card.className = 'glass-dark rounded-2xl p-4 mt-3 border border-amber-500/30';
-    card.innerHTML =
-      '<div class="flex items-start gap-3">' +
-        '<div class="w-9 h-9 rounded-xl bg-amber-500/20 flex items-center justify-center shrink-0">' +
-          '<i class="fas fa-bullseye text-amber-400 text-sm"></i>' +
-        '</div>' +
-        '<div class="flex-1 min-w-0">' +
-          '<p class="text-[10px] font-bold text-amber-400 tracking-wider mb-0.5">오늘의 미션 · 지난 상담 개선과제</p>' +
-          '<p class="text-xs text-white/90 leading-relaxed">' + escapeHtmlSafe(mission) + '</p>' +
-          '<p class="text-[10px] text-surface-500 mt-1">이번 상담에서 이거 하나만 의식해보세요 💪</p>' +
-        '</div>' +
-      '</div>';
-    host.parentNode.insertBefore(card, host.nextSibling);
+    var d = res.data || {};
+    var insertAfter = host;
+
+    // --- 환자 브리핑 카드 (재상담 환자: 지난 상담 장벽/미해소 우려) ---
+    var pb = d.patient_briefing;
+    if (pb && (pb.main_concern || (pb.unresolved_concerns && pb.unresolved_concerns.length) || pb.decision_maker)) {
+      var pbCard = document.createElement('div');
+      pbCard.id = 'patientBriefingCard';
+      pbCard.className = 'glass-dark rounded-2xl p-4 mt-3 border border-sky-500/30';
+      var rows = '';
+      if (pb.main_concern) {
+        rows += '<div class="flex items-start gap-1.5 mt-1"><i class="fas fa-triangle-exclamation text-rose-400 text-[9px] mt-0.5 shrink-0"></i><p class="text-[11px] text-white/85"><span class="text-rose-300 font-semibold">핵심 장벽</span> · ' + escapeHtmlSafe(pb.main_concern) + '</p></div>';
+      }
+      if (pb.unresolved_concerns && pb.unresolved_concerns.length > 0) {
+        rows += '<div class="flex items-start gap-1.5 mt-1"><i class="fas fa-circle-question text-amber-400 text-[9px] mt-0.5 shrink-0"></i><p class="text-[11px] text-white/85"><span class="text-amber-300 font-semibold">미해소 우려</span> · ' + escapeHtmlSafe(pb.unresolved_concerns.join(' / ')) + '</p></div>';
+      }
+      if (pb.decision_maker) {
+        rows += '<div class="flex items-start gap-1.5 mt-1"><i class="fas fa-user-check text-brand-400 text-[9px] mt-0.5 shrink-0"></i><p class="text-[11px] text-white/85"><span class="text-brand-300 font-semibold">결정권자</span> · ' + escapeHtmlSafe(pb.decision_maker) + '</p></div>';
+      }
+      var meta = [];
+      if (pb.treatment_type) meta.push(escapeHtmlSafe(pb.treatment_type));
+      if (pb.amount) meta.push(Math.round(pb.amount / 10000) + '만원');
+      if (pb.days_since_last != null) meta.push(pb.days_since_last === 0 ? '오늘' : pb.days_since_last + '일 전 상담');
+      if (pb.decision_score) meta.push('결정도 ' + pb.decision_score + '/10');
+      pbCard.innerHTML =
+        '<div class="flex items-start gap-3">' +
+          '<div class="w-9 h-9 rounded-xl bg-sky-500/20 flex items-center justify-center shrink-0">' +
+            '<i class="fas fa-clipboard-user text-sky-400 text-sm"></i>' +
+          '</div>' +
+          '<div class="flex-1 min-w-0">' +
+            '<p class="text-[10px] font-bold text-sky-400 tracking-wider">재상담 브리핑 · 지난 상담에서 확인된 것</p>' +
+            (meta.length ? '<p class="text-[10px] text-surface-400 mt-0.5">' + meta.join(' · ') + '</p>' : '') +
+            rows +
+            '<p class="text-[10px] text-surface-500 mt-1.5">💡 이 장벽을 먼저 풀어야 결정이 나옵니다</p>' +
+          '</div>' +
+        '</div>';
+      insertAfter.parentNode.insertBefore(pbCard, insertAfter.nextSibling);
+      insertAfter = pbCard;
+    }
+
+    // --- 코치 미션 카드 (직전 개선과제 + 최약 영역 실천 팁) ---
+    var cm = d.coach_mission;
+    if (cm && (cm.latest_improvement || cm.weakest_area)) {
+      var card = document.createElement('div');
+      card.id = 'missionCard';
+      card.className = 'glass-dark rounded-2xl p-4 mt-3 border border-amber-500/30';
+      var body = '';
+      if (cm.latest_improvement && cm.latest_improvement !== '없음') {
+        body += '<p class="text-xs text-white/90 leading-relaxed">' + escapeHtmlSafe(cm.latest_improvement) + '</p>';
+      }
+      if (cm.recurring_issues && cm.recurring_issues.length > 0) {
+        body += '<div class="flex items-start gap-1.5 mt-1.5"><i class="fas fa-rotate-right text-rose-400 text-[9px] mt-0.5 shrink-0"></i><p class="text-[10px] text-rose-300/90"><span class="font-semibold">반복 지적</span> · ' + escapeHtmlSafe(cm.recurring_issues[0]) + '</p></div>';
+      }
+      if (cm.weakest_area && cm.weakest_area.tip) {
+        body += '<div class="mt-2 p-2 rounded-lg bg-amber-500/10 border border-amber-500/20">' +
+          '<p class="text-[10px] font-bold text-amber-300">🎯 최약 영역: ' + escapeHtmlSafe(cm.weakest_area.label) + ' (' + cm.weakest_area.avg_score + '/' + cm.weakest_area.max_score + '점)</p>' +
+          '<p class="text-[10px] text-white/80 mt-0.5 leading-relaxed">' + escapeHtmlSafe(cm.weakest_area.tip) + '</p>' +
+        '</div>';
+      }
+      card.innerHTML =
+        '<div class="flex items-start gap-3">' +
+          '<div class="w-9 h-9 rounded-xl bg-amber-500/20 flex items-center justify-center shrink-0">' +
+            '<i class="fas fa-bullseye text-amber-400 text-sm"></i>' +
+          '</div>' +
+          '<div class="flex-1 min-w-0">' +
+            '<p class="text-[10px] font-bold text-amber-400 tracking-wider mb-0.5">오늘의 미션 · 최근 ' + (cm.sessions_analyzed || 0) + '회 분석 기반</p>' +
+            body +
+            '<p class="text-[10px] text-surface-500 mt-1.5">이번 상담에서 이거 하나만 의식해보세요 💪</p>' +
+          '</div>' +
+        '</div>';
+      insertAfter.parentNode.insertBefore(card, insertAfter.nextSibling);
+    }
   }).catch(function () {});
 })();
 
@@ -237,6 +291,8 @@ async function toggleRecording() {
       document.getElementById('saveBtn').classList.add('bg-emerald-500/20', 'text-emerald-400');
       var mission = document.getElementById('missionCard');
       if (mission) mission.style.opacity = '0.6';
+      var pbCard = document.getElementById('patientBriefingCard');
+      if (pbCard) pbCard.style.opacity = '0.6';
 
       drawWaveform();
     } catch (err) {
