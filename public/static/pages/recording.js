@@ -27,6 +27,7 @@ var audioContext = null;
 var analyser = null;
 var animationFrame = null;
 var finalizing = false;
+var stopResolver = null; // 마지막 onstop 대기용 resolver
 
 // patientId: URL 경로 /recording/:patientId 에서 추출 (정적 JS — 서버 주입 없음)
 var selectedPatientId = (function () {
@@ -136,11 +137,14 @@ function startSegmentRecorder() {
     if (e.data.size > 0) segmentChunks.push(e.data);
   };
   mediaRecorder.onstop = function () {
-    if (segmentChunks.length === 0) return;
-    var blob = new Blob(segmentChunks, { type: 'audio/webm' });
-    segmentChunks = [];
-    var idx = segmentIndex++;
-    enqueueSegmentUpload(blob, idx);
+    if (segmentChunks.length > 0) {
+      var blob = new Blob(segmentChunks, { type: 'audio/webm' });
+      segmentChunks = [];
+      var idx = segmentIndex++;
+      enqueueSegmentUpload(blob, idx);
+    }
+    // 마지막 세그먼트 flush 대기자 (saveRecording)에게 알림
+    if (stopResolver) { var r = stopResolver; stopResolver = null; r(); }
   };
   mediaRecorder.start(1000);
 }
@@ -270,9 +274,16 @@ async function saveRecording() {
 
   var durationMs = elapsedMs();
 
-  // 마지막 세그먼트 마감
+  // 마지막 세그먼트 마감 — onstop이 실제로 호출될 때까지 결정적으로 대기
   clearInterval(rotateTimer);
-  if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
+  var finalStopPromise = Promise.resolve();
+  if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+    finalStopPromise = new Promise(function (resolve) {
+      stopResolver = resolve;
+      setTimeout(resolve, 3000); // onstop 미발화 대비 안전망
+    });
+    mediaRecorder.stop();
+  }
   isRecording = false;
   clearInterval(timerInterval);
   if (animationFrame) cancelAnimationFrame(animationFrame);
@@ -285,8 +296,8 @@ async function saveRecording() {
 
   showQualityIndicator(durationMs);
 
-  // 업로드 큐 완료 대기 (onstop 비동기 → 짧은 유예)
-  await new Promise(function (r) { setTimeout(r, 800); });
+  // 마지막 onstop 대기 → 업로드 큐 완료 대기
+  await finalStopPromise;
   await uploadQueue;
 
   // 마이크 해제

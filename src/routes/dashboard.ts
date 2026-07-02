@@ -418,7 +418,7 @@ dashboard.get('/admin-summary', async (c) => {
       db.prepare(`
         SELECT COUNT(*) as total_consultations,
           SUM(CASE WHEN status = 'paid' THEN 1 ELSE 0 END) as paid_consultations,
-          AVG(COALESCE(r.coaching_score, 0)) as avg_coaching_score
+          AVG(CASE WHEN r.coaching_score > 0 THEN r.coaching_score END) as avg_coaching_score
         FROM consultations c
         LEFT JOIN consultation_reports r ON c.id = r.consultation_id
         WHERE c.organization_id = ? AND c.consultation_date >= datetime('now', '-' || ? || ' days')
@@ -426,7 +426,7 @@ dashboard.get('/admin-summary', async (c) => {
       db.prepare(`
         SELECT COUNT(*) as total_consultations,
           SUM(CASE WHEN status = 'paid' THEN 1 ELSE 0 END) as paid_consultations,
-          AVG(COALESCE(r.coaching_score, 0)) as avg_coaching_score
+          AVG(CASE WHEN r.coaching_score > 0 THEN r.coaching_score END) as avg_coaching_score
         FROM consultations c
         LEFT JOIN consultation_reports r ON c.id = r.consultation_id
         WHERE c.organization_id = ? 
@@ -515,7 +515,7 @@ dashboard.get('/staff-performance', async (c) => {
         u.id, u.name,
         COUNT(c.id) as total_consultations,
         SUM(CASE WHEN c.status = 'paid' THEN 1 ELSE 0 END) as paid_consultations,
-        AVG(COALESCE(r.coaching_score, 0)) as avg_coaching_score,
+        AVG(CASE WHEN r.coaching_score > 0 THEN r.coaching_score END) as avg_coaching_score,
         SUM(CASE WHEN c.status = 'paid' THEN c.amount ELSE 0 END) as total_amount
       FROM users u
       LEFT JOIN consultations c ON c.user_id = u.id 

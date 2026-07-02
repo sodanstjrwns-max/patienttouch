@@ -58,7 +58,9 @@ app.use('/api/*', csrfProtection())
 app.use('/api/auth/login', authRateLimit)
 app.use('/api/auth/register', authRateLimit)
 app.use('/api/reports/*/generate', reportRateLimit)
-app.use('/api/consultations/*/audio', uploadRateLimit)
+// 업로드 계열만 제한 — GET /audio 재생은 세그먼트 순차 재생이라 제한하면 안 됨
+// segments 업로드는 60초당 1회라 apiRateLimit(120/min)으로 충분
+app.use('/api/consultations/*/upload-audio', uploadRateLimit)
 app.use('/api/*', apiRateLimit)
 app.use(renderer)
 

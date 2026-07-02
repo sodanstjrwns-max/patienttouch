@@ -380,10 +380,12 @@ consultations.post('/:id/finalize', async (c) => {
           throw new Error('음성 인식 결과가 없습니다. 녹음 상태를 확인해주세요.');
         }
 
+        // audioKey는 null — audio_url을 세그먼트 하나로 오염시키면 재생이 첫 1분만 됨.
+        // 세그먼트 녹음의 재생은 /audio 가 stt_chunks 목록으로 순차 재생 처리.
         await runAnalysisJob({
           db, env, apiKey, consultId, orgId, userId, patientInfo,
           transcript: mergedTranscript,
-          audioKey: `consultations/${consultId}/segments/0000.webm`,
+          audioKey: null,
         });
       } catch (err: any) {
         console.error('[Finalize] job failed:', err?.message);
@@ -411,12 +413,25 @@ consultations.get('/:id/analysis-status', async (c) => {
 
     const row = await db.prepare(`
       SELECT c.ai_analysis_status, c.analysis_step, c.analysis_error,
+        CAST((julianday('now') - julianday(c.updated_at)) * 1440 AS INTEGER) as stale_minutes,
         (SELECT r.id FROM consultation_reports r WHERE r.consultation_id = c.id) as report_id,
         (SELECT r.coaching_score FROM consultation_reports r WHERE r.consultation_id = c.id) as coaching_score
       FROM consultations c WHERE c.id = ? AND c.organization_id = ?
     `).bind(consultId, orgId).first();
 
     if (!row) return c.json({ success: false, error: '상담 기록을 찾을 수 없습니다.' }, 404);
+
+    // 좌초 감지: 15분 이상 진행 없는 processing → failed 전환 (워커 재배포/크래시로 waitUntil 유실 케이스)
+    if (row.ai_analysis_status === 'processing' && (row.stale_minutes as number) >= 15) {
+      await db.prepare(`
+        UPDATE consultations SET ai_analysis_status = 'failed', analysis_step = 'failed:stalled',
+          analysis_error = '분석이 중단되었습니다. 다시 분석해주세요. (녹음은 안전하게 저장되어 있습니다)', updated_at = datetime('now')
+        WHERE id = ?
+      `).bind(consultId).run();
+      (row as any).ai_analysis_status = 'failed';
+      (row as any).analysis_step = 'failed:stalled';
+      (row as any).analysis_error = '분석이 중단되었습니다. 다시 분석해주세요. (녹음은 안전하게 저장되어 있습니다)';
+    }
 
     const stepLabels: Record<string, { label: string; pct: number }> = {
       'transcribing': { label: '음성 인식 중', pct: 25 },
@@ -696,16 +711,16 @@ consultations.put('/:id', async (c) => {
         updated_at = datetime('now')
       WHERE id = ? AND organization_id = ?
     `).bind(
-      status,
-      treatment_type,
-      treatment_area,
-      amount,
-      summary,
+      status ?? null,
+      treatment_type ?? null,
+      treatment_area ?? null,
+      amount ?? null,
+      summary ?? null,
       patient_psychology ? JSON.stringify(patient_psychology) : null,
       emotion_flow ? JSON.stringify(emotion_flow) : null,
       key_quotes ? JSON.stringify(key_quotes) : null,
       feedback ? JSON.stringify(feedback) : null,
-      decision_score,
+      decision_score ?? null,
       consultId, orgId
     ).run();
 
