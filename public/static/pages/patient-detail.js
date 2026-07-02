@@ -245,7 +245,7 @@ function renderPatient(p) {
       '<div class="w-16 h-16 rounded-2xl ' + avatarColor + ' flex items-center justify-center font-black text-2xl shrink-0">' + esc(p.name).charAt(0) + '</div>' +
       '<div class="flex-1 min-w-0">' +
         '<div class="flex items-center gap-2 mb-0.5">' +
-          '<h2 class="text-xl font-bold text-surface-900">' + esc(p.name) + '</h2>' +
+          '<h2 onclick="openTranscriptViewer(\'' + p.id + '\', \'' + esc(p.name).replace(/'/g, "\\'") + '\')" class="text-xl font-bold text-brand-700 underline decoration-dotted decoration-brand-300 underline-offset-4 cursor-pointer active:opacity-60">' + esc(p.name) + '</h2>' +
           (p.age ? '<span class="text-surface-400 text-sm">' + p.age + '세 ' + (p.gender === 'male' ? '남' : p.gender === 'female' ? '여' : '') + '</span>' : '') +
         '</div>' +
         (p.phone ? '<a href="tel:' + (p.phone_full||p.phone) + '" class="inline-flex items-center gap-1.5 text-brand-600 font-semibold text-sm hover:text-brand-700 transition-colors"><i class="fas fa-phone text-xs"></i>' + (p.phone_display||p.phone) + '</a>' : '') +
@@ -393,7 +393,13 @@ function renderPatient(p) {
 
   // Consultation History
   html += '<div class="card-premium p-5">' +
-    sec('상담 히스토리', 'fas fa-clock-rotate-left text-brand-600', 'bg-brand-50');
+    '<div class="flex items-center justify-between mb-3">' +
+      '<div class="flex items-center gap-2">' +
+        '<div class="w-7 h-7 rounded-lg bg-brand-50 flex items-center justify-center"><i class="fas fa-clock-rotate-left text-brand-600 text-xs"></i></div>' +
+        '<h3 class="font-bold text-sm text-surface-900">상담 히스토리</h3>' +
+      '</div>' +
+      (consultations.length > 0 ? '<button onclick="openTranscriptViewer(\'' + p.id + '\', \'' + esc(p.name).replace(/'/g, "\\'") + '\')" class="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-indigo-50 text-indigo-600 text-[10px] font-bold hover:bg-indigo-100 active:scale-95 transition-all"><i class="fas fa-scroll text-[9px]"></i>상담 원문 보기</button>' : '') +
+    '</div>';
   if (consultations.length > 0) {
     html += '<div class="space-y-2">';
     consultations.forEach(function(c) {

@@ -280,3 +280,151 @@ function lazyLoad(selector, callback) {
   }, { rootMargin: '100px' });
   document.querySelectorAll(selector).forEach(function(el) { observer.observe(el); });
 }
+
+// === 12. Patient Transcript Viewer (환자 이름 클릭 → 기존 상담 원문 보기) ===
+// 사용법: openTranscriptViewer(patientId, patientName)
+// 어느 페이지에서든 환자 이름에 onclick으로 연결
+var _tvState = { patientId: null, data: null };
+
+function openTranscriptViewer(patientId, patientName) {
+  if (!patientId) { showToast('환자 정보가 없습니다', 'warning'); return; }
+  _tvState.patientId = patientId;
+
+  var existing = document.getElementById('transcriptViewerModal');
+  if (existing) existing.remove();
+
+  var modal = document.createElement('div');
+  modal.id = 'transcriptViewerModal';
+  modal.style.cssText = 'position:fixed;inset:0;z-index:9998;display:flex;align-items:flex-end;justify-content:center;';
+  modal.innerHTML =
+    '<div onclick="closeTranscriptViewer()" style="position:absolute;inset:0;background:rgba(15,23,42,0.55);backdrop-filter:blur(3px);opacity:0;transition:opacity 0.25s;" id="tvBackdrop"></div>' +
+    '<div id="tvSheet" style="position:relative;width:100%;max-width:480px;max-height:88vh;background:white;border-radius:24px 24px 0 0;display:flex;flex-direction:column;transform:translateY(100%);transition:transform 0.32s cubic-bezier(0.16,1,0.3,1);overflow:hidden;">' +
+      '<div style="padding:14px 20px 10px;border-bottom:1px solid #f1f5f9;display:flex;align-items:center;gap-10px;flex-shrink:0;">' +
+        '<div style="width:36px;height:36px;border-radius:12px;background:#eef2ff;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-right:10px;"><i class="fas fa-scroll" style="color:#6366f1;font-size:14px;"></i></div>' +
+        '<div style="flex:1;min-width:0;">' +
+          '<p style="font-weight:800;font-size:15px;color:#0f172a;margin:0;">' + escapeHtml(patientName || '환자') + '님 상담 원문</p>' +
+          '<p id="tvSubtitle" style="font-size:11px;color:#94a3b8;margin:2px 0 0;">불러오는 중...</p>' +
+        '</div>' +
+        '<button onclick="closeTranscriptViewer()" style="width:32px;height:32px;border-radius:10px;background:#f8fafc;border:none;color:#64748b;cursor:pointer;flex-shrink:0;"><i class="fas fa-xmark"></i></button>' +
+      '</div>' +
+      '<div id="tvBody" style="flex:1;overflow-y:auto;padding:14px 16px;-webkit-overflow-scrolling:touch;">' +
+        '<div style="text-align:center;padding:40px 0;"><i class="fas fa-circle-notch fa-spin" style="color:#a5b4fc;font-size:22px;"></i></div>' +
+      '</div>' +
+    '</div>';
+  document.body.appendChild(modal);
+  document.body.style.overflow = 'hidden';
+  requestAnimationFrame(function(){ requestAnimationFrame(function(){
+    document.getElementById('tvBackdrop').style.opacity = '1';
+    document.getElementById('tvSheet').style.transform = 'translateY(0)';
+  }); });
+
+  fetch('/api/patients/' + patientId + '/transcripts')
+    .then(function(r){ return r.json(); })
+    .then(function(res) {
+      if (!res.success) throw new Error(res.error || '조회 실패');
+      _tvState.data = res.data;
+      renderTranscriptViewer(res.data);
+    })
+    .catch(function(err) {
+      var body = document.getElementById('tvBody');
+      if (body) body.innerHTML = '<div style="text-align:center;padding:40px 16px;"><i class="fas fa-triangle-exclamation" style="color:#f59e0b;font-size:22px;"></i><p style="font-size:13px;color:#64748b;margin-top:10px;">' + escapeHtml(err.message || '상담 원문을 불러올 수 없습니다') + '</p></div>';
+    });
+}
+
+function renderTranscriptViewer(data) {
+  var sub = document.getElementById('tvSubtitle');
+  var body = document.getElementById('tvBody');
+  if (!sub || !body) return;
+
+  var list = data.transcripts || [];
+  sub.textContent = '총 상담 ' + data.total + '건 · 원문 보유 ' + data.with_transcript + '건';
+
+  if (list.length === 0) {
+    body.innerHTML = '<div style="text-align:center;padding:48px 16px;"><i class="fas fa-microphone-slash" style="color:#cbd5e1;font-size:26px;"></i><p style="font-weight:700;font-size:14px;color:#334155;margin:12px 0 4px;">아직 상담 기록이 없습니다</p><p style="font-size:12px;color:#94a3b8;">첫 상담을 녹음하면 원문이 여기에 쌓입니다</p></div>';
+    return;
+  }
+
+  var stMap = {
+    paid: { c:'#10b981', bg:'#ecfdf5', l:'결제완료' },
+    undecided: { c:'#f59e0b', bg:'#fffbeb', l:'미결정' },
+    lost: { c:'#f43f5e', bg:'#fff1f2', l:'이탈' },
+    pending: { c:'#64748b', bg:'#f8fafc', l:'대기중' }
+  };
+
+  var html = '';
+  list.forEach(function(t, i) {
+    var s = stMap[t.status] || stMap.pending;
+    var d = new Date(t.consultation_date);
+    var dateStr = d.getFullYear() + '.' + String(d.getMonth()+1).padStart(2,'0') + '.' + String(d.getDate()).padStart(2,'0');
+    var meta = [dateStr];
+    if (t.treatment_type) meta.push(t.treatment_type);
+    if (t.amount) meta.push(Math.round(t.amount/10000).toLocaleString() + '만원');
+    if (t.user_name) meta.push(t.user_name);
+
+    html += '<div style="border:1px solid #f1f5f9;border-radius:16px;margin-bottom:10px;overflow:hidden;background:white;">';
+    html += '<button onclick="toggleTvItem(' + i + ')" style="width:100%;padding:13px 14px;background:none;border:none;cursor:pointer;text-align:left;display:flex;align-items:center;gap:10px;">' +
+      '<span style="padding:3px 8px;border-radius:8px;font-size:10px;font-weight:700;color:' + s.c + ';background:' + s.bg + ';flex-shrink:0;">' + s.l + '</span>' +
+      '<span style="flex:1;min-width:0;font-size:12px;color:#475569;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(meta.join(' · ')) + '</span>' +
+      (t.has_transcript
+        ? '<span style="font-size:10px;color:#6366f1;font-weight:700;flex-shrink:0;">' + (t.char_count >= 1000 ? (t.char_count/1000).toFixed(1) + 'k자' : t.char_count + '자') + '</span><i id="tvChev' + i + '" class="fas fa-chevron-down" style="color:#cbd5e1;font-size:10px;flex-shrink:0;transition:transform 0.2s;"></i>'
+        : '<span style="font-size:10px;color:#cbd5e1;font-weight:600;flex-shrink:0;">원문 없음</span>') +
+    '</button>';
+
+    if (t.has_transcript) {
+      html += '<div id="tvItem' + i + '" style="display:none;border-top:1px solid #f8fafc;">';
+      if (t.summary) {
+        html += '<div style="margin:10px 12px 0;padding:10px 12px;background:#f0f4ff;border-radius:12px;"><p style="font-size:10px;font-weight:800;color:#6366f1;margin:0 0 4px;text-transform:uppercase;letter-spacing:0.05em;"><i class="fas fa-wand-magic-sparkles" style="margin-right:4px;"></i>AI 요약</p><p style="font-size:12px;color:#334155;line-height:1.6;margin:0;white-space:pre-line;">' + escapeHtml(t.summary) + '</p></div>';
+      }
+      html += '<div style="margin:10px 12px;padding:12px;background:#f8fafc;border-radius:12px;max-height:280px;overflow-y:auto;-webkit-overflow-scrolling:touch;">' +
+        '<p style="font-size:10px;font-weight:800;color:#94a3b8;margin:0 0 6px;text-transform:uppercase;letter-spacing:0.05em;"><i class="fas fa-scroll" style="margin-right:4px;"></i>스크립트 원문</p>' +
+        '<p style="font-size:12px;color:#475569;line-height:1.75;margin:0;white-space:pre-line;word-break:break-word;">' + escapeHtml(t.transcript) + '</p>' +
+      '</div>';
+      html += '<div style="padding:0 12px 12px;display:flex;gap:8px;">' +
+        '<button onclick="copyTvTranscript(' + i + ')" style="flex:1;padding:9px;border-radius:10px;border:1px solid #e2e8f0;background:white;font-size:11px;font-weight:700;color:#475569;cursor:pointer;"><i class="fas fa-copy" style="margin-right:4px;"></i>원문 복사</button>' +
+        '<a href="/consultations/' + t.consultation_id + '" style="flex:1;padding:9px;border-radius:10px;background:#6366f1;font-size:11px;font-weight:700;color:white;text-align:center;text-decoration:none;"><i class="fas fa-arrow-up-right-from-square" style="margin-right:4px;"></i>상담 상세</a>' +
+      '</div>';
+      html += '</div>';
+    }
+    html += '</div>';
+  });
+
+  body.innerHTML = html;
+}
+
+function toggleTvItem(i) {
+  var el = document.getElementById('tvItem' + i);
+  var chev = document.getElementById('tvChev' + i);
+  if (!el) return;
+  var open = el.style.display !== 'none';
+  el.style.display = open ? 'none' : 'block';
+  if (chev) chev.style.transform = open ? 'rotate(0deg)' : 'rotate(180deg)';
+}
+
+function copyTvTranscript(i) {
+  var t = _tvState.data && _tvState.data.transcripts && _tvState.data.transcripts[i];
+  if (!t || !t.transcript) return;
+  var text = t.transcript;
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(function(){ showToast('원문이 복사되었습니다', 'success'); })
+      .catch(function(){ fallbackCopy(text); });
+  } else { fallbackCopy(text); }
+  function fallbackCopy(txt) {
+    var ta = document.createElement('textarea');
+    ta.value = txt; ta.style.cssText = 'position:fixed;opacity:0;';
+    document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); showToast('원문이 복사되었습니다', 'success'); }
+    catch(e) { showToast('복사에 실패했습니다', 'error'); }
+    ta.remove();
+  }
+}
+
+function closeTranscriptViewer() {
+  var modal = document.getElementById('transcriptViewerModal');
+  if (!modal) return;
+  var bd = document.getElementById('tvBackdrop');
+  var sheet = document.getElementById('tvSheet');
+  if (bd) bd.style.opacity = '0';
+  if (sheet) sheet.style.transform = 'translateY(100%)';
+  document.body.style.overflow = '';
+  setTimeout(function(){ modal.remove(); }, 320);
+}

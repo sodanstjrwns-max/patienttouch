@@ -108,7 +108,7 @@ function renderBriefingSummary(cData) {
         '<div class="w-8 h-8 rounded-lg bg-white/15 flex items-center justify-center shrink-0"><i class="fas fa-crosshairs text-white text-xs"></i></div>' +
         '<div class="flex-1 min-w-0">' +
           '<p class="text-[10px] text-white/50 font-semibold tracking-wider uppercase">최우선 연락</p>' +
-          '<p class="text-sm font-bold text-white truncate">' + esc(top.patient_name) + '님' +
+          '<p class="text-sm font-bold text-white truncate">' + (top.patient_id ? '<span onclick="openTranscriptViewer(\'' + top.patient_id + '\', \'' + esc(top.patient_name).replace(/'/g, "\\'") + '\')" class="underline decoration-dotted decoration-white/40 underline-offset-2 cursor-pointer active:opacity-60">' + esc(top.patient_name) + '</span>' : esc(top.patient_name)) + '님' +
             (top.treatment_type ? ' · ' + esc(top.treatment_type) : '') +
             (top.amount ? ' · ' + fmt(top.amount) + '만원' : '') + ovBadge + '</p>' +
           '<p class="text-[10px] text-white/60 truncate">' + esc(top.reason || '') + '</p>' +
@@ -160,6 +160,7 @@ function buildChecklist(cData, rData) {
         message: c.recommended_message || (c.points && c.points[0]) || c.recommended_script || '',
         amount: c.amount || c.remaining_value || 0,
         patient_id: c.patient_id,
+        patient_name: esc(c.patient_name) || '',
         task_id: c.task_id || '',
         source: c.source || 'task',
         phone: c.patient_phone_full || ''
@@ -189,6 +190,7 @@ function buildChecklist(cData, rData) {
         message: p.recommended_contact_script || '',
         amount: p.remaining_treatment_value || 0,
         patient_id: p.patient_id,
+        patient_name: esc(p.patient_name) || '',
         task_id: '',
         source: 'retention',
         phone: p.patient_phone_full || p.patient_phone || ''
@@ -256,6 +258,7 @@ function renderTpChecklist() {
     html += '<div class="flex-1 min-w-0">';
     html += '<div class="flex items-center gap-1.5 flex-wrap">';
     html += '<a href="/patients/'+it.patient_id+'" class="font-bold text-sm text-surface-900 hover:text-brand-600'+(it.done?' line-through':'')+'">'+it.title+'</a>';
+    if (it.patient_id && it.patient_name) html += '<button onclick="openTranscriptViewer(\''+it.patient_id+'\', \''+it.patient_name.replace(/'/g,"\\'")+'\')" title="상담 원문 보기" class="w-5 h-5 rounded-md bg-indigo-50 text-indigo-500 hover:bg-indigo-100 flex items-center justify-center active:scale-90 transition-all"><i class="fas fa-scroll text-[8px]"></i></button>';
     html += '<span class="text-[9px] px-1 py-0.5 rounded font-bold '+u.bg+' '+u.tx+'">'+u.lb+'</span>';
     if (it.days_overdue >= 1) html += '<span class="text-[9px] px-1 py-0.5 rounded font-bold bg-orange-100 text-orange-700">⏰ '+it.days_overdue+'일 지연</span>';
     if (it.origin === 'ai_analysis') html += '<span class="text-[9px] px-1 py-0.5 rounded font-bold bg-purple-50 text-purple-700"><i class="fas fa-robot text-[7px] mr-0.5"></i>AI 추천</span>';

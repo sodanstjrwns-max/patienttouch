@@ -4,7 +4,7 @@
 
 import { generateId, safeParseJSON } from './utils';
 import { getAIConfig } from './ai-config';
-import { runAnalysisFromTranscript, runFullAnalysisPipeline, transcribeWithTimestamps } from './ai-presenter';
+import { runAnalysisFromTranscript, transcribeWithTimestamps } from './ai-presenter';
 import type { PreviousFeedbackContext, FullAnalysisResult } from './ai-presenter';
 
 // Safely convert any value to string for D1 TEXT columns
@@ -275,6 +275,17 @@ export interface AnalysisJobParams {
   audioKey?: string | null;
 }
 
+// 스크립트 원문 즉시 저장 — 분석 성공/실패와 무관하게 원문은 항상 상담 기록에 보존
+export async function persistRawTranscript(db: D1Database, consultId: string, transcript: string): Promise<void> {
+  try {
+    await db.prepare(`UPDATE consultations SET transcript = ?, updated_at = datetime('now') WHERE id = ?`)
+      .bind(transcript, consultId).run();
+    console.log('[AnalysisRunner] Raw transcript persisted for', consultId, '(' + transcript.length + ' chars)');
+  } catch (e) {
+    console.warn('[AnalysisRunner] persistRawTranscript failed:', e);
+  }
+}
+
 // 전체 분석 잡 실행 (waitUntil 안에서 호출) — 실패 시 analysis_step='failed:<step>' 기록
 export async function runAnalysisJob(params: AnalysisJobParams): Promise<void> {
   const { db, env, apiKey, consultId, orgId, userId, patientInfo, audioData, transcript, audioKey } = params;
@@ -284,14 +295,27 @@ export async function runAnalysisJob(params: AnalysisJobParams): Promise<void> {
   try {
     const previousFeedback = await loadPreviousFeedback(db, userId, orgId);
 
-    let result: FullAnalysisResult;
+    // 스크립트 원문 확보 → 분석 시작 전 즉시 저장 (분석 실패해도 원문 보존)
+    let sourceTranscript: string | null = null;
     if (transcript && transcript.trim().length > 0) {
-      result = await runAnalysisFromTranscript(transcript, patientInfo, apiKey, env, previousFeedback, onStep);
+      sourceTranscript = transcript;
     } else if (audioData) {
-      result = await runFullAnalysisPipeline(audioData, patientInfo, apiKey, env, previousFeedback, onStep);
+      // 오디오 경로: 전사 먼저 수행하고 원문부터 저장
+      await onStep('transcribing');
+      const { text } = await transcribeWithTimestamps(audioData, apiKey, env);
+      sourceTranscript = text;
     } else {
       throw new Error('분석할 오디오 또는 스크립트가 없습니다.');
     }
+
+    if (!sourceTranscript || !sourceTranscript.trim()) {
+      throw new Error('음성 인식 결과가 비어 있습니다.');
+    }
+    await persistRawTranscript(db, consultId, sourceTranscript);
+
+    const result: FullAnalysisResult = await runAnalysisFromTranscript(
+      sourceTranscript, patientInfo, apiKey, env, previousFeedback, onStep
+    );
 
     await persistAnalysisResults(db, orgId, consultId, audioKey || null, result, env);
 

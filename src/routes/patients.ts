@@ -335,6 +335,69 @@ patients.get('/:id/memo-history', async (c) => {
   }
 });
 
+// GET /api/patients/:id/transcripts - 환자의 기존 상담 스크립트 원문 목록 (환자 이름 클릭 → 원문 뷰어)
+patients.get('/:id/transcripts', async (c) => {
+  try {
+    const patientId = c.req.param('id');
+    const orgId = c.get('organizationId');
+    const db = c.env.DB;
+
+    const patient = await db.prepare(
+      'SELECT id, name FROM patients WHERE id = ? AND organization_id = ?'
+    ).bind(patientId, orgId).first();
+    if (!patient) {
+      return c.json({ success: false, error: '환자를 찾을 수 없습니다.' }, 404);
+    }
+
+    // 상담별 원문: consultations.transcript 우선, 없으면 stt_chunks 병합으로 폴백
+    const result = await db.prepare(`
+      SELECT c.id, c.consultation_date, c.treatment_type, c.status, c.summary,
+        c.transcript, c.duration, c.amount, c.decision_score, c.ai_analysis_status,
+        u.name as user_name,
+        (SELECT GROUP_CONCAT(transcript, ' ') FROM stt_chunks
+         WHERE consultation_id = c.id AND transcript IS NOT NULL AND transcript != ''
+        ) as chunks_transcript
+      FROM consultations c
+      LEFT JOIN users u ON c.user_id = u.id
+      WHERE c.patient_id = ? AND c.organization_id = ?
+      ORDER BY c.consultation_date DESC
+      LIMIT 30
+    `).bind(patientId, orgId).all();
+
+    const transcripts = (result.results as any[]).map(r => {
+      const raw = (r.transcript && String(r.transcript).trim()) || (r.chunks_transcript && String(r.chunks_transcript).trim()) || '';
+      return {
+        consultation_id: r.id,
+        consultation_date: r.consultation_date,
+        treatment_type: r.treatment_type,
+        status: r.status,
+        summary: r.summary,
+        user_name: r.user_name,
+        duration: r.duration,
+        amount: r.amount,
+        decision_score: r.decision_score,
+        ai_analysis_status: r.ai_analysis_status,
+        transcript: raw,
+        has_transcript: raw.length > 0,
+        char_count: raw.length,
+      };
+    });
+
+    return c.json({
+      success: true,
+      data: {
+        patient: { id: patient.id, name: patient.name },
+        transcripts,
+        total: transcripts.length,
+        with_transcript: transcripts.filter(t => t.has_transcript).length,
+      }
+    });
+  } catch (error) {
+    console.error('Patient transcripts error:', error);
+    return c.json({ success: false, error: '상담 원문 조회에 실패했습니다.' }, 500);
+  }
+});
+
 // GET /api/patients/:id/contact-timeline - Get unified contact timeline
 patients.get('/:id/contact-timeline', async (c) => {
   try {

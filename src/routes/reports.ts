@@ -3,7 +3,8 @@ import { Hono } from 'hono';
 import { generateId, safeParseJSON } from '../lib/utils';
 import { authMiddleware } from '../lib/auth';
 import { 
-  runFullAnalysisPipeline, 
+  runAnalysisFromTranscript,
+  transcribeWithTimestamps,
   generateProposalContent,
   type ConsultationReport,
   type DiarizedSegment,
@@ -156,8 +157,13 @@ reports.post('/:consultationId/generate', async (c) => {
           }
         } catch (e) { console.warn('[BG Pipeline] Previous feedback load failed:', e); }
 
-        const analysis = await runFullAnalysisPipeline(
-          audioData,
+        // STT 먼저 수행 → 원문 즉시 저장 (분석 실패해도 스크립트 원문은 상담 기록에 보존)
+        const { text: rawTranscript } = await transcribeWithTimestamps(audioData, apiKey, c.env as any);
+        const { persistRawTranscript } = await import('../lib/analysis-runner');
+        await persistRawTranscript(db, consultationId, rawTranscript);
+
+        const analysis = await runAnalysisFromTranscript(
+          rawTranscript,
           {
             name: consultation.patient_name as string || '미지정',
             age: consultation.patient_age as number,

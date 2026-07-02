@@ -511,7 +511,9 @@ function renderConsultCard(c, st) {
     '</div>' +
     '<div class="flex-1 min-w-0">' +
       '<div class="flex items-center gap-2">' +
-        '<span class="font-bold text-sm truncate">' + (esc(c.patient_name) || '미지정') + '</span>' +
+        (c.patient_id && esc(c.patient_name)
+          ? '<span onclick="event.preventDefault();event.stopPropagation();openTranscriptViewer(\'' + c.patient_id + '\', \'' + esc(c.patient_name).replace(/'/g, "\\'") + '\')" class="font-bold text-sm truncate text-brand-700 underline decoration-dotted decoration-brand-300 underline-offset-2 active:opacity-60">' + esc(c.patient_name) + '</span>'
+          : '<span class="font-bold text-sm truncate">' + (esc(c.patient_name) || '미지정') + '</span>') +
         '<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-semibold ring-1 ring-inset ' + s.bg + ' ' + esc(s.text) + ' ring-current/20"><span class="w-1 h-1 rounded-full ' + s.dot + '"></span>' + s.label + '</span>' +
       '</div>' +
       '<div class="flex items-center gap-1.5 mt-0.5 text-xs text-surface-500">' +

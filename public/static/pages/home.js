@@ -283,7 +283,7 @@ async function loadHomePage() {
           '<div class="flex items-center gap-3">' +
             '<div class="w-11 h-11 rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center shadow-md shadow-amber-400/30"><i class="fas fa-crown text-white"></i></div>' +
             '<div class="flex-1">' +
-              '<div class="flex items-center gap-2"><span class="font-bold text-sm">'+(esc(mv.patient_name)||'')+'</span><span class="text-[10px] px-1.5 py-0.5 rounded-md bg-amber-50 text-amber-700 font-semibold">'+(esc(mv.treatment_type)||'')+'</span></div>' +
+              '<div class="flex items-center gap-2">'+(mv.patient_id&&esc(mv.patient_name)?'<span onclick="event.preventDefault();event.stopPropagation();openTranscriptViewer(\''+mv.patient_id+'\', \''+esc(mv.patient_name).replace(/'/g,"\\'")+'\')" class="font-bold text-sm text-brand-700 underline decoration-dotted decoration-brand-300 underline-offset-2 active:opacity-60">'+esc(mv.patient_name)+'</span>':'<span class="font-bold text-sm">'+(esc(mv.patient_name)||'')+'</span>')+'<span class="text-[10px] px-1.5 py-0.5 rounded-md bg-amber-50 text-amber-700 font-semibold">'+(esc(mv.treatment_type)||'')+'</span></div>' +
               '<div class="flex items-center gap-2 mt-0.5"><span class="text-base font-extrabold text-emerald-600">'+fmt(mv.amount)+'<span class="text-xs text-surface-400 font-medium ml-0.5">만원</span></span>'+(mv.consult_score?'<span class="text-[10px] px-1.5 py-0.5 rounded-md bg-brand-50 text-brand-700 font-semibold">'+mv.consult_score+'점</span>':'')+'</div>' +
             '</div>' +
             '<i class="fas fa-chevron-right text-surface-300 text-xs"></i>' +
@@ -305,7 +305,7 @@ async function loadHomePage() {
         return '<a href="/consultations/'+c.id+'" class="card-premium p-3 flex items-center gap-3 block">' +
           '<div class="w-9 h-9 rounded-xl '+s.bg+' flex items-center justify-center shrink-0"><span class="text-sm font-bold '+s.tx+'">'+(esc(c.patient_name)?esc(c.patient_name).charAt(0):'?')+'</span></div>' +
           '<div class="flex-1 min-w-0">' +
-            '<div class="flex items-center justify-between"><span class="font-bold text-sm truncate">'+(esc(c.patient_name)||'미지정')+'</span>' +
+            '<div class="flex items-center justify-between">'+(c.patient_id&&esc(c.patient_name)?'<span onclick="event.preventDefault();event.stopPropagation();openTranscriptViewer(\''+c.patient_id+'\', \''+esc(c.patient_name).replace(/'/g,"\\'")+'\')" class="font-bold text-sm truncate text-brand-700 underline decoration-dotted decoration-brand-300 underline-offset-2 active:opacity-60">'+esc(c.patient_name)+'</span>':'<span class="font-bold text-sm truncate">'+(esc(c.patient_name)||'미지정')+'</span>') +
             '<span class="inline-flex items-center gap-1 font-semibold rounded-lg ring-1 ring-inset px-1.5 py-0.5 text-[10px] '+s.bg+' '+s.tx+' '+s.rn+'"><span class="w-1.5 h-1.5 rounded-full '+s.dt+'"></span>'+s.lb+'</span></div>' +
             '<div class="flex items-center gap-2 mt-0.5">'+(esc(c.treatment_type)?'<span class="text-xs text-surface-500">'+esc(c.treatment_type)+'</span>':'')+(c.amount?'<span class="text-xs font-semibold text-surface-600">'+fmt(c.amount)+'만원</span>':'')+(c.feedback&&c.feedback.total_score?'<span class="text-xs font-semibold text-brand-600">'+c.feedback.total_score+'점</span>':'')+'</div>' +
           '</div><i class="fas fa-chevron-right text-surface-300 text-xs"></i></a>';
@@ -399,6 +399,7 @@ function renderContacts(data) {
     // Name + urgency + last contact
     html += '<div class="flex items-center gap-1.5 flex-wrap">';
     html += '<a href="/patients/'+c.patient_id+'" class="font-bold text-sm text-surface-900 hover:text-brand-600">'+esc(c.patient_name)+'</a>';
+    html += '<button onclick="openTranscriptViewer(\''+c.patient_id+'\', \''+esc(c.patient_name).replace(/'/g,"\\'")+'\')" title="상담 원문 보기" class="w-5 h-5 rounded-md bg-indigo-50 text-indigo-500 hover:bg-indigo-100 flex items-center justify-center active:scale-90 transition-all"><i class="fas fa-scroll text-[8px]"></i></button>';
     html += '<span class="inline-flex items-center gap-0.5 px-1 py-0.5 rounded text-[9px] font-bold '+u.bg+' '+u.tx+'">';
     if(u.pu) html += '<span class="w-1 h-1 rounded-full bg-rose-500 animate-pulse"></span>';
     html += '<i class="fas '+u.ic+' text-[7px]"></i>'+u.lb+'</span>';
@@ -524,7 +525,7 @@ function showMorningBriefing(cData, userName) {
         '<div class="border-2 border-brand-200 bg-brand-50/50 rounded-xl p-3.5">' +
           '<p class="text-[10px] font-bold text-brand-500 tracking-wider uppercase mb-1.5"><i class="fas fa-crosshairs mr-1"></i>최우선 연락</p>' +
           '<div class="flex items-center gap-2 mb-1">' +
-            '<p class="font-bold text-base text-surface-900">' + esc(top.patient_name) + '님</p>' + topOv +
+            (top.patient_id ? '<p onclick="openTranscriptViewer(\'' + top.patient_id + '\', \'' + esc(top.patient_name).replace(/'/g, "\\'") + '\')" class="font-bold text-base text-brand-700 underline decoration-dotted decoration-brand-300 underline-offset-2 cursor-pointer active:opacity-60">' + esc(top.patient_name) + '님</p>' : '<p class="font-bold text-base text-surface-900">' + esc(top.patient_name) + '님</p>') + topOv +
           '</div>' +
           '<p class="text-xs text-surface-600 mb-1">' + esc(top.reason || '') + '</p>' +
           '<div class="flex flex-wrap gap-1">' +

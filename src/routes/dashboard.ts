@@ -189,7 +189,7 @@ dashboard.get('/summary', async (c) => {
       `).bind(orgId, userId).first(),
       // MVP case
       db.prepare(`
-        SELECT c.id, c.treatment_type, c.amount, c.decision_score,
+        SELECT c.id, c.patient_id, c.treatment_type, c.amount, c.decision_score,
           p.name as patient_name, json_extract(c.feedback, '$.total_score') as consult_score
         FROM consultations c JOIN patients p ON c.patient_id = p.id
         WHERE c.organization_id = ? AND c.user_id = ? AND c.status = 'paid' AND c.consultation_date >= datetime('now', '-7 days')
@@ -284,7 +284,7 @@ dashboard.get('/summary', async (c) => {
         },
         sparkline: dailySparkline.results,
         mvp_case: mvpCase ? {
-          id: mvpCase.id, patient_name: mvpCase.patient_name, treatment_type: mvpCase.treatment_type,
+          id: mvpCase.id, patient_id: mvpCase.patient_id, patient_name: mvpCase.patient_name, treatment_type: mvpCase.treatment_type,
           amount: mvpCase.amount, decision_score: mvpCase.decision_score, consult_score: mvpCase.consult_score,
         } : null,
         recent_consultations: recentConsults.results.map(c => ({

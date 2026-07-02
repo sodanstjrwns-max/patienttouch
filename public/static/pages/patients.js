@@ -120,7 +120,9 @@ function renderPatients(patients) {
       '</div>' +
       '<div class="flex-1 min-w-0">' +
         '<div class="flex items-center gap-2">' +
-          '<span class="font-bold text-sm">' + esc(p.name) + '</span>' +
+          (p.consultation_count > 0
+            ? '<span onclick="event.preventDefault();event.stopPropagation();openTranscriptViewer(\'' + p.id + '\', \'' + esc(p.name).replace(/'/g, "\\'") + '\')" class="font-bold text-sm text-brand-700 underline decoration-dotted decoration-brand-300 underline-offset-2 active:opacity-60">' + esc(p.name) + '</span>'
+            : '<span class="font-bold text-sm">' + esc(p.name) + '</span>') +
           (p.age ? '<span class="text-xs text-surface-400">' + p.age + '세</span>' : '') +
           (p.gender ? '<span class="text-xs text-surface-400">' + (p.gender === 'male' ? '남' : '여') + '</span>' : '') +
           (st ? '<span class="text-[9px] px-1.5 py-0.5 rounded-md font-semibold ' + st.bg + '">' + st.label + '</span>' : '') +
