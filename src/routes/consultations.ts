@@ -5,9 +5,9 @@ import { authMiddleware } from '../lib/auth';
 import { analyzeConsultation } from '../lib/ai';
 import { runAnalysisJob, transcribeSegmentJob } from '../lib/analysis-runner';
 import { safeInt } from '../lib/middleware';
-import type { Env, Consultation } from '../types';
+import type { AppEnv, Env, Consultation } from '../types';
 
-const consultations = new Hono<{ Bindings: Env }>();
+const consultations = new Hono<AppEnv>();
 
 // Apply auth middleware to all routes
 consultations.use('*', authMiddleware);
@@ -688,6 +688,7 @@ consultations.put('/:id', async (c) => {
   try {
     const consultId = c.req.param('id');
     const orgId = c.get('organizationId');
+    const userId = c.get('userId');
     const db = c.env.DB;
     const body = await c.req.json();
 

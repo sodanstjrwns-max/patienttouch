@@ -115,7 +115,7 @@ export async function persistAnalysisResults(
     toStr(fullAnalysis.report.consultation_summary),
     fullAnalysis.nerData.treatment_type || null,
     fullAnalysis.nerData.treatment_area || null,
-    fullAnalysis.nerData.amount || null,
+    fullAnalysis.nerData.discussed_amount || null,
     toJsonStr(fullAnalysis.report.decision_factors),
     toJsonStr({
       overall_tone: fullAnalysis.report.overall_sentiment,

@@ -33,9 +33,10 @@ export async function authMiddleware(c: Context, next: Next) {
   }
 
   // Add auth info to context
-  c.set('auth', payload as AuthPayload);
-  c.set('userId', payload.user_id);
-  c.set('organizationId', payload.organization_id);
+  const auth = payload as unknown as AuthPayload;
+  c.set('auth', auth);
+  c.set('userId', auth.user_id);
+  c.set('organizationId', auth.organization_id);
 
   await next();
 }
@@ -50,7 +51,7 @@ export async function setAuthCookie(c: Context, user: { id: string; organization
     exp: Math.floor(Date.now() / 1000) + (7 * 24 * 60 * 60) // 7 days
   };
 
-  const token = await createJWT(payload, getJwtSecret(c));
+  const token = await createJWT(payload as unknown as Record<string, unknown>, getJwtSecret(c));
 
   setCookie(c, 'auth_token', token, {
     httpOnly: true,

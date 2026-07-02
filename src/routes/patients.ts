@@ -3,9 +3,9 @@ import { Hono } from 'hono';
 import { generateId, safeParseJSON } from '../lib/utils';
 import { authMiddleware } from '../lib/auth';
 import { maskPatientData } from '../lib/middleware';
-import type { Env, Patient } from '../types';
+import type { AppEnv, Env, Patient } from '../types';
 
-const patients = new Hono<{ Bindings: Env }>();
+const patients = new Hono<AppEnv>();
 
 // Apply auth middleware to all routes
 patients.use('*', authMiddleware);

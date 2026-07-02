@@ -3,9 +3,9 @@ import { Hono } from 'hono';
 import { generateId, safeParseJSON, daysSince } from '../lib/utils';
 import { authMiddleware } from '../lib/auth';
 import { generateContactMessage } from '../lib/ai';
-import type { Env } from '../types';
+import type { AppEnv, Env } from '../types';
 
-const tasks = new Hono<{ Bindings: Env }>();
+const tasks = new Hono<AppEnv>();
 
 // Apply auth middleware to all routes
 tasks.use('*', authMiddleware);
@@ -89,7 +89,7 @@ tasks.get('/today', async (c) => {
       ORDER BY t.recommended_date ASC
     `).bind(orgId, userId, today).all();
 
-    const scoredTasks = result.results.map(t => {
+    const scoredTasks = result.results.map((t: Record<string, unknown>) => {
       const daysElapsed = t.consultation_date 
         ? Math.floor((Date.now() - new Date(t.consultation_date as string).getTime()) / 86400000)
         : Math.floor((Date.now() - new Date(t.recommended_date as string).getTime()) / 86400000);
@@ -103,14 +103,14 @@ tasks.get('/today', async (c) => {
       });
 
       return {
-        ...t,
+        ...(t as Record<string, unknown>),
         points: safeParseJSON(t.points as string, []),
         patient_psychology: safeParseJSON(t.patient_psychology as string, {}),
         priority_score: priority.score,
         urgency: priority.urgency,
         priority_factors: priority.factors,
         days_elapsed: daysElapsed,
-      };
+      } as Record<string, any> & { priority_score: number; task_type?: string };
     });
 
     // Sort by priority score descending

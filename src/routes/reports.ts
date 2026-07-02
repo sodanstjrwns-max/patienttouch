@@ -10,9 +10,9 @@ import {
   type NERExtracted,
   type PreviousFeedbackContext
 } from '../lib/ai-presenter';
-import type { Env } from '../types';
+import type { AppEnv, Env } from '../types';
 
-const reports = new Hono<{ Bindings: Env }>();
+const reports = new Hono<AppEnv>();
 
 // Apply auth middleware to all routes except public proposal view
 reports.use('*', async (c, next) => {
@@ -51,7 +51,7 @@ reports.get('/:consultationId', async (c) => {
       data: {
         ...report,
         treatment_options: safeParseJSON(report.treatment_options as string, []),
-        payment_options: safeParseJSON(report.payment_options as string, {}),
+        payment_options: safeParseJSON(report.payment_options as string, { installment_options: [] as any[] }),
         patient_concerns: safeParseJSON(report.patient_concerns as string, []),
         emotion_timeline: safeParseJSON(report.emotion_timeline as string, []),
         decision_factors: safeParseJSON(report.decision_factors as string, {}),
@@ -71,6 +71,7 @@ reports.post('/:consultationId/generate', async (c) => {
   try {
     const consultationId = c.req.param('consultationId');
     const orgId = c.get('organizationId');
+    const userId = c.get('userId');
     const db = c.env.DB;
     const apiKey = c.env.OPENAI_API_KEY;
 
@@ -131,7 +132,7 @@ reports.post('/:consultationId/generate', async (c) => {
 
           if (prevReports.results.length > 0) {
             const sessions = prevReports.results.map((r: any) => {
-              const fb = safeParseJSON(r.coaching_feedback, {});
+              const fb = safeParseJSON<any>(r.coaching_feedback, {});
               return {
                 date: r.consultation_date?.split('T')[0] || '',
                 total_score: r.coaching_score || 0,
@@ -327,7 +328,7 @@ reports.get('/:consultationId/status', async (c) => {
             report: {
               ...report,
               treatment_options: safeParseJSON(report.treatment_options as string, []),
-              payment_options: safeParseJSON(report.payment_options as string, {}),
+              payment_options: safeParseJSON(report.payment_options as string, { installment_options: [] as any[] }),
               patient_concerns: safeParseJSON(report.patient_concerns as string, []),
               emotion_timeline: safeParseJSON(report.emotion_timeline as string, []),
               decision_factors: safeParseJSON(report.decision_factors as string, {}),
@@ -432,7 +433,7 @@ reports.post('/:consultationId/proposal', async (c) => {
       consultation_summary: report.consultation_summary as string,
       treatment_options: safeParseJSON(report.treatment_options as string, []),
       discussed_amount: report.discussed_amount as number,
-      payment_options: safeParseJSON(report.payment_options as string, {}),
+      payment_options: safeParseJSON(report.payment_options as string, { installment_options: [] as any[] }),
       patient_concerns: safeParseJSON(report.patient_concerns as string, []),
       emotion_timeline: safeParseJSON(report.emotion_timeline as string, []),
       emotion_summary: report.emotion_summary as string,
@@ -675,7 +676,7 @@ reports.post('/proposals/view/:token/interaction', async (c) => {
 
     if (type === 'installment_slider') {
       // Track installment slider interaction
-      const interactions = safeParseJSON(proposal.installment_interactions as string, []);
+      const interactions = safeParseJSON<any[]>(proposal.installment_interactions as string, []);
       interactions.push({
         timestamp: new Date().toISOString(),
         months_selected: data.months,

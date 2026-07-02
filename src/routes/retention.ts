@@ -11,9 +11,9 @@ import {
   scoreToRiskLevel,
   type ChurnPrediction
 } from '../lib/ai-churn-prediction';
-import type { Env } from '../types';
+import type { AppEnv, Env } from '../types';
 
-const retention = new Hono<{ Bindings: Env }>();
+const retention = new Hono<AppEnv>();
 
 retention.use('*', authMiddleware);
 
@@ -902,7 +902,7 @@ retention.post('/predict-batch', async (c) => {
       ).run();
 
       summary[prediction.risk_level]++;
-      predictions.push({ patient_id: pid, patient_name: features.patient_name, ...prediction });
+      predictions.push({ ...prediction, patient_id: pid, patient_name: features.patient_name });
     }
 
     return c.json({

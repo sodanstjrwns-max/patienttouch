@@ -479,6 +479,16 @@ export interface RetentionDashboard {
   status_distribution: Record<string, number>;
 }
 
+// Hono context variables (set by authMiddleware)
+export interface AppVariables {
+  auth: AuthPayload;
+  userId: string;
+  organizationId: string;
+}
+
+// Combined Hono environment (Bindings + Variables)
+export type AppEnv = { Bindings: Env; Variables: AppVariables };
+
 // Bindings for Cloudflare
 export interface Env {
   DB: D1Database;

@@ -3,9 +3,9 @@ import { Hono } from 'hono';
 import { generateId, hashPassword, verifyPassword, verifyPasswordDetailed, safeParseJSON } from '../lib/utils';
 import { setAuthCookie, clearAuthCookie, authMiddleware } from '../lib/auth';
 import { sanitize, isValidEmail } from '../lib/middleware';
-import type { Env, User, Organization } from '../types';
+import type { AppEnv, Env, User, Organization } from '../types';
 
-const auth = new Hono<{ Bindings: Env }>();
+const auth = new Hono<AppEnv>();
 
 // POST /api/auth/register - Register new organization and admin user
 auth.post('/register', async (c) => {
@@ -394,7 +394,6 @@ auth.get('/team', authMiddleware, async (c) => {
 auth.post('/team', authMiddleware, async (c) => {
   try {
     const orgId = c.get('organizationId');
-    const userRole = c.get('userRole');
     const db = c.env.DB;
     
     // Only admin can add members

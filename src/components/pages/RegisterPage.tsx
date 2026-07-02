@@ -45,7 +45,7 @@ export const RegisterPage: FC = () => {
                 <label class="block text-xs font-semibold text-surface-400 mb-2 uppercase tracking-wide">비밀번호</label>
                 <div class="relative">
                   <div class="absolute left-4 top-1/2 -translate-y-1/2 text-surface-500"><i class="fas fa-lock text-sm"></i></div>
-                  <input type="password" id="regPassword" required minlength="6" class="w-full pl-11 pr-4 py-3.5 bg-white/5 border border-white/10 rounded-xl text-white placeholder-surface-500 outline-none focus:border-brand-500/50 focus:ring-2 focus:ring-brand-500/20 transition-all" placeholder="6자리 이상" />
+                  <input type="password" id="regPassword" required minlength={6} class="w-full pl-11 pr-4 py-3.5 bg-white/5 border border-white/10 rounded-xl text-white placeholder-surface-500 outline-none focus:border-brand-500/50 focus:ring-2 focus:ring-brand-500/20 transition-all" placeholder="6자리 이상" />
                 </div>
               </div>
               <div class="group">

@@ -3,9 +3,9 @@ import { Hono } from 'hono';
 import { safeParseJSON } from '../lib/utils';
 import { authMiddleware } from '../lib/auth';
 import { safeInt, validatePeriod, validateAdminPeriod, periodToDays, setCacheHeaders, maskPatientData, maskPhone } from '../lib/middleware';
-import type { Env, KPIData } from '../types';
+import type { AppEnv, Env, KPIData } from '../types';
 
-const dashboard = new Hono<{ Bindings: Env }>();
+const dashboard = new Hono<AppEnv>();
 
 // Apply auth middleware to all routes
 dashboard.use('*', authMiddleware);

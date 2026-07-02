@@ -3,9 +3,9 @@
 import { Hono } from 'hono';
 import { generateId, safeParseJSON } from '../lib/utils';
 import { authMiddleware } from '../lib/auth';
-import type { Env } from '../types';
+import type { AppEnv, Env } from '../types';
 
-const kakao = new Hono<{ Bindings: Env }>();
+const kakao = new Hono<AppEnv>();
 
 kakao.use('*', authMiddleware);
 

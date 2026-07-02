@@ -119,7 +119,7 @@ export const PatientsPage: FC = () => {
               </div>
               <div>
                 <label class="block text-xs font-semibold text-surface-600 mb-1.5">메모</label>
-                <textarea id="pMemo" rows="2" class="w-full px-4 py-3 border border-surface-200 rounded-xl outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 transition-all resize-none" placeholder="특이사항 메모"></textarea>
+                <textarea id="pMemo" rows={2} class="w-full px-4 py-3 border border-surface-200 rounded-xl outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 transition-all resize-none" placeholder="특이사항 메모"></textarea>
               </div>
               <button type="submit" class="w-full bg-gradient-brand text-white font-bold py-3.5 rounded-xl shadow-md shadow-brand-600/20 active:scale-[0.97] transition-all">환자 등록</button>
             </form>

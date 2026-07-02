@@ -34,9 +34,9 @@ import { ReferralNetworkPage } from './components/pages/ReferralNetworkPage'
 import { ChurnPredictionPage } from './components/pages/ChurnPredictionPage'
 import { ChurnRetrainingPage } from './components/pages/ChurnRetrainingPage'
 
-import type { Env } from './types'
+import type { AppEnv } from './types'
 
-const app = new Hono<{ Bindings: Env }>()
+const app = new Hono<AppEnv>()
 
 // Middleware
 app.use('*', logger())
