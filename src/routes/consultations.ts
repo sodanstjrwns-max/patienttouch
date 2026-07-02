@@ -141,6 +141,93 @@ consultations.get('/', async (c) => {
   }
 });
 
+// GET /api/consultations/search-transcripts?q=키워드 - 상담 원문 전문 검색 (v8.6)
+// "그때 임플란트 가격 뭐라고 했더라?" → 원문에서 키워드 스니펫 검색
+consultations.get('/search-transcripts', async (c) => {
+  try {
+    const orgId = c.get('organizationId');
+    const userId = c.get('userId');
+    const db = c.env.DB;
+    const { q, patient_id, limit = '20' } = c.req.query();
+
+    const keyword = (q || '').trim();
+    if (keyword.length < 2) {
+      return c.json({ success: false, error: '검색어는 2자 이상 입력해주세요.' }, 400);
+    }
+    if (keyword.length > 50) {
+      return c.json({ success: false, error: '검색어가 너무 깁니다.' }, 400);
+    }
+
+    let query = `
+      SELECT c.id, c.consultation_date, c.treatment_type, c.status, c.amount,
+        c.transcript, c.patient_id, p.name as patient_name, u.name as user_name
+      FROM consultations c
+      LEFT JOIN patients p ON c.patient_id = p.id
+      LEFT JOIN users u ON c.user_id = u.id
+      WHERE c.organization_id = ? AND c.transcript LIKE ?
+    `;
+    const params: (string | number)[] = [orgId, `%${keyword}%`];
+    if (patient_id) { query += ' AND c.patient_id = ?'; params.push(patient_id); }
+    query += ' ORDER BY c.consultation_date DESC LIMIT ?';
+    params.push(Math.min(parseInt(limit) || 20, 50));
+
+    const result = await db.prepare(query).bind(...params).all();
+
+    // 스니펫 추출: 키워드 주변 ±60자, 상담당 최대 3개
+    const lowerKw = keyword.toLowerCase();
+    const matches = (result.results as any[]).map(r => {
+      const text = (r.transcript || '') as string;
+      const lowerText = text.toLowerCase();
+      const snippets: { text: string; index: number }[] = [];
+      let pos = 0;
+      while (snippets.length < 3) {
+        const idx = lowerText.indexOf(lowerKw, pos);
+        if (idx === -1) break;
+        const start = Math.max(0, idx - 60);
+        const end = Math.min(text.length, idx + keyword.length + 60);
+        snippets.push({
+          text: (start > 0 ? '…' : '') + text.slice(start, end) + (end < text.length ? '…' : ''),
+          index: idx,
+        });
+        pos = idx + keyword.length;
+      }
+      // 총 매치 수 카운트
+      let count = 0; let p2 = 0;
+      while (true) {
+        const i = lowerText.indexOf(lowerKw, p2);
+        if (i === -1) break;
+        count++; p2 = i + keyword.length;
+      }
+      return {
+        consultation_id: r.id,
+        consultation_date: r.consultation_date,
+        treatment_type: r.treatment_type,
+        status: r.status,
+        amount: r.amount,
+        patient_id: r.patient_id,
+        patient_name: r.patient_name,
+        user_name: r.user_name,
+        match_count: count,
+        snippets,
+      };
+    });
+
+    // 감사 로그: 원문 검색 행위 기록 (검색어 포함 — 접근 추적)
+    const { writeAuditLog } = await import('./privacy');
+    const user = await db.prepare('SELECT name FROM users WHERE id = ?').bind(userId).first();
+    c.executionCtx.waitUntil(
+      writeAuditLog(db, orgId, userId, (user?.name as string) || null, 'transcript_search', 'organization', orgId, {
+        keyword, result_count: matches.length,
+      })
+    );
+
+    return c.json({ success: true, data: { keyword, results: matches, total: matches.length } });
+  } catch (error) {
+    console.error('Transcript search error:', error);
+    return c.json({ success: false, error: '원문 검색에 실패했습니다.' }, 500);
+  }
+});
+
 // GET /api/consultations/:id - Get consultation detail
 consultations.get('/:id', async (c) => {
   try {
@@ -190,7 +277,7 @@ consultations.post('/', async (c) => {
     const db = c.env.DB;
 
     const body = await c.req.json();
-    const { patient_id, consultation_date, duration, treatment_type, treatment_area, amount, status } = body;
+    const { patient_id, consultation_date, duration, treatment_type, treatment_area, amount, status, recording_consent } = body;
 
     let patientName = null;
     let actualPatientId = patient_id || null;
@@ -222,17 +309,32 @@ consultations.post('/', async (c) => {
 
     const consultId = 'consult_' + generateId().slice(0, 8);
 
+    const hasConsent = recording_consent === true || recording_consent === 1;
     await db.prepare(`
       INSERT INTO consultations (
         id, organization_id, user_id, patient_id, consultation_date, 
-        duration, treatment_type, treatment_area, amount, status
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        duration, treatment_type, treatment_area, amount, status,
+        recording_consent, consent_at, consent_by
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).bind(
       consultId, orgId, userId, actualPatientId,
       consultation_date || new Date().toISOString(),
       duration || null, treatment_type || null, treatment_area || null,
-      amount || null, status || 'pending'
+      amount || null, status || 'pending',
+      hasConsent ? 1 : 0,
+      hasConsent ? new Date().toISOString() : null,
+      hasConsent ? userId : null
     ).run();
+
+    // 동의 확인 감사 로그
+    if (hasConsent) {
+      const { writeAuditLog } = await import('./privacy');
+      c.executionCtx.waitUntil(
+        writeAuditLog(db, orgId, userId, null, 'consent_recorded', 'consultation', consultId, {
+          patient_id: actualPatientId,
+        })
+      );
+    }
 
     return c.json({
       success: true,

@@ -7,7 +7,7 @@
 //      - /static/*: Stale-While-Revalidate (즉시 캐시 응답 + 백그라운드 업데이트)
 //      - HTML 페이지: Network-first + 오프라인 fallback
 
-const CACHE_VERSION = 'pt-v8.5.1';
+const CACHE_VERSION = 'pt-v8.6.0';
 const STATIC_CACHE = `pt-static-${CACHE_VERSION}`;
 const RUNTIME_CACHE = `pt-runtime-${CACHE_VERSION}`;
 const PAGE_CACHE = `pt-pages-${CACHE_VERSION}`;
@@ -22,6 +22,7 @@ const PRECACHE_STATIC = [
   '/static/tailwind.css',
   '/static/pwa-register.js',
   '/static/utils.js',
+  '/static/components.js',
   // 페이지별 핵심 스크립트 (v7.6 추가)
   '/static/pages/admin-dashboard.js',
   '/static/pages/churn-prediction.js',

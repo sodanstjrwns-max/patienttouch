@@ -4,8 +4,7 @@ async function loadSettings() {
     if (data.success) {
       var user = data.data;
       var settings = user.settings || {};
-      var colors = ['bg-brand-100 text-brand-700', 'bg-emerald-100 text-emerald-700', 'bg-amber-100 text-amber-700', 'bg-rose-100 text-rose-700', 'bg-sky-100 text-sky-700', 'bg-purple-100 text-purple-700'];
-      var avatarColor = colors[esc(user.name).charCodeAt(0) % colors.length];
+      var avatarColor = PT.avatarColor(user.name); // v8.6: shared
       document.getElementById('profileSection').innerHTML =
         '<div class="w-16 h-16 rounded-2xl ' + avatarColor + ' flex items-center justify-center font-black text-2xl shrink-0">' + esc(user.name).charAt(0) + '</div>' +
         '<div><p class="font-bold text-surface-900">' + esc(user.name) + '</p>' +
@@ -16,6 +15,8 @@ async function loadSettings() {
       if (user.role === 'admin' || user.role === 'owner') {
         var exportSec = document.getElementById('exportSection');
         if (exportSec) exportSec.classList.remove('hidden');
+        var privacySec = document.getElementById('privacySection');
+        if (privacySec) { privacySec.classList.remove('hidden'); loadPrivacyPolicy(); }
       }
 
       document.getElementById('notificationEnabled').checked = settings.notification_enabled !== false;
@@ -137,11 +138,11 @@ async function loadTeam() {
 
     var roles = {admin:'관리자',staff:'상담사'};
     var roleColors = {admin:'bg-brand-50 text-brand-700',staff:'bg-surface-100 text-surface-600'};
-    var colors = ['bg-brand-100 text-brand-700','bg-emerald-100 text-emerald-700','bg-amber-100 text-amber-700','bg-rose-100 text-rose-700','bg-sky-100 text-sky-700'];
+    
     
     var html = '';
     data.data.forEach(function(m) {
-      var ac = colors[esc(m.name).charCodeAt(0) % colors.length];
+      var ac = PT.avatarColor(m.name); // v8.6: shared
       html += '<div class="flex items-center gap-3 p-3 bg-surface-50 rounded-xl">';
       html += '<div class="w-9 h-9 rounded-lg '+ac+' flex items-center justify-center font-bold text-xs shrink-0">'+esc(m.name).charAt(0)+'</div>';
       html += '<div class="flex-1 min-w-0">';
@@ -228,6 +229,101 @@ async function mergeDuplicates(keepId, mergeIds) {
     else showToast(data.error||'병합에 실패했습니다','error');
   } catch(e) { showToast('오류가 발생했습니다','error'); }
 }
+
+// === v8.6: Privacy & Compliance (admin only) ===
+async function loadPrivacyPolicy() {
+  try {
+    var res = await fetch('/api/privacy/policy');
+    var data = await res.json();
+    if (!data.success) return;
+    var p = data.data;
+    var noticeEl = document.getElementById('consentNoticeText');
+    var monthsEl = document.getElementById('retentionMonths');
+    if (noticeEl) noticeEl.value = p.consent_notice_text || '';
+    if (monthsEl) monthsEl.value = String(p.transcript_retention_months || 0);
+    var pendingEl = document.getElementById('purgePendingLine');
+    if (pendingEl) {
+      if (p.transcript_retention_months > 0 && p.pending_purge_count > 0) {
+        pendingEl.innerHTML = '<i class="fas fa-triangle-exclamation mr-1"></i>보존 기간이 지난 상담 원문 <b>' + p.pending_purge_count + '건</b>이 파기 대상입니다. "지금 파기 실행"으로 즉시 처리할 수 있어요.';
+        pendingEl.classList.remove('hidden');
+      } else {
+        pendingEl.classList.add('hidden');
+      }
+    }
+  } catch (e) { console.error('Privacy policy load error:', e); }
+}
+
+var savePrivacyBtn = document.getElementById('savePrivacyBtn');
+if (savePrivacyBtn) savePrivacyBtn.addEventListener('click', async function() {
+  savePrivacyBtn.disabled = true;
+  try {
+    var res = await fetch('/api/privacy/policy', {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        transcript_retention_months: parseInt(document.getElementById('retentionMonths').value, 10),
+        consent_notice_text: document.getElementById('consentNoticeText').value.trim()
+      })
+    });
+    var data = await res.json();
+    if (data.success) { showToast('개인정보 정책이 저장되었습니다.', 'success'); loadPrivacyPolicy(); }
+    else showToast(data.error || '저장에 실패했습니다.', 'error');
+  } catch (e) { showToast('오류가 발생했습니다.', 'error'); }
+  finally { savePrivacyBtn.disabled = false; }
+});
+
+var purgeNowBtn = document.getElementById('purgeNowBtn');
+if (purgeNowBtn) purgeNowBtn.addEventListener('click', async function() {
+  var months = parseInt(document.getElementById('retentionMonths').value, 10);
+  if (!months || months <= 0) { showToast('보존 기간을 먼저 설정하고 저장해주세요. (무기한은 파기 대상 없음)', 'warning'); return; }
+  if (!confirm('보존 기간(' + months + '개월)이 지난 상담의 원문·녹음 파일을 파기합니다.\n\n⚠️ 이 작업은 되돌릴 수 없습니다.\n(AI 요약·금액 등 통계 데이터는 유지됩니다)\n\n계속하시겠습니까?')) return;
+  purgeNowBtn.disabled = true;
+  purgeNowBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1.5"></i>파기 중...';
+  try {
+    var res = await fetch('/api/privacy/purge', { method: 'POST' });
+    var data = await res.json();
+    if (data.success) { showToast('원문 ' + (data.data.purged_count || 0) + '건이 파기되었습니다.', 'success'); loadPrivacyPolicy(); }
+    else showToast(data.error || '파기에 실패했습니다.', 'error');
+  } catch (e) { showToast('오류가 발생했습니다.', 'error'); }
+  finally { purgeNowBtn.disabled = false; purgeNowBtn.innerHTML = '<i class="fas fa-eraser mr-1.5"></i>지금 파기 실행'; }
+});
+
+var loadAuditBtn = document.getElementById('loadAuditBtn');
+if (loadAuditBtn) loadAuditBtn.addEventListener('click', async function() {
+  var listEl = document.getElementById('auditLogList');
+  listEl.innerHTML = '<div class="shimmer h-10 rounded-lg w-full"></div>';
+  try {
+    var res = await fetch('/api/privacy/audit-logs?limit=50');
+    var data = await res.json();
+    if (!data.success) { listEl.innerHTML = '<p class="text-xs text-surface-500 text-center py-2">조회에 실패했습니다</p>'; return; }
+    if (!data.data.length) { listEl.innerHTML = '<p class="text-xs text-surface-500 text-center py-2">기록이 없습니다</p>'; return; }
+    var actionMap = {
+      transcript_view: { label: '원문 열람', icon: 'fa-eye', color: 'text-sky-600 bg-sky-50' },
+      transcript_search: { label: '원문 검색', icon: 'fa-magnifying-glass', color: 'text-indigo-600 bg-indigo-50' },
+      patient_erase: { label: '환자 삭제', icon: 'fa-user-xmark', color: 'text-rose-600 bg-rose-50' },
+      retention_purge: { label: '보존기간 파기', icon: 'fa-eraser', color: 'text-amber-600 bg-amber-50' },
+      consent_recorded: { label: '녹음 동의', icon: 'fa-file-signature', color: 'text-emerald-600 bg-emerald-50' },
+      audio_play: { label: '녹음 재생', icon: 'fa-play', color: 'text-purple-600 bg-purple-50' }
+    };
+    var html = '';
+    data.data.forEach(function(log) {
+      var a = actionMap[log.action] || { label: log.action, icon: 'fa-circle-info', color: 'text-surface-600 bg-surface-100' };
+      var detail = '';
+      try {
+        var d = JSON.parse(log.details || '{}');
+        if (d.keyword) detail = '"' + esc(d.keyword) + '"';
+        else if (d.patient_name) detail = esc(d.patient_name);
+        else if (d.purged_count !== undefined) detail = d.purged_count + '건';
+      } catch (e) {}
+      var t = (log.created_at || '').replace('T', ' ').slice(5, 16);
+      html += '<div class="flex items-center gap-2 p-2 bg-surface-50 rounded-lg text-[11px]">';
+      html += '<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded font-semibold ' + a.color + ' shrink-0"><i class="fas ' + a.icon + ' text-[9px]"></i>' + a.label + '</span>';
+      html += '<span class="text-surface-700 font-medium truncate flex-1">' + esc(log.user_name || '-') + (detail ? ' · ' + detail : '') + '</span>';
+      html += '<span class="text-surface-400 shrink-0">' + t + '</span>';
+      html += '</div>';
+    });
+    listEl.innerHTML = html;
+  } catch (e) { listEl.innerHTML = '<p class="text-xs text-surface-500 text-center py-2">오류가 발생했습니다</p>'; }
+});
 
 loadSettings();
 loadTeam();

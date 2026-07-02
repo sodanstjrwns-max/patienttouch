@@ -73,8 +73,7 @@ function renderDashboard(d) {
       var st = statusMap[c.status] || statusMap.active;
       var treatments = c.treatments || [];
       var treatName = treatments.length > 0 ? (treatTypeMap[treatments[0].treatment_type] || treatments[0].treatment_type) + (treatments[0].treatment_name ? ' - ' + treatments[0].treatment_name : '') : '치료 미등록';
-      var colors = ['bg-brand-100 text-brand-700','bg-emerald-100 text-emerald-700','bg-amber-100 text-amber-700','bg-rose-100 text-rose-700','bg-sky-100 text-sky-700'];
-      var avatarColor = colors[esc(c.patient_name).charCodeAt(0) % colors.length];
+      var avatarColor = PT.avatarColor(c.patient_name); // v8.6: shared
 
       html += '<div class="p-3.5 bg-surface-50/80 rounded-xl border border-surface-100 hover:border-brand-200 transition-all">';
       html += '<div class="flex items-start gap-3 mb-2.5">';

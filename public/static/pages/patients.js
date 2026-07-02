@@ -102,7 +102,6 @@ function renderPatients(patients) {
     document.getElementById('patientList').innerHTML = '<div class="text-center py-16 px-6"><div class="w-20 h-20 mx-auto mb-5 rounded-2xl bg-surface-100 flex items-center justify-center"><i class="fas fa-user-group text-3xl text-surface-300"></i></div><h3 class="text-lg font-bold text-surface-800 mb-1">환자가 없습니다</h3><p class="text-surface-500 text-sm">첫 환자를 등록해보세요</p></div>';
     return;
   }
-  var colors = ['bg-brand-100 text-brand-700', 'bg-emerald-100 text-emerald-700', 'bg-amber-100 text-amber-700', 'bg-rose-100 text-rose-700', 'bg-sky-100 text-sky-700', 'bg-purple-100 text-purple-700'];
   var statusMap = {
     paid: { label: '결제', bg: 'bg-emerald-50 text-emerald-700' },
     undecided: { label: '미결정', bg: 'bg-amber-50 text-amber-700' },
@@ -110,12 +109,12 @@ function renderPatients(patients) {
     pending: { label: '대기', bg: 'bg-surface-100 text-surface-600' }
   };
   var html = patients.map(function(p) {
-    var ci = esc(p.name).charCodeAt(0) % colors.length;
+    var avatarCls = PT.avatarColor(p.name); // v8.6: shared
     var tags = [];
     try { tags = Array.isArray(p.tags) ? p.tags : JSON.parse(p.tags || '[]'); } catch(e){}
     var st = statusMap[p.last_consultation_status] || null;
     return '<a href="/patients/' + p.id + '" class="card-premium p-4 flex items-center gap-3.5 block">' +
-      '<div class="w-11 h-11 rounded-xl flex items-center justify-center shrink-0 ' + colors[ci] + '">' +
+      '<div class="w-11 h-11 rounded-xl flex items-center justify-center shrink-0 ' + avatarCls + '">' +
         '<span class="text-base font-bold">' + esc(p.name).charAt(0) + '</span>' +
       '</div>' +
       '<div class="flex-1 min-w-0">' +

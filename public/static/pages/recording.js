@@ -246,9 +246,66 @@ function updateUploadBadge() {
   el.textContent = txt;
 }
 
+// ===== v8.6: 녹음 동의 게이트 =====
+var consentConfirmed = false;
+var consentNoticeText = '상담 품질 향상을 위해 상담 내용이 녹음됩니다. 녹음에 동의하십니까?';
+
+// 조직 동의 문구 로드
+fetch('/api/privacy/policy').then(function(r){ return r.json(); }).then(function(d) {
+  if (d.success && d.data.consent_notice_text) consentNoticeText = d.data.consent_notice_text;
+}).catch(function(){});
+
+function showConsentSheet() {
+  var existing = document.getElementById('consentSheet');
+  if (existing) existing.remove();
+  var el = document.createElement('div');
+  el.id = 'consentSheet';
+  el.style.cssText = 'position:fixed;inset:0;z-index:9998;display:flex;align-items:flex-end;justify-content:center;';
+  el.innerHTML =
+    '<div style="position:absolute;inset:0;background:rgba(15,23,42,0.6);backdrop-filter:blur(3px);" onclick="closeConsentSheet()"></div>' +
+    '<div style="position:relative;width:100%;max-width:480px;background:white;border-radius:24px 24px 0 0;padding:24px 20px calc(24px + env(safe-area-inset-bottom,0px));">' +
+      '<div style="width:44px;height:44px;border-radius:14px;background:#eef2ff;display:flex;align-items:center;justify-content:center;margin-bottom:14px;"><i class="fas fa-shield-halved" style="color:#6366f1;font-size:18px;"></i></div>' +
+      '<h3 style="font-size:17px;font-weight:800;color:#0f172a;margin:0 0 8px;">녹음 동의 확인</h3>' +
+      '<p style="font-size:13px;color:#475569;line-height:1.7;margin:0 0 14px;">환자분께 아래 내용을 안내하고 <b>구두 동의</b>를 받아주세요:</p>' +
+      '<div style="padding:14px;background:#f8fafc;border-radius:14px;border-left:3px solid #6366f1;margin-bottom:18px;">' +
+        '<p style="font-size:13px;color:#334155;line-height:1.7;margin:0;font-weight:600;">"' + escapeHtml(consentNoticeText) + '"</p>' +
+      '</div>' +
+      '<label style="display:flex;align-items:flex-start;gap:10px;margin-bottom:18px;cursor:pointer;">' +
+        '<input type="checkbox" id="consentCheck" style="width:18px;height:18px;margin-top:1px;accent-color:#6366f1;">' +
+        '<span style="font-size:12px;color:#64748b;line-height:1.6;">환자에게 녹음 사실을 고지하고 구두 동의를 받았음을 확인합니다. 동의 기록은 상담 기록과 함께 보관됩니다.</span>' +
+      '</label>' +
+      '<div style="display:flex;gap:10px;">' +
+        '<button onclick="closeConsentSheet()" style="flex:1;padding:14px;border-radius:14px;border:1px solid #e2e8f0;background:white;font-size:14px;font-weight:700;color:#64748b;cursor:pointer;">취소</button>' +
+        '<button onclick="confirmConsent()" style="flex:2;padding:14px;border-radius:14px;border:none;background:linear-gradient(135deg,#6366f1,#8b5cf6);font-size:14px;font-weight:700;color:white;cursor:pointer;">동의 확인 · 녹음 시작</button>' +
+      '</div>' +
+    '</div>';
+  document.body.appendChild(el);
+}
+
+function closeConsentSheet() {
+  var el = document.getElementById('consentSheet');
+  if (el) el.remove();
+}
+
+function confirmConsent() {
+  var cb = document.getElementById('consentCheck');
+  if (!cb || !cb.checked) {
+    showToast('동의 확인 체크박스를 선택해주세요', 'warning');
+    return;
+  }
+  consentConfirmed = true;
+  closeConsentSheet();
+  toggleRecording(); // 동의 완료 → 녹음 시작 재진입
+}
+
 // ===== 녹음 시작/일시정지/재개 =====
 async function toggleRecording() {
   if (!isRecording) {
+    // v8.6: 녹음 시작 전 동의 게이트
+    if (!consentConfirmed) {
+      showConsentSheet();
+      return;
+    }
     try {
       mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
       audioContext = new AudioContext();
@@ -261,7 +318,7 @@ async function toggleRecording() {
       var createRes = await fetch('/api/consultations', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ patient_id: selectedPatientId })
+        body: JSON.stringify({ patient_id: selectedPatientId, recording_consent: consentConfirmed })
       });
       var createData = await createRes.json();
       if (!createData.success) {
@@ -341,6 +398,7 @@ async function saveRecording() {
     mediaRecorder.stop();
   }
   isRecording = false;
+  consentConfirmed = false; // 다음 녹음 시 동의 재확인
   clearInterval(timerInterval);
   if (animationFrame) cancelAnimationFrame(animationFrame);
 

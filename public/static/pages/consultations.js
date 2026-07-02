@@ -34,10 +34,98 @@ document.querySelectorAll('.filter-btn').forEach(function(btn) {
 document.getElementById('consultSearch').addEventListener('input', function(e) {
   searchQuery = (e.target.value || '').trim();
   clearTimeout(searchDebounceTimer);
+  if (transcriptSearchMode) {
+    searchDebounceTimer = setTimeout(function() { runTranscriptSearch(); }, 450);
+    return;
+  }
   searchDebounceTimer = setTimeout(function() {
     resetAndLoad();
   }, 300);
 });
+
+// === v8.6: Transcript Full-text Search Mode ===
+var transcriptSearchMode = false;
+
+document.getElementById('transcriptSearchToggle').addEventListener('click', function() {
+  transcriptSearchMode = !transcriptSearchMode;
+  this.classList.toggle('bg-indigo-600', transcriptSearchMode);
+  this.classList.toggle('text-white', transcriptSearchMode);
+  this.classList.toggle('bg-surface-100', !transcriptSearchMode);
+  this.classList.toggle('text-surface-500', !transcriptSearchMode);
+  document.getElementById('transcriptSearchHint').classList.toggle('hidden', !transcriptSearchMode);
+  var input = document.getElementById('consultSearch');
+  input.placeholder = transcriptSearchMode ? '원문 키워드 검색 (예: 임플란트 가격, 할부)' : '환자명, 치료유형, 상담사 검색';
+  if (!transcriptSearchMode) {
+    document.getElementById('transcriptSearchResults').classList.add('hidden');
+    document.getElementById('consultationList').classList.remove('hidden');
+    if (searchQuery) resetAndLoad();
+  } else {
+    input.focus();
+    if (searchQuery.length >= 2) runTranscriptSearch();
+  }
+});
+
+function highlightKeyword(text, keyword) {
+  var escText = esc(text);
+  var escKw = esc(keyword);
+  if (!escKw) return escText;
+  var pattern = escKw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return escText.replace(new RegExp('(' + pattern + ')', 'gi'), '<mark class="bg-amber-200 text-surface-900 rounded px-0.5 font-bold">$1</mark>');
+}
+
+async function runTranscriptSearch() {
+  var resultsEl = document.getElementById('transcriptSearchResults');
+  var listEl = document.getElementById('consultationList');
+  if (searchQuery.length < 2) {
+    resultsEl.classList.add('hidden');
+    listEl.classList.remove('hidden');
+    return;
+  }
+  listEl.classList.add('hidden');
+  resultsEl.classList.remove('hidden');
+  resultsEl.innerHTML = '<div class="text-center py-8"><i class="fas fa-circle-notch fa-spin text-indigo-400 text-xl"></i><p class="text-xs text-surface-500 mt-2">원문 검색 중...</p></div>';
+
+  try {
+    var res = await fetch('/api/consultations/search-transcripts?q=' + encodeURIComponent(searchQuery));
+    var data = await res.json();
+    if (!data.success) throw new Error(data.error || '검색 실패');
+
+    var results = data.data.results || [];
+    if (results.length === 0) {
+      resultsEl.innerHTML = '<div class="text-center py-10"><i class="fas fa-magnifying-glass-minus text-surface-300 text-2xl"></i><p class="font-bold text-sm text-surface-700 mt-3">"' + esc(searchQuery) + '" 검색 결과 없음</p><p class="text-xs text-surface-400 mt-1">상담 원문에서 해당 키워드를 찾지 못했습니다</p></div>';
+      return;
+    }
+
+    var stMap = {
+      paid: { bg:'bg-emerald-50', text:'text-emerald-700', label:'결제완료' },
+      undecided: { bg:'bg-amber-50', text:'text-amber-700', label:'미결정' },
+      lost: { bg:'bg-rose-50', text:'text-rose-700', label:'이탈' },
+      pending: { bg:'bg-surface-50', text:'text-surface-600', label:'대기중' }
+    };
+
+    var html = '<p class="text-[11px] font-bold text-surface-500 mb-2 px-1"><i class="fas fa-scroll text-indigo-500 mr-1"></i>원문 검색 결과 <span class="text-indigo-600">' + results.length + '건</span></p><div class="space-y-2">';
+    results.forEach(function(r) {
+      var s = stMap[r.status] || stMap.pending;
+      var d = new Date(r.consultation_date);
+      var dateStr = (d.getMonth()+1) + '/' + d.getDate();
+      html += '<a href="/consultations/' + r.consultation_id + '" class="card-premium p-3.5 block">' +
+        '<div class="flex items-center gap-2 flex-wrap mb-2">' +
+          '<span class="font-bold text-sm text-surface-900">' + esc(r.patient_name || '미지정') + '</span>' +
+          '<span class="text-[10px] px-1.5 py-0.5 rounded-md font-semibold ' + s.bg + ' ' + s.text + '">' + s.label + '</span>' +
+          '<span class="text-[10px] text-surface-400">' + dateStr + (r.treatment_type ? ' · ' + esc(r.treatment_type) : '') + (r.user_name ? ' · ' + esc(r.user_name) : '') + '</span>' +
+          '<span class="text-[10px] px-1.5 py-0.5 rounded-md bg-indigo-50 text-indigo-600 font-bold ml-auto">' + r.match_count + '곳 일치</span>' +
+        '</div>' +
+        (r.snippets || []).map(function(sn) {
+          return '<p class="text-xs text-surface-600 leading-relaxed bg-surface-50 rounded-lg px-2.5 py-2 mb-1">' + highlightKeyword(sn.text, data.data.keyword) + '</p>';
+        }).join('') +
+      '</a>';
+    });
+    html += '</div>';
+    resultsEl.innerHTML = html;
+  } catch (err) {
+    resultsEl.innerHTML = '<div class="text-center py-8"><i class="fas fa-triangle-exclamation text-amber-400 text-xl"></i><p class="text-xs text-surface-500 mt-2">' + esc(err.message || '검색에 실패했습니다') + '</p></div>';
+  }
+}
 
 // === Advanced Filter Toggle ===
 document.getElementById('advFilterToggle').addEventListener('click', function() {
@@ -444,12 +532,7 @@ function renderGroupedByDate(data) {
     return (activeAdvFilters.sort === 'date_asc') ? a.localeCompare(b) : b.localeCompare(a);
   });
 
-  var st = {
-    paid: { bg:'bg-emerald-50', text:'text-emerald-700', label:'결제완료', dot:'bg-emerald-500', border:'border-l-emerald-400' },
-    undecided: { bg:'bg-amber-50', text:'text-amber-700', label:'미결정', dot:'bg-amber-500', border:'border-l-amber-400' },
-    lost: { bg:'bg-rose-50', text:'text-rose-700', label:'이탈', dot:'bg-rose-500', border:'border-l-rose-400' },
-    pending: { bg:'bg-surface-50', text:'text-surface-600', label:'대기중', dot:'bg-surface-400', border:'border-l-surface-300' }
-  };
+  var st = PT.CONSULT_STATUS; // v8.6: shared component
 
   var today = new Date().toISOString().split('T')[0];
   var yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
@@ -486,12 +569,7 @@ function renderGroupedByDate(data) {
 }
 
 function renderFlatList(data) {
-  var st = {
-    paid: { bg:'bg-emerald-50', text:'text-emerald-700', label:'결제완료', dot:'bg-emerald-500', border:'border-l-emerald-400' },
-    undecided: { bg:'bg-amber-50', text:'text-amber-700', label:'미결정', dot:'bg-amber-500', border:'border-l-amber-400' },
-    lost: { bg:'bg-rose-50', text:'text-rose-700', label:'이탈', dot:'bg-rose-500', border:'border-l-rose-400' },
-    pending: { bg:'bg-surface-50', text:'text-surface-600', label:'대기중', dot:'bg-surface-400', border:'border-l-surface-300' }
-  };
+  var st = PT.CONSULT_STATUS; // v8.6: shared component
   var html = '<div class="space-y-2">';
   data.forEach(function(c) { html += renderConsultCard(c, st); });
   html += '</div>';

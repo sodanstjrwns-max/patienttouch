@@ -1,4 +1,25 @@
-# 페이션트 터치 (Patient Touch v8.5.1)
+# 페이션트 터치 (Patient Touch v8.6.0)
+
+## 🔐 v8.6.0 원문 검색 + 컴플라이언스 패키지 + 프론트 부채 상환 1차 (2026-07-02)
+
+### 1. 상담 원문 키워드 검색
+- `GET /api/consultations/search-transcripts?q=키워드` — 원문 LIKE 검색, 매치 스니펫(±60자) 최대 3개 + 하이라이트, 감사로그 기록
+- 상담 목록 페이지 검색창 옆 **"원문" 토글** → 원문 검색 모드 (450ms 디바운스, `<mark>` 하이라이트, 상담 상세 링크)
+
+### 2. 개인정보/의료정보 컴플라이언스 (migration 0013)
+- **녹음 동의 게이트**: 녹음 시작 전 동의 바텀시트 (병원별 안내 문구 커스텀) → `recording_consent/consent_at/consent_by` 저장, 녹음 종료 시 리셋
+- **보존기간 정책**: 설정→개인정보 보호(관리자) — 무기한/6개월~5년 선택, 기간 경과 원문·녹음 자동 파기 대상 카운트 표시, "지금 파기 실행" (통계는 유지)
+- **크론 파기**: `POST /api/privacy/purge-expired` (X-Cron-Secret 인증)
+- **환자 삭제 요청 처리 (개보법 §36)**: 환자 상세 → 관리자 위험 영역 → 이름 확인 입력 → 익명화 (이름/연락처/메모/원문/녹음 영구 파기, 금액·점수 통계만 익명 유지)
+- **감사 로그**: 원문 열람·검색·파기·환자삭제·동의 기록 → 설정에서 조회 (audit_logs 테이블)
+
+### 3. 프론트 부채 상환 1차 — `/static/components.js` (window.PT)
+- `PT.CONSULT_STATUS` — 상담 상태 맵 3곳 중복 → 1곳 (consultations.js ×2, patient-detail.js)
+- `PT.avatarColor()` — 아바타 컬러 해시 7곳 중복 → 1곳 (settings/patients/patient-detail/consultation-detail/admin-dashboard/retention)
+- `PT.openSheet/sheetHeader/sectionHeader/statusBadge/scoreColor` — 바텀시트·배지·섹션헤더 공통 헬퍼
+- SW 캐시 pt-v8.6.0 범프, components.js 프리캐시 추가
+
+---
 
 ## 📜 v8.5.1 스크립트 원문 보존 + 환자 원문 뷰어 (2026-07-02)
 

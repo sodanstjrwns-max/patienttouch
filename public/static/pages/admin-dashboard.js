@@ -323,9 +323,8 @@ async function loadStaffPerformance() {
     var data = await res.json();
     var container = document.getElementById('staffPerformance');
     if (data.success && data.data.length > 0) {
-      var colors = ['bg-brand-100 text-brand-700', 'bg-emerald-100 text-emerald-700', 'bg-amber-100 text-amber-700', 'bg-rose-100 text-rose-700', 'bg-sky-100 text-sky-700'];
       container.innerHTML = '<div class="divide-y divide-surface-50">' + data.data.map(function(staff) {
-        var c = colors[esc(staff.name).charCodeAt(0) % colors.length];
+        var c = PT.avatarColor(staff.name); // v8.6: shared
         return '<div class="p-4 hover:bg-surface-50 transition-all">' +
           '<div class="flex items-center gap-3">' +
             '<div class="w-10 h-10 rounded-xl ' + c + ' flex items-center justify-center font-bold text-sm shrink-0">' + esc(staff.name).charAt(0) + '</div>' +

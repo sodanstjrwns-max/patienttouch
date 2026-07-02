@@ -383,6 +383,15 @@ patients.get('/:id/transcripts', async (c) => {
       };
     });
 
+    // 감사 로그: 원문 열람 기록 (v8.6 컴플라이언스)
+    const userId = c.get('userId');
+    const { writeAuditLog } = await import('./privacy');
+    c.executionCtx.waitUntil(
+      writeAuditLog(db, orgId, userId, null, 'transcript_view', 'patient', patientId, {
+        transcripts_returned: transcripts.filter(t => t.has_transcript).length,
+      })
+    );
+
     return c.json({
       success: true,
       data: {

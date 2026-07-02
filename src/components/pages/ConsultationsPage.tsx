@@ -23,12 +23,21 @@ export const ConsultationsPage: FC = () => {
       <div class="px-4 pt-3 pb-1">
         <div class="relative">
           <i class="fas fa-magnifying-glass absolute left-4 top-1/2 -translate-y-1/2 text-surface-400 text-sm"></i>
-          <input id="consultSearch" type="text" placeholder="환자명, 치료유형, 상담사 검색" class="w-full pl-11 pr-20 py-2.5 bg-white border border-surface-200 rounded-xl text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 transition-all placeholder-surface-400" />
+          <input id="consultSearch" type="text" placeholder="환자명, 치료유형, 상담사 검색" class="w-full pl-11 pr-32 py-2.5 bg-white border border-surface-200 rounded-xl text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 transition-all placeholder-surface-400" />
+          <button id="transcriptSearchToggle" class="absolute right-16 top-1/2 -translate-y-1/2 px-2.5 py-1.5 text-[10px] font-bold bg-surface-100 text-surface-500 rounded-lg hover:bg-indigo-50 hover:text-indigo-600 transition-all active:scale-95" title="상담 원문에서 키워드 검색">
+            <i class="fas fa-scroll mr-1"></i>원문
+          </button>
           <button id="advFilterToggle" class="absolute right-2 top-1/2 -translate-y-1/2 px-2.5 py-1.5 text-[10px] font-bold bg-surface-100 text-surface-500 rounded-lg hover:bg-brand-50 hover:text-brand-600 transition-all active:scale-95">
             <i class="fas fa-sliders mr-1"></i>필터
           </button>
         </div>
+        <div id="transcriptSearchHint" class="hidden mt-1.5 px-1">
+          <p class="text-[10px] text-indigo-600 font-semibold"><i class="fas fa-wand-magic-sparkles mr-1"></i>원문 검색 모드 — 상담 스크립트 전문에서 키워드를 찾습니다 (예: "임플란트 가격")</p>
+        </div>
       </div>
+
+      {/* Transcript Search Results */}
+      <div id="transcriptSearchResults" class="hidden px-4 pb-2"></div>
 
       {/* Advanced Filter Panel (hidden by default) */}
       <div id="advFilterPanel" class="hidden px-4 pb-2 animate-slide-down">

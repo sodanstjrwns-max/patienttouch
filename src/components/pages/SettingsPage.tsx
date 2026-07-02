@@ -142,6 +142,60 @@ export const SettingsPage: FC = () => {
           </div>
         </div>
 
+        {/* v8.6: Privacy & Compliance (admin only — settings.js에서 role 기반 표시) */}
+        <div id="privacySection" class="card-premium p-5 hidden">
+          <div class="flex items-center gap-2 mb-4">
+            <div class="w-7 h-7 rounded-lg bg-indigo-50 flex items-center justify-center"><i class="fas fa-shield-halved text-xs text-indigo-600"></i></div>
+            <div>
+              <h3 class="font-bold text-sm text-surface-900">개인정보 보호</h3>
+              <p class="text-[9px] text-surface-400">녹음 동의 · 보존기간 · 파기 · 감사 로그</p>
+            </div>
+          </div>
+          <div class="space-y-4">
+            {/* 녹음 동의 안내 문구 */}
+            <div>
+              <p class="font-semibold text-sm text-surface-900 mb-1">녹음 동의 안내 문구</p>
+              <p class="text-[11px] text-surface-500 mb-2">녹음 시작 전 상담사가 환자에게 고지하는 문구입니다</p>
+              <textarea id="consentNoticeText" rows={2} class="w-full px-4 py-3 bg-surface-50 border border-surface-200 rounded-xl text-sm resize-none outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-400 transition-all leading-relaxed"></textarea>
+            </div>
+            {/* 보존 기간 */}
+            <div class="flex items-center justify-between">
+              <div>
+                <p class="font-semibold text-sm text-surface-900">상담 원문 보존 기간</p>
+                <p class="text-[11px] text-surface-500 mt-0.5">기간 경과 시 원문·녹음 자동 파기 (통계는 유지)</p>
+              </div>
+              <select id="retentionMonths" class="px-3 py-2 bg-surface-50 border border-surface-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-400 transition-all">
+                <option value="0">무기한</option>
+                <option value="6">6개월</option>
+                <option value="12">1년</option>
+                <option value="24">2년</option>
+                <option value="36">3년</option>
+                <option value="60">5년</option>
+              </select>
+            </div>
+            <div id="purgePendingLine" class="hidden p-2.5 bg-amber-50/70 rounded-xl border border-amber-200/50 text-[11px] text-amber-700"></div>
+            <div class="flex gap-2">
+              <button id="savePrivacyBtn" class="flex-1 py-2.5 text-sm font-semibold text-white bg-indigo-600 rounded-xl hover:bg-indigo-700 transition-all active:scale-[0.98]">
+                <i class="fas fa-check mr-1.5"></i>정책 저장
+              </button>
+              <button id="purgeNowBtn" class="flex-1 py-2.5 text-sm font-semibold text-rose-600 border-2 border-rose-200 rounded-xl hover:bg-rose-50 transition-all active:scale-[0.98]">
+                <i class="fas fa-eraser mr-1.5"></i>지금 파기 실행
+              </button>
+            </div>
+            {/* 감사 로그 */}
+            <div class="pt-2 border-t border-surface-100">
+              <div class="flex items-center justify-between mb-2">
+                <p class="font-semibold text-sm text-surface-900">감사 로그</p>
+                <button id="loadAuditBtn" class="text-[11px] font-semibold text-indigo-600 bg-indigo-50 px-2.5 py-1 rounded-lg hover:bg-indigo-100 transition-all">
+                  <i class="fas fa-list mr-1 text-[10px]"></i>조회
+                </button>
+              </div>
+              <p class="text-[11px] text-surface-500 mb-2">원문 열람·검색·파기·환자 삭제 이력이 기록됩니다</p>
+              <div id="auditLogList" class="space-y-1.5 max-h-64 overflow-y-auto"></div>
+            </div>
+          </div>
+        </div>
+
         {/* Feature 12: Duplicate Check */}
         <div class="card-premium p-5">
           <div class="flex items-center justify-between mb-4">

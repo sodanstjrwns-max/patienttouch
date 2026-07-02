@@ -43,6 +43,8 @@ export const renderer = jsxRenderer(({ children, title }) => {
         
         {/* Global Utilities (v8.1: extracted to cacheable static file — was ~14KB inlined per page) */}
         <script src="/static/utils.js"></script>
+        {/* Shared UI Components (v8.6: 상태맵/아바타/시트 등 페이지 중복 제거) */}
+        <script src="/static/components.js"></script>
 
       </head>
       <body class="bg-gradient-mesh min-h-screen text-surface-900 antialiased">

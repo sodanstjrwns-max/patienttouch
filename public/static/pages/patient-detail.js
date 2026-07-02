@@ -186,9 +186,12 @@ async function loadTimeline() {
   }
 }
 
+var isAdminUser = false;
+
 async function loadPatient() {
   try {
-    await requireAuth();
+    var auth = await requireAuth();
+    if (auth && auth.data) isAdminUser = (auth.data.role === 'admin' || auth.data.role === 'owner');
 
     var res = await fetch('/api/patients/' + patientId);
     if (res.status === 401) { window.location.href = '/login'; return; }
@@ -227,15 +230,9 @@ function renderPatient(p) {
   var pendingTasks = p.pending_tasks || [];
   var tags = p.tags || [];
 
-  var st = {
-    paid: { bg:'bg-emerald-50', text:'text-emerald-700', label:'결제완료', dot:'bg-emerald-500' },
-    undecided: { bg:'bg-amber-50', text:'text-amber-700', label:'미결정', dot:'bg-amber-500' },
-    lost: { bg:'bg-rose-50', text:'text-rose-700', label:'이탈', dot:'bg-rose-500' },
-    pending: { bg:'bg-surface-50', text:'text-surface-600', label:'대기중', dot:'bg-surface-400' }
-  };
+  var st = PT.CONSULT_STATUS; // v8.6: shared component
 
-  var colors = ['bg-brand-100 text-brand-700', 'bg-emerald-100 text-emerald-700', 'bg-amber-100 text-amber-700', 'bg-rose-100 text-rose-700', 'bg-sky-100 text-sky-700', 'bg-purple-100 text-purple-700'];
-  var avatarColor = colors[esc(p.name).charCodeAt(0) % colors.length];
+  var avatarColor = PT.avatarColor(p.name); // v8.6: shared
 
   var html = '<div class="space-y-3 stagger-children">';
 
@@ -457,7 +454,84 @@ function renderPatient(p) {
   }
   html += '</div></div>';
 
+  // === v8.6: Danger Zone (admin only) — 개인정보 삭제 요청 처리 ===
+  if (isAdminUser && !p.anonymized) {
+    html += '<div class="card-premium p-5 border border-rose-200/60">';
+    html += sec('개인정보 관리', 'fas fa-shield-halved text-rose-500', 'bg-rose-50');
+    html += '<p class="text-xs text-surface-500 leading-relaxed mb-3">환자의 삭제 요청(개인정보보호법 제36조) 시 사용합니다. 이름·연락처·메모·상담 원문·녹음이 영구 파기되며, 통계 데이터(금액·점수)만 익명으로 유지됩니다.</p>';
+    html += '<button onclick="openEraseModal()" class="w-full py-2.5 text-sm font-semibold text-rose-600 border-2 border-rose-200 rounded-xl hover:bg-rose-50 transition-all active:scale-[0.98]"><i class="fas fa-user-xmark mr-1.5"></i>환자 개인정보 영구 삭제</button>';
+    html += '</div>';
+  }
+  if (p.anonymized) {
+    html += '<div class="card-premium p-4 bg-surface-50 border border-surface-200"><p class="text-xs text-surface-500 text-center"><i class="fas fa-user-slash mr-1"></i>삭제 요청으로 익명화된 환자입니다 (' + (p.anonymized_at || '').slice(0, 10) + ')</p></div>';
+  }
+
   container.innerHTML = html;
+}
+
+// === v8.6: Patient Erase Modal ===
+function openEraseModal() {
+  if (!currentPatient) return;
+  var existing = document.getElementById('eraseModal');
+  if (existing) existing.remove();
+  var wrap = document.createElement('div');
+  wrap.id = 'eraseModal';
+  wrap.className = 'fixed inset-0 bg-surface-900/60 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center';
+  wrap.innerHTML =
+    '<div class="bg-white w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl p-6 animate-slide-up">' +
+      '<div class="flex items-center gap-3 mb-4">' +
+        '<div class="w-10 h-10 rounded-xl bg-rose-50 flex items-center justify-center"><i class="fas fa-triangle-exclamation text-rose-500"></i></div>' +
+        '<div><h3 class="font-bold text-surface-900">환자 개인정보 영구 삭제</h3><p class="text-[11px] text-surface-500">이 작업은 되돌릴 수 없습니다</p></div>' +
+      '</div>' +
+      '<div class="p-3 bg-rose-50/60 rounded-xl border border-rose-100 mb-4 text-[11px] text-rose-700 leading-relaxed">' +
+        '<p class="font-bold mb-1">파기되는 정보:</p>' +
+        '<p>• 이름, 연락처, 메모, 태그, 지역, 유입경로</p>' +
+        '<p>• 모든 상담 원문·녹음 파일·핵심 발언·심리 분석</p>' +
+        '<p class="font-bold mt-1 mb-1">유지되는 정보 (익명):</p>' +
+        '<p>• 상담 건수, 금액, 점수 등 병원 통계</p>' +
+      '</div>' +
+      '<p class="text-xs text-surface-600 mb-2">확인을 위해 환자 이름 <b class="text-rose-600">' + esc(currentPatient.name) + '</b> 을(를) 입력하세요:</p>' +
+      '<input type="text" id="eraseConfirmName" class="w-full px-4 py-3 bg-surface-50 border border-surface-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-400 transition-all mb-4" placeholder="환자 이름 입력" autocomplete="off" />' +
+      '<div class="flex gap-2">' +
+        '<button onclick="document.getElementById(\'eraseModal\').remove()" class="flex-1 py-3 text-sm font-semibold text-surface-600 bg-surface-100 rounded-xl hover:bg-surface-200 transition-all">취소</button>' +
+        '<button onclick="executeErase()" id="eraseExecBtn" class="flex-1 py-3 text-sm font-semibold text-white bg-rose-600 rounded-xl hover:bg-rose-700 transition-all active:scale-[0.98]"><i class="fas fa-user-xmark mr-1.5"></i>영구 삭제</button>' +
+      '</div>' +
+    '</div>';
+  wrap.addEventListener('click', function(e) { if (e.target === wrap) wrap.remove(); });
+  document.body.appendChild(wrap);
+  setTimeout(function() { var inp = document.getElementById('eraseConfirmName'); if (inp) inp.focus(); }, 100);
+}
+
+async function executeErase() {
+  var input = document.getElementById('eraseConfirmName');
+  var btn = document.getElementById('eraseExecBtn');
+  if (!input || input.value.trim() !== currentPatient.name) {
+    showToast('환자 이름이 일치하지 않습니다.', 'error');
+    return;
+  }
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1.5"></i>파기 중...';
+  try {
+    var res = await fetch('/api/privacy/patients/' + patientId + '/erase', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ confirm_name: input.value.trim() })
+    });
+    var data = await res.json();
+    if (data.success) {
+      showToast('환자 개인정보가 영구 파기되었습니다.', 'success');
+      var modal = document.getElementById('eraseModal');
+      if (modal) modal.remove();
+      setTimeout(function() { window.location.href = '/patients'; }, 1200);
+    } else {
+      showToast(data.error || '삭제에 실패했습니다.', 'error');
+      btn.disabled = false;
+      btn.innerHTML = '<i class="fas fa-user-xmark mr-1.5"></i>영구 삭제';
+    }
+  } catch (e) {
+    showToast('오류가 발생했습니다.', 'error');
+    btn.disabled = false;
+    btn.innerHTML = '<i class="fas fa-user-xmark mr-1.5"></i>영구 삭제';
+  }
 }
 
 // ============================================
