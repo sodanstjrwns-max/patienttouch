@@ -24,15 +24,15 @@ export const HomePage: FC = () => {
           </div>
         </div>
 
-        {/* TODAY SUMMARY CARD */}
-        <div class="bg-gradient-to-br from-brand-600 via-brand-700 to-indigo-700 rounded-2xl p-5 shadow-lg shadow-brand-600/20 relative overflow-hidden">
-          <div class="absolute top-0 right-0 w-32 h-32 bg-white/5 rounded-full -translate-y-10 translate-x-10"></div>
-          <div class="absolute bottom-0 left-0 w-20 h-20 bg-white/5 rounded-full translate-y-8 -translate-x-8"></div>
+        {/* TODAY SUMMARY CARD — Aurora Hero */}
+        <div class="bg-aurora-dark rounded-3xl p-5 shadow-float relative overflow-hidden ring-1 ring-white/10">
+          <div class="absolute top-0 right-0 w-40 h-40 bg-brand-400/10 rounded-full blur-2xl -translate-y-12 translate-x-12"></div>
+          <div class="absolute bottom-0 left-0 w-28 h-28 bg-accent-cyan/10 rounded-full blur-2xl translate-y-10 -translate-x-10"></div>
           <div class="relative">
-            <p class="text-white/60 text-[11px] font-semibold tracking-wider uppercase mb-1">오늘 결정 금액</p>
+            <p class="text-brand-200/80 text-[11px] font-bold tracking-[0.14em] uppercase mb-1">오늘 결정 금액</p>
             <div class="flex items-end gap-1.5 mb-3">
-              <span id="heroRevenue" class="text-3xl font-black text-white tabular-nums" style="letter-spacing: -0.02em;">0</span>
-              <span class="text-sm font-bold text-white/50 mb-0.5">만원</span>
+              <span id="heroRevenue" class="text-4xl font-black text-white tabular-nums drop-shadow-[0_0_20px_rgba(124,77,255,0.5)]" style="letter-spacing: -0.03em;">0</span>
+              <span class="text-sm font-bold text-white/45 mb-1">만원</span>
             </div>
             <div id="heroSubStats" class="flex items-center gap-3">
               <span class="text-xs text-white/40">로딩 중...</span>

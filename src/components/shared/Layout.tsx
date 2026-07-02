@@ -28,27 +28,27 @@ export const Layout: FC<LayoutProps> = ({ children, activeTab, hideNav }) => {
 
       {!hideNav && (
         <nav class="fixed bottom-0 left-0 right-0 z-50 safe-area-bottom">
-          <div class="max-w-lg mx-auto px-4 pb-1">
-            <div class="glass rounded-2xl shadow-float border border-white/60 px-2 py-1">
+          <div class="max-w-lg mx-auto px-4 pb-1.5">
+            <div class="glass-dark rounded-[1.4rem] shadow-dock px-2 py-1">
               <div class="flex justify-around items-center">
                 {tabs.map(tab => {
                   const isActive = activeTab === tab.id
                   return (
-                    <a 
+                    <a
                       href={tab.href}
-                      class={`relative flex flex-col items-center py-2.5 px-3 rounded-xl transition-all duration-300 group ${
-                        isActive 
-                          ? 'text-brand-600' 
-                          : 'text-surface-400 hover:text-surface-600'
+                      class={`relative flex flex-col items-center py-2.5 px-3 rounded-2xl transition-all duration-300 group ${
+                        isActive
+                          ? 'text-white'
+                          : 'text-white/35 hover:text-white/70'
                       }`}
                     >
                       {isActive && (
-                        <div class="absolute inset-0 bg-brand-50 rounded-xl" />
+                        <div class="absolute inset-0 bg-gradient-to-b from-brand-500/40 to-brand-600/20 rounded-2xl ring-1 ring-brand-400/30" />
                       )}
-                      <i class={`${tab.icon} text-lg relative z-10 transition-transform duration-300 ${isActive ? 'scale-110' : 'group-hover:scale-105'}`}></i>
-                      <span class={`text-[10px] mt-1 font-semibold relative z-10 tracking-tight ${isActive ? 'text-brand-700' : ''}`}>{tab.label}</span>
+                      <i class={`${tab.icon} text-lg relative z-10 transition-transform duration-300 ${isActive ? 'scale-110 drop-shadow-[0_0_8px_rgba(157,117,255,0.8)]' : 'group-hover:scale-105'}`}></i>
+                      <span class={`text-[10px] mt-1 font-semibold relative z-10 tracking-tight ${isActive ? 'text-brand-200' : ''}`}>{tab.label}</span>
                       {isActive && (
-                        <div class="absolute -top-0.5 left-1/2 -translate-x-1/2 w-5 h-0.5 bg-brand-500 rounded-full" />
+                        <div class="absolute -top-px left-1/2 -translate-x-1/2 w-6 h-[2px] bg-gradient-to-r from-transparent via-brand-300 to-transparent rounded-full" />
                       )}
                     </a>
                   )
@@ -193,12 +193,12 @@ export const Button: FC<ButtonProps> = ({
   type, disabled, loading, icon, iconRight, fullWidth 
 }) => {
   const variants: Record<string, string> = {
-    'primary': 'bg-brand-600 hover:bg-brand-700 text-white shadow-md shadow-brand-600/20 hover:shadow-lg hover:shadow-brand-600/30 active:shadow-sm',
-    'secondary': 'bg-surface-100 hover:bg-surface-200 text-surface-800',
-    'outline': 'border-2 border-surface-200 hover:border-surface-300 hover:bg-surface-50 text-surface-700',
-    'ghost': 'hover:bg-surface-100 text-surface-600',
-    'danger': 'bg-rose-600 hover:bg-rose-700 text-white shadow-md shadow-rose-600/20',
-    'brand-gradient': 'bg-gradient-brand text-white shadow-lg shadow-brand-600/30 hover:shadow-xl hover:shadow-brand-600/40 btn-glow',
+    'primary': 'bg-gradient-to-br from-brand-500 to-brand-700 hover:from-brand-400 hover:to-brand-600 text-white shadow-md shadow-brand-600/30 hover:shadow-glow active:shadow-sm',
+    'secondary': 'bg-brand-50 hover:bg-brand-100 text-brand-800 ring-1 ring-brand-200/60',
+    'outline': 'border-2 border-brand-200/70 hover:border-brand-300 hover:bg-brand-50 text-surface-700',
+    'ghost': 'hover:bg-brand-50 text-surface-600',
+    'danger': 'bg-gradient-to-br from-rose-500 to-rose-700 hover:from-rose-400 hover:to-rose-600 text-white shadow-md shadow-rose-600/25',
+    'brand-gradient': 'bg-gradient-brand text-white shadow-lg shadow-brand-600/35 hover:shadow-glow-lg btn-glow',
   }
   const sizes: Record<string, string> = {
     xs: 'px-2.5 py-1 text-xs gap-1',
@@ -249,7 +249,7 @@ export const StatCard: FC<StatCardProps> = ({ label, value, change, icon, iconCo
   return (
     <div class="card-premium p-4 group">
       <div class="flex items-start justify-between mb-3">
-        <div class={`w-10 h-10 rounded-xl flex items-center justify-center ${iconColor} transition-transform duration-300 group-hover:scale-110`}>
+        <div class={`w-10 h-10 rounded-xl flex items-center justify-center ${iconColor} transition-all duration-300 group-hover:scale-110 group-hover:shadow-glow`}>
           <i class={`${icon} text-base`}></i>
         </div>
         {change !== undefined && (

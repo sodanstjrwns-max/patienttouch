@@ -4,13 +4,13 @@ export const LoginPage: FC = () => {
   return (
     <div class="min-h-screen relative overflow-hidden">
       {/* Animated background */}
-      <div class="absolute inset-0 bg-gradient-dark">
+      <div class="absolute inset-0 bg-aurora-dark">
         {/* Mesh grid */}
-        <div class="absolute inset-0 opacity-30" style="background-image: url(&quot;data:image/svg+xml,%3Csvg width='60' height='60' xmlns='http://www.w3.org/2000/svg'%3E%3Cdefs%3E%3Cpattern id='grid' width='60' height='60' patternUnits='userSpaceOnUse'%3E%3Cpath d='M 60 0 L 0 0 0 60' fill='none' stroke='rgba(99,102,241,0.08)' stroke-width='1'/%3E%3C/pattern%3E%3C/defs%3E%3Crect width='100%25' height='100%25' fill='url(%23grid)'/%3E%3C/svg%3E&quot;)" />
+        <div class="absolute inset-0 opacity-30" style="background-image: url(&quot;data:image/svg+xml,%3Csvg width='60' height='60' xmlns='http://www.w3.org/2000/svg'%3E%3Cdefs%3E%3Cpattern id='grid' width='60' height='60' patternUnits='userSpaceOnUse'%3E%3Cpath d='M 60 0 L 0 0 0 60' fill='none' stroke='rgba(124,77,255,0.1)' stroke-width='1'/%3E%3C/pattern%3E%3C/defs%3E%3Crect width='100%25' height='100%25' fill='url(%23grid)'/%3E%3C/svg%3E&quot;)" />
         {/* Gradient orbs */}
-        <div class="absolute top-20 -left-32 w-96 h-96 bg-brand-600/20 rounded-full blur-3xl animate-float" />
-        <div class="absolute bottom-20 -right-32 w-80 h-80 bg-purple-600/15 rounded-full blur-3xl animate-float" style="animation-delay: -3s" />
-        <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-brand-500/5 rounded-full blur-3xl" />
+        <div class="absolute top-20 -left-32 w-96 h-96 bg-brand-500/25 rounded-full blur-3xl animate-float" />
+        <div class="absolute bottom-20 -right-32 w-80 h-80 bg-accent-cyan/15 rounded-full blur-3xl animate-float" style="animation-delay: -3s" />
+        <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-accent-fuchsia/10 rounded-full blur-3xl" />
       </div>
 
       <div class="relative z-10 flex flex-col justify-center min-h-screen px-6 py-12">
