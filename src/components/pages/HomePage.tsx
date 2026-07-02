@@ -87,6 +87,7 @@ export const HomePage: FC = () => {
                 </div>
               </div>
               <div id="checklistBadge" class="flex items-center gap-1.5">
+                <a href="/today" class="text-[10px] font-bold text-brand-600 bg-brand-50 px-2 py-1 rounded-lg hover:bg-brand-100 transition-all">전체 보기</a>
                 <div id="checklistProgressRing" class="w-9 h-9"></div>
               </div>
             </div>

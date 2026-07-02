@@ -6,13 +6,14 @@ import { FC } from 'hono/jsx'
 
 interface LayoutProps {
   children: any
-  activeTab?: 'home' | 'consultations' | 'patients' | 'retention' | 'report'
+  activeTab?: 'home' | 'today' | 'consultations' | 'patients' | 'retention' | 'report'
   hideNav?: boolean
 }
 
 export const Layout: FC<LayoutProps> = ({ children, activeTab, hideNav }) => {
   const tabs = [
     { id: 'home', href: '/', icon: 'fas fa-house', label: '홈' },
+    { id: 'today', href: '/today', icon: 'fas fa-bolt', label: '오늘' },
     { id: 'consultations', href: '/consultations', icon: 'fas fa-comments', label: '상담' },
     { id: 'patients', href: '/patients', icon: 'fas fa-user-group', label: '환자' },
     { id: 'retention', href: '/retention', icon: 'fas fa-heart', label: '리텐션' },

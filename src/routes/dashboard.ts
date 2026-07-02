@@ -808,9 +808,23 @@ dashboard.get('/today-contacts', async (c) => {
       });
     }
 
-    // urgency 순 정렬: critical > high > medium
+    // v8.3: 이월(지연)된 연락 우선 → urgency → 지연일수 내림차순
     const urgencyOrder: Record<string, number> = { critical: 0, high: 1, medium: 2 };
-    contacts.sort((a, b) => (urgencyOrder[a.urgency] || 2) - (urgencyOrder[b.urgency] || 2));
+    contacts.sort((a, b) => {
+      const aOver = (a.days_overdue || 0) >= 1 ? 1 : 0;
+      const bOver = (b.days_overdue || 0) >= 1 ? 1 : 0;
+      if (aOver !== bOver) return bOver - aOver; // 이월된 건 최상단
+      const uDiff = (urgencyOrder[a.urgency] || 2) - (urgencyOrder[b.urgency] || 2);
+      if (uDiff !== 0) return uDiff;
+      return (b.days_overdue || 0) - (a.days_overdue || 0);
+    });
+
+    // v8.3: 예상 결정 금액 합산 (브리핑용)
+    let expectedRevenue = 0;
+    for (const ct of contacts) {
+      if (ct.amount) expectedRevenue += ct.amount as number;
+      if (ct.remaining_value) expectedRevenue += ct.remaining_value as number;
+    }
 
     return c.json({
       success: true,
@@ -818,7 +832,9 @@ dashboard.get('/today-contacts', async (c) => {
         contacts: maskPatientData(contacts),
         total: contacts.length,
         critical_count: contacts.filter(c => c.urgency === 'critical').length,
-        high_count: contacts.filter(c => c.urgency === 'high').length
+        high_count: contacts.filter(c => c.urgency === 'high').length,
+        overdue_count: contacts.filter(c => (c.days_overdue || 0) >= 1).length,
+        expected_revenue: expectedRevenue
       }
     });
   } catch (error) {

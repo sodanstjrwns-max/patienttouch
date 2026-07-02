@@ -106,6 +106,7 @@ async function loadHomePage() {
       '<p class="text-surface-500 text-xs font-medium tracking-wide mb-0.5">'+em+' '+gr+', '+esc(authData.data.name)+'님</p>' +
       '<h1 class="text-lg font-extrabold text-surface-900 tracking-tight">'+esc(authData.data.organization_name)+'</h1>';
 
+    var briefingUserName = authData.data.name;
     var [sRes, cRes, achRes] = await Promise.all([
       fetch('/api/dashboard/summary').then(function(r){ return r.ok ? r.json() : null; }).catch(function(){ return null; }),
       fetch('/api/dashboard/today-contacts').then(function(r){ return r.ok ? r.json() : null; }).catch(function(){ return null; }),
@@ -129,6 +130,9 @@ async function loadHomePage() {
       renderLevelCard({}).catch(function(e){ console.warn('Level card:', e); });
       return; 
     }
+
+    // === v8.3: MORNING BRIEFING (하루 1회 자동 표시) ===
+    showMorningBriefing(cData, briefingUserName);
     
     var d = sData.data;
     var ws = d.week_stats || {};
@@ -399,6 +403,7 @@ function renderContacts(data) {
     if(u.pu) html += '<span class="w-1 h-1 rounded-full bg-rose-500 animate-pulse"></span>';
     html += '<i class="fas '+u.ic+' text-[7px]"></i>'+u.lb+'</span>';
     if(c.origin === 'ai_analysis') html += '<span class="inline-flex items-center gap-0.5 px-1 py-0.5 rounded text-[9px] font-bold bg-purple-50 text-purple-700"><i class="fas fa-robot text-[7px]"></i>AI 추천</span>';
+    if(c.days_overdue >= 1) html += '<span class="inline-flex items-center gap-0.5 px-1 py-0.5 rounded text-[9px] font-bold bg-orange-100 text-orange-700">⏰ '+c.days_overdue+'일 지연</span>';
     // Last contact date tag
     html += daysAgoLabel(c.last_contact_date);
     html += '</div>';
@@ -445,6 +450,117 @@ async function generateTasks() {
       if(btn){btn.disabled=false;btn.innerHTML='<i class="fas fa-rotate mr-1"></i>갱신';}
     }
   } catch(e) { showToast('오류가 발생했습니다.', 'error'); }
+}
+
+// =========================================
+// v8.3: MORNING BRIEFING OVERLAY (하루 1회)
+// =========================================
+function showMorningBriefing(cData, userName) {
+  try {
+    var todayKey = 'pt_briefing_' + new Date().toISOString().split('T')[0];
+    if (localStorage.getItem(todayKey)) return; // 오늘 이미 봤음
+
+    var d = (cData && cData.success && cData.data) ? cData.data : null;
+    if (!d || !d.contacts || d.contacts.length === 0) return; // 연락할 게 없으면 스킵
+
+    var cs = d.contacts;
+    var revenue = d.expected_revenue || 0;
+    var overdue = d.overdue_count || 0;
+    var critical = d.critical_count || 0;
+    var top = cs[0];
+
+    var h = new Date().getHours();
+    var greet = h < 12 ? '좋은 아침이에요' : h < 18 ? '좋은 오후예요' : '좋은 저녁이에요';
+    var emoji = h < 12 ? '☀️' : h < 18 ? '🌤️' : '🌙';
+    var now = new Date();
+    var days = ['일','월','화','수','목','금','토'];
+    var dateStr = (now.getMonth()+1) + '월 ' + now.getDate() + '일 (' + days[now.getDay()] + ')';
+
+    var overlay = document.createElement('div');
+    overlay.id = 'morningBriefingOverlay';
+    overlay.className = 'fixed inset-0 bg-surface-900/70 backdrop-blur-md z-[60] flex items-end sm:items-center justify-center';
+
+    var html =
+      '<div class="bg-white rounded-t-3xl sm:rounded-3xl w-full sm:max-w-md overflow-hidden animate-slide-up max-h-[85vh] overflow-y-auto">' +
+        // Header
+        '<div class="bg-gradient-to-br from-brand-600 via-brand-700 to-indigo-700 p-6 relative overflow-hidden">' +
+          '<div class="absolute top-0 right-0 w-32 h-32 bg-white/5 rounded-full -translate-y-10 translate-x-10"></div>' +
+          '<div class="relative">' +
+            '<p class="text-white/60 text-[11px] font-semibold mb-1">' + dateStr + '</p>' +
+            '<h2 class="text-xl font-black text-white mb-0.5">' + emoji + ' ' + greet + ', ' + esc(userName) + '님</h2>' +
+            '<p class="text-white/70 text-xs">오늘의 브리핑을 확인하세요</p>' +
+          '</div>' +
+        '</div>' +
+        // Stats
+        '<div class="p-5 space-y-4">' +
+          '<div class="grid grid-cols-3 gap-2">' +
+            '<div class="bg-brand-50 rounded-xl p-3 text-center">' +
+              '<p class="text-2xl font-black text-brand-600 tabular-nums">' + cs.length + '</p>' +
+              '<p class="text-[10px] font-semibold text-brand-500">오늘 연락</p>' +
+            '</div>' +
+            '<div class="bg-emerald-50 rounded-xl p-3 text-center">' +
+              '<p class="text-2xl font-black text-emerald-600 tabular-nums">' + fmt(revenue) + '</p>' +
+              '<p class="text-[10px] font-semibold text-emerald-500">예상 만원</p>' +
+            '</div>' +
+            '<div class="' + (overdue > 0 ? 'bg-orange-50' : 'bg-surface-50') + ' rounded-xl p-3 text-center">' +
+              '<p class="text-2xl font-black ' + (overdue > 0 ? 'text-orange-600' : 'text-surface-400') + ' tabular-nums">' + overdue + '</p>' +
+              '<p class="text-[10px] font-semibold ' + (overdue > 0 ? 'text-orange-500' : 'text-surface-400') + '">이월 연락</p>' +
+            '</div>' +
+          '</div>';
+
+    // Overdue warning
+    if (overdue > 0) {
+      html +=
+        '<div class="bg-gradient-to-r from-amber-500 to-orange-500 rounded-xl p-3 flex items-center gap-2.5">' +
+          '<span class="text-lg">⏰</span>' +
+          '<p class="text-white text-xs font-bold flex-1">어제 못 한 연락 ' + overdue + '건이 이월됐어요. 오늘 최우선으로!</p>' +
+        '</div>';
+    }
+
+    // Top priority
+    if (top) {
+      var topOv = (top.days_overdue >= 1) ? '<span class="text-[9px] px-1 py-0.5 rounded font-bold bg-orange-100 text-orange-700 ml-1">⏰ ' + top.days_overdue + '일 지연</span>' : '';
+      html +=
+        '<div class="border-2 border-brand-200 bg-brand-50/50 rounded-xl p-3.5">' +
+          '<p class="text-[10px] font-bold text-brand-500 tracking-wider uppercase mb-1.5"><i class="fas fa-crosshairs mr-1"></i>최우선 연락</p>' +
+          '<div class="flex items-center gap-2 mb-1">' +
+            '<p class="font-bold text-base text-surface-900">' + esc(top.patient_name) + '님</p>' + topOv +
+          '</div>' +
+          '<p class="text-xs text-surface-600 mb-1">' + esc(top.reason || '') + '</p>' +
+          '<div class="flex flex-wrap gap-1">' +
+            (top.treatment_type ? '<span class="text-[9px] px-1.5 py-0.5 rounded bg-brand-100 text-brand-600 font-medium">' + esc(top.treatment_type) + '</span>' : '') +
+            (top.amount ? '<span class="text-[9px] px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-600 font-medium">' + fmt(top.amount) + '만원</span>' : '') +
+            (critical > 0 ? '<span class="text-[9px] px-1.5 py-0.5 rounded bg-rose-100 text-rose-600 font-medium"><i class="fas fa-fire text-[7px] mr-0.5"></i>긴급 총 ' + critical + '건</span>' : '') +
+          '</div>' +
+        '</div>';
+    }
+
+    // Actions
+    html +=
+          '<div class="flex gap-2 pt-1">' +
+            '<button onclick="dismissMorningBriefing()" class="flex-1 py-3 rounded-xl text-sm font-semibold text-surface-600 bg-surface-100 hover:bg-surface-200 transition-all active:scale-[0.98]">나중에</button>' +
+            '<a href="/today" onclick="dismissMorningBriefing()" class="flex-[2] py-3 rounded-xl text-sm font-bold text-white bg-gradient-brand text-center shadow-lg shadow-brand-600/20 transition-all active:scale-[0.98]"><i class="fas fa-bolt mr-1.5"></i>오늘의 액션 시작하기</a>' +
+          '</div>' +
+        '</div>' +
+      '</div>';
+
+    overlay.innerHTML = html;
+    document.body.appendChild(overlay);
+    localStorage.setItem(todayKey, '1');
+
+    // Cleanup old briefing keys (keep only today)
+    try {
+      for (var i = localStorage.length - 1; i >= 0; i--) {
+        var k = localStorage.key(i);
+        if (k && k.indexOf('pt_briefing_') === 0 && k !== todayKey) localStorage.removeItem(k);
+      }
+    } catch(e) {}
+  } catch(e) { console.warn('Briefing error:', e); }
+}
+
+function dismissMorningBriefing() {
+  var el = document.getElementById('morningBriefingOverlay');
+  if (el) el.remove();
 }
 
 // === HOME CONTACT MODAL ===
@@ -662,6 +778,7 @@ async function loadChecklist(td, tm, summaryData) {
           id: 'contact_' + c.patient_id + '_' + (c.task_id||''),
           done: false,
           urgency: c.urgency || 'medium',
+          days_overdue: c.days_overdue || 0,
           icon: 'fa-phone',
           color: c.urgency === 'critical' ? 'rose' : c.urgency === 'high' ? 'amber' : 'sky',
           title: esc(c.patient_name) + ' 연락',
@@ -728,9 +845,15 @@ async function loadChecklist(td, tm, summaryData) {
       });
     }
 
-    // Sort: critical > high > medium
+    // Sort: 이월(지연) 우선 → critical > high > medium → 지연일 내림차순
     var urgOrder = {critical:0, high:1, medium:2};
-    items.sort(function(a,b) { return (urgOrder[a.urgency]||2) - (urgOrder[b.urgency]||2); });
+    items.sort(function(a,b) {
+      var aO = (a.days_overdue||0) >= 1 ? 1 : 0, bO = (b.days_overdue||0) >= 1 ? 1 : 0;
+      if (aO !== bO) return bO - aO;
+      var u = (urgOrder[a.urgency]||2) - (urgOrder[b.urgency]||2);
+      if (u !== 0) return u;
+      return (b.days_overdue||0) - (a.days_overdue||0);
+    });
 
     checklistAllItems = items;
     renderChecklist(items);
@@ -793,7 +916,8 @@ function renderChecklist(items) {
 
     // Content
     html += '<div class="flex-1 min-w-0">';
-    html += '<p class="text-sm font-semibold text-surface-900 ' + (it.done ? 'line-through' : '') + ' truncate">' + it.title + '</p>';
+    html += '<p class="text-sm font-semibold text-surface-900 ' + (it.done ? 'line-through' : '') + ' truncate">' + it.title +
+      ((it.days_overdue||0) >= 1 ? ' <span class="text-[9px] px-1 py-0.5 rounded font-bold bg-orange-100 text-orange-700">⏰ ' + it.days_overdue + '일 지연</span>' : '') + '</p>';
     html += '<p class="text-[10px] text-surface-500 truncate">' + it.subtitle;
     if (it.amount > 0) html += ' · <span class="font-semibold text-emerald-600">' + fmt(it.amount) + '만</span>';
     html += '</p></div>';
