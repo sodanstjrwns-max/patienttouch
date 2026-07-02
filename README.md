@@ -1,4 +1,28 @@
-# 페이션트 터치 (Patient Touch v8.0)
+# 페이션트 터치 (Patient Touch v8.1)
+
+## 🛡️ v8.1 보안·성능 심층 감사 (2026-07-02)
+
+### 보안 — 인가(Authorization) 강화
+- **adminOnly 미들웨어 신설**: 일반 상담사가 조직 전체 매출·동료 실적을 열람할 수 있던 인가 누락 수정
+- 적용 API (7개): `admin-summary`, `staff-performance`, `coaching-breakdown`, `low-score-consultations`, `proposal-analytics`, `export`(CSV 전체 내보내기), `team`은 응답 필드 차등화
+- `GET /api/auth/team`: 팀 명단은 전 직원, **개인별 매출·상담수·전화번호는 관리자만**
+- 설정 페이지 데이터 내보내기 UI: 관리자에게만 표시
+
+### 보안 — 입력 검증
+- `PUT /consultations/:id`: status 화이트리스트(pending/paid/undecided/lost) + amount 음수/비숫자 차단
+- `POST /:id/segments`: 세그먼트 10MB 제한 + index 0~9999 범위 검증
+
+### 성능
+- **이탈 예측 배치**: INSERT 최대 100회 순차 → D1 batch 1회
+- **utils.js 추출**: 렌더러가 모든 페이지에 ~14KB JS를 인라인하던 것을 정적 파일로 분리
+  → HTML 응답 ~22KB → 8.5KB, SW 프리캐시 등록으로 재방문 시 즉시 로드
+- SW 캐시 버전 v8.1.0 (구버전 캐시 자동 정리)
+
+### 코드 품질 (v8.0.2 포함)
+- **타입 에러 969건 → 0건**: workers-types 도입 + AppEnv(Bindings+Variables) 타입 시스템
+- 런타임 버그 수정: userId 미정의 2곳(자동 태스크/성장 비교 무력화), nerData.amount 오타(금액 항상 null), patient_id spread 덮어쓰기
+
+---
 
 ## 🚀 v8.0 슈퍼 업그레이드 (2026-07-01)
 

@@ -12,6 +12,12 @@ async function loadSettings() {
         '<p class="text-surface-500 text-sm">' + esc(user.email) + '</p>' +
         '<p class="text-brand-600 text-xs font-semibold mt-0.5">' + esc(user.organization_name) + '</p></div>';
 
+      // 데이터 내보내기는 관리자 전용 (API도 403 차단, UI도 숨김)
+      if (user.role === 'admin' || user.role === 'owner') {
+        var exportSec = document.getElementById('exportSection');
+        if (exportSec) exportSec.classList.remove('hidden');
+      }
+
       document.getElementById('notificationEnabled').checked = settings.notification_enabled !== false;
       document.getElementById('notificationTime').value = settings.notification_time || '08:30';
       document.getElementById('weekendNotification').checked = settings.weekend_notification === true;

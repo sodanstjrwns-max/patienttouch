@@ -105,8 +105,8 @@ export const SettingsPage: FC = () => {
           </div>
         </div>
 
-        {/* Feature 11: Data Export */}
-        <div class="card-premium p-5">
+        {/* Feature 11: Data Export (admin only — settings.js에서 role 기반 표시) */}
+        <div id="exportSection" class="card-premium p-5 hidden">
           <div class="flex items-center gap-2 mb-4">
             <div class="w-7 h-7 rounded-lg bg-emerald-50 flex items-center justify-center"><i class="fas fa-file-export text-xs text-emerald-600"></i></div>
             <h3 class="font-bold text-sm text-surface-900">데이터 내보내기</h3>

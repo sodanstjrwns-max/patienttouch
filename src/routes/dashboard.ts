@@ -362,7 +362,7 @@ dashboard.get('/chart', async (c) => {
 });
 
 // GET /api/dashboard/team - Get team comparison (admin only)
-dashboard.get('/team', async (c) => {
+dashboard.get('/team', adminOnly, async (c) => {
   try {
     const orgId = c.get('organizationId');
     const db = c.env.DB;
@@ -1503,7 +1503,7 @@ function csvRow(cells: any[]): string {
 
 const CSV_BOM = '\uFEFF'; // UTF-8 BOM for Excel Korean support
 
-dashboard.get('/export', async (c) => {
+dashboard.get('/export', adminOnly, async (c) => {
   try {
     const orgId = c.get('organizationId');
     const userId = c.get('userId');

@@ -375,7 +375,9 @@ auth.get('/team', authMiddleware, async (c) => {
   try {
     const orgId = c.get('organizationId');
     const db = c.env.DB;
+    const isAdminUser = (c.get('auth') as { role?: string } | undefined)?.role === 'admin';
 
+    // 팀 명단은 전 직원 공개, 개인별 매출·상담수는 관리자 전용 (동료 실적 비공개)
     const members = await db.prepare(`
       SELECT u.id, u.name, u.email, u.role, u.phone, u.last_login_at, u.created_at,
         (SELECT COUNT(*) FROM consultations c WHERE c.user_id = u.id AND c.consultation_date >= datetime('now','-30 days')) as monthly_consultations,
@@ -383,7 +385,14 @@ auth.get('/team', authMiddleware, async (c) => {
       FROM users u WHERE u.organization_id = ? ORDER BY u.role ASC, u.name ASC
     `).bind(orgId).all();
 
-    return c.json({ success: true, data: members.results });
+    const data = isAdminUser
+      ? members.results
+      : members.results.map((m: any) => {
+          const { monthly_consultations, monthly_revenue, phone, ...safe } = m;
+          return safe;
+        });
+
+    return c.json({ success: true, data });
   } catch (error) {
     console.error('Get team error:', error);
     return c.json({ success: false, error: '팀 정보를 불러오는데 실패했습니다.' }, 500);
