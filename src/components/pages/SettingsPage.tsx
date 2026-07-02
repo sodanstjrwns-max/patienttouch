@@ -25,15 +25,21 @@ export const SettingsPage: FC = () => {
             <h3 class="font-bold text-sm text-surface-900">알림 설정</h3>
           </div>
           <div class="space-y-5">
-            <div class="flex items-center justify-between">
-              <div>
-                <p class="font-semibold text-sm text-surface-900">아침 푸시 알림</p>
-                <p class="text-xs text-surface-500 mt-0.5">출근 시 오늘의 연락 알림</p>
+            <div>
+              <div class="flex items-center justify-between">
+                <div>
+                  <p class="font-semibold text-sm text-surface-900">아침 브리핑 푸시 알림</p>
+                  <p class="text-xs text-surface-500 mt-0.5">매일 아침 "오늘 연락 N건 · 예상 금액" 알림</p>
+                </div>
+                <label class="relative inline-flex items-center cursor-pointer">
+                  <input type="checkbox" id="notificationEnabled" class="sr-only peer" />
+                  <div class="w-11 h-6 bg-surface-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:shadow-sm after:transition-all peer-checked:bg-brand-600 transition-colors"></div>
+                </label>
               </div>
-              <label class="relative inline-flex items-center cursor-pointer">
-                <input type="checkbox" id="notificationEnabled" class="sr-only peer" />
-                <div class="w-11 h-6 bg-surface-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:shadow-sm after:transition-all peer-checked:bg-brand-600 transition-colors"></div>
-              </label>
+              <p id="pushStatusLine" class="text-[11px] text-surface-400 mt-1.5"></p>
+              <button id="pushTestBtn" class="hidden mt-2 text-xs font-semibold text-brand-600 bg-brand-50 px-3 py-1.5 rounded-lg hover:bg-brand-100 transition-all">
+                <i class="fas fa-paper-plane mr-1"></i>테스트 발송
+              </button>
             </div>
             <div class="flex items-center justify-between">
               <div>
@@ -218,6 +224,7 @@ export const SettingsPage: FC = () => {
         </button>
       </div>
 
+      <script src="/static/push-client.js"></script>
       <script src="/static/pages/settings.js"></script>
     </Layout>
   )

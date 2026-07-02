@@ -502,4 +502,8 @@ export interface Env {
   AI_PRIMARY_MODEL?: string;     // 핵심 분석 모델 (기본: gpt-5)
   AI_SECONDARY_MODEL?: string;   // 보조 기능 모델 (기본: gpt-5-mini)
   AI_TRANSCRIPTION_MODEL?: string; // STT 모델 (기본: gpt-4o-transcribe)
+  // v8.4: Web Push (아침 브리핑 알림)
+  VAPID_PUBLIC_KEY?: string;
+  VAPID_PRIVATE_KEY?: string;
+  CRON_SECRET?: string;
 }

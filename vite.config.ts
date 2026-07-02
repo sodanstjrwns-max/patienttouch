@@ -10,5 +10,9 @@ export default defineConfig({
       adapter,
       entry: 'src/index.tsx'
     })
-  ]
+  ],
+  build: {
+    // v8.4: @block65/webcrypto-web-push uses top-level await (Workers supports es2022)
+    target: 'es2022'
+  }
 })

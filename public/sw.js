@@ -7,7 +7,7 @@
 //      - /static/*: Stale-While-Revalidate (즉시 캐시 응답 + 백그라운드 업데이트)
 //      - HTML 페이지: Network-first + 오프라인 fallback
 
-const CACHE_VERSION = 'pt-v8.3.0';
+const CACHE_VERSION = 'pt-v8.4.0';
 const STATIC_CACHE = `pt-static-${CACHE_VERSION}`;
 const RUNTIME_CACHE = `pt-runtime-${CACHE_VERSION}`;
 const PAGE_CACHE = `pt-pages-${CACHE_VERSION}`;
@@ -222,4 +222,40 @@ self.addEventListener('message', (event) => {
       event.source?.postMessage({ type: 'WARM_PAGES_DONE' });
     });
   }
+});
+
+// =========================================
+// v8.4: WEB PUSH — 아침 브리핑 알림
+// =========================================
+self.addEventListener('push', (event) => {
+  let data = {};
+  try { data = event.data ? event.data.json() : {}; } catch (e) { data = { title: '페이션트 터치', body: event.data ? event.data.text() : '' }; }
+
+  const title = data.title || '페이션트 터치';
+  const options = {
+    body: data.body || '',
+    icon: '/static/icons/apple-touch-icon.png',
+    badge: '/static/icons/favicon-32.png',
+    tag: data.tag || 'pt-notification',
+    renotify: true,
+    data: { url: data.url || '/today' },
+    vibrate: [100, 50, 100],
+  };
+  event.waitUntil(self.registration.showNotification(title, options));
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const url = (event.notification.data && event.notification.data.url) || '/today';
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
+      for (const client of list) {
+        if (client.url.includes(self.location.origin) && 'focus' in client) {
+          client.navigate(url);
+          return client.focus();
+        }
+      }
+      return clients.openWindow(url);
+    })
+  );
 });

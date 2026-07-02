@@ -19,8 +19,11 @@ async function loadSettings() {
       }
 
       document.getElementById('notificationEnabled').checked = settings.notification_enabled !== false;
-      document.getElementById('notificationTime').value = settings.notification_time || '08:30';
+      document.getElementById('notificationTime').value = settings.notification_time || '09:00';
       document.getElementById('weekendNotification').checked = settings.weekend_notification === true;
+
+      // v8.4: 실제 푸시 구독 상태 반영
+      initPushToggle();
 
       var planNames = { basic:'Basic', standard:'Standard', premium:'Premium', enterprise:'Enterprise', trial:'Trial' };
       var statusNames = { active:'활성', expired:'만료', trial:'무료체험' };
@@ -36,6 +39,73 @@ async function loadSettings() {
         (statusNames[user.subscription_status] || user.subscription_status) + '</span>';
     }
   } catch (err) { console.error('Failed to load settings:', err); }
+}
+
+// =========================================
+// v8.4: 푸시 구독 토글 + 테스트 발송
+// =========================================
+async function initPushToggle() {
+  var toggle = document.getElementById('notificationEnabled');
+  var statusEl = document.getElementById('pushStatusLine');
+
+  if (typeof ptPush === 'undefined' || !ptPush.isSupported()) {
+    toggle.checked = false;
+    toggle.disabled = true;
+    if (statusEl) statusEl.innerHTML = '<i class="fas fa-circle-info mr-1"></i>이 브라우저는 푸시 알림을 지원하지 않아요 (iOS는 홈 화면에 추가 후 사용 가능)';
+    return;
+  }
+
+  var state = await ptPush.getState();
+  toggle.checked = (state === 'subscribed');
+  updatePushStatusLine(state);
+
+  toggle.addEventListener('change', async function() {
+    toggle.disabled = true;
+    try {
+      if (toggle.checked) {
+        await ptPush.enable();
+        showToast('아침 브리핑 알림이 켜졌습니다! ☀️', 'success');
+        updatePushStatusLine('subscribed');
+        var testBtn = document.getElementById('pushTestBtn');
+        if (testBtn) testBtn.classList.remove('hidden');
+      } else {
+        await ptPush.disable();
+        showToast('푸시 알림이 꺼졌습니다.', 'info');
+        updatePushStatusLine('unsubscribed');
+      }
+    } catch (e) {
+      toggle.checked = !toggle.checked;
+      showToast(e.message || '알림 설정에 실패했습니다.', 'error');
+    } finally {
+      toggle.disabled = false;
+    }
+  });
+
+  var testBtn = document.getElementById('pushTestBtn');
+  if (testBtn) {
+    if (state === 'subscribed') testBtn.classList.remove('hidden');
+    testBtn.addEventListener('click', async function() {
+      testBtn.disabled = true;
+      testBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i>발송 중...';
+      try {
+        var r = await ptPush.test();
+        showToast('테스트 알림 발송! (' + r.sent + '/' + r.devices + ' 기기)', 'success');
+      } catch (e) {
+        showToast(e.message || '테스트 발송 실패', 'error');
+      } finally {
+        testBtn.disabled = false;
+        testBtn.innerHTML = '<i class="fas fa-paper-plane mr-1"></i>테스트 발송';
+      }
+    });
+  }
+}
+
+function updatePushStatusLine(state) {
+  var el = document.getElementById('pushStatusLine');
+  if (!el) return;
+  if (state === 'subscribed') el.innerHTML = '<i class="fas fa-circle-check text-emerald-500 mr-1"></i>이 기기에서 알림 수신 중';
+  else if (state === 'denied') el.innerHTML = '<i class="fas fa-circle-xmark text-rose-500 mr-1"></i>브라우저에서 알림이 차단됨 — 주소창 옆 설정에서 허용해주세요';
+  else el.innerHTML = '';
 }
 
 document.getElementById('saveSettingsBtn').addEventListener('click', async function() {

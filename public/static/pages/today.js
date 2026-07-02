@@ -34,9 +34,55 @@ async function loadTodayPage() {
     renderOverdueAlert(cRes);
     buildChecklist(cRes, rRes);
     renderCompletedToday(doneRes);
+    renderPushNudge();
   } catch(e) {
     console.error('Today page error:', e);
   }
+}
+
+// === PUSH ENABLE NUDGE (v8.4) ===
+async function renderPushNudge() {
+  try {
+    if (typeof ptPush === 'undefined' || !ptPush.isSupported()) return;
+    if (localStorage.getItem('pt_push_nudge_dismissed')) return;
+    var state = await ptPush.getState();
+    if (state !== 'unsubscribed') return; // 이미 구독했거나 차단됨
+
+    var el = document.getElementById('pushNudgeBanner');
+    el.classList.remove('hidden');
+    el.innerHTML =
+      '<div class="card-premium p-3.5 border-2 border-brand-200/60 bg-gradient-to-r from-brand-50 to-indigo-50 flex items-center gap-3">' +
+        '<div class="w-9 h-9 rounded-xl bg-brand-100 flex items-center justify-center shrink-0"><span class="text-base">🔔</span></div>' +
+        '<div class="flex-1 min-w-0">' +
+          '<p class="text-xs font-bold text-surface-900">매일 아침 브리핑을 알림으로 받아보세요</p>' +
+          '<p class="text-[10px] text-surface-500">앱을 열지 않아도 "오늘 연락 N건" 알림이 도착해요</p>' +
+        '</div>' +
+        '<div class="flex gap-1.5 shrink-0">' +
+          '<button onclick="enablePushFromNudge(this)" class="text-[11px] font-bold text-white bg-gradient-brand px-3 py-2 rounded-lg shadow-sm active:scale-95 transition-all">켜기</button>' +
+          '<button onclick="dismissPushNudge()" class="w-8 h-8 rounded-lg text-surface-400 hover:bg-surface-100 flex items-center justify-center transition-all"><i class="fas fa-xmark text-xs"></i></button>' +
+        '</div>' +
+      '</div>';
+  } catch(e) { /* non-critical */ }
+}
+
+async function enablePushFromNudge(btn) {
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+  try {
+    await ptPush.enable();
+    showToast('아침 브리핑 알림이 켜졌습니다! ☀️', 'success');
+    document.getElementById('pushNudgeBanner').classList.add('hidden');
+    localStorage.setItem('pt_push_nudge_dismissed', '1');
+  } catch(e) {
+    showToast(e.message || '알림 설정에 실패했습니다.', 'error');
+    btn.disabled = false;
+    btn.textContent = '켜기';
+  }
+}
+
+function dismissPushNudge() {
+  document.getElementById('pushNudgeBanner').classList.add('hidden');
+  localStorage.setItem('pt_push_nudge_dismissed', '1');
 }
 
 // === BRIEFING SUMMARY CARD ===

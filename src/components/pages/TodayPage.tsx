@@ -45,6 +45,9 @@ export const TodayPage: FC = () => {
         {/* OVERDUE CARRYOVER ALERT */}
         <div id="overdueAlertBanner" class="hidden"></div>
 
+        {/* PUSH ENABLE NUDGE */}
+        <div id="pushNudgeBanner" class="hidden"></div>
+
         {/* FULL CHECKLIST */}
         <section id="todayFullChecklist">
           <div class="card-premium overflow-hidden">
@@ -127,6 +130,7 @@ export const TodayPage: FC = () => {
         </div>
       </div>
 
+      <script src="/static/push-client.js"></script>
       <script src="/static/pages/today.js"></script>
     </Layout>
   )
