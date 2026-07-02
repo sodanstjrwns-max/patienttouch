@@ -3,6 +3,7 @@
 // 비동기(waitUntil) 실행을 전제로 설계 — analysis_step으로 진행률 추적
 
 import { generateId, safeParseJSON } from './utils';
+import { getAIConfig } from './ai-config';
 import { runAnalysisFromTranscript, runFullAnalysisPipeline, transcribeWithTimestamps } from './ai-presenter';
 import type { PreviousFeedbackContext, FullAnalysisResult } from './ai-presenter';
 
@@ -82,8 +83,10 @@ export async function persistAnalysisResults(
   orgId: string,
   consultId: string,
   audioKey: string | null,
-  fullAnalysis: FullAnalysisResult
+  fullAnalysis: FullAnalysisResult,
+  env?: Record<string, any>
 ): Promise<string> {
+  const generationModel = getAIConfig(env || {}).primaryModel;
   await db.prepare(`
     UPDATE consultations SET
       audio_url = COALESCE(?, audio_url),
@@ -141,7 +144,7 @@ export async function persistAnalysisResults(
       decision_factors, decision_score, decision_prediction,
       next_actions, recommended_followup_date, followup_message,
       coaching_feedback, coaching_score, generation_model
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'gpt-5')
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).bind(
     reportId, orgId, consultId,
     toStr(fullAnalysis.report.consultation_summary),
@@ -159,7 +162,8 @@ export async function persistAnalysisResults(
     toStr(fullAnalysis.report.recommended_followup_date),
     toStr(fullAnalysis.report.followup_message),
     toJsonStr({ ...fullAnalysis.report.coaching_feedback, growth_comparison: fullAnalysis.report.growth_comparison || null }),
-    fullAnalysis.report.coaching_feedback?.total_score || 0
+    fullAnalysis.report.coaching_feedback?.total_score || 0,
+    generationModel
   ).run();
 
   return reportId;
@@ -289,7 +293,7 @@ export async function runAnalysisJob(params: AnalysisJobParams): Promise<void> {
       throw new Error('분석할 오디오 또는 스크립트가 없습니다.');
     }
 
-    await persistAnalysisResults(db, orgId, consultId, audioKey || null, result);
+    await persistAnalysisResults(db, orgId, consultId, audioKey || null, result, env);
 
     // v8.2: 분석 완료 즉시 "다음 연락" 태스크 자동 생성 (AI 추천 날짜+멘트+포인트)
     await syncFollowupTask(db, orgId, userId, consultId, result.report);

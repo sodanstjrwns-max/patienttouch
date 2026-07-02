@@ -13,10 +13,12 @@ export interface AIModelConfig {
   transcriptionAdvancedModel: string;
 }
 
-// 기본 설정: 2026년 3월 기준 최적 조합
+// 기본 설정: 2026년 7월 기준 최적 조합
+// - primaryModel: gpt-5.5 (2026-04 출시 최신 플래그십) — 상담분석/리포트/코칭 품질 최우선
+// - secondaryModel: gpt-5.4-mini — 보조 기능은 속도/비용 균형
 const DEFAULT_CONFIG: AIModelConfig = {
-  primaryModel: 'gpt-5',
-  secondaryModel: 'gpt-5-mini',
+  primaryModel: 'gpt-5.5',
+  secondaryModel: 'gpt-5.4-mini',
   transcriptionModel: 'gpt-4o-transcribe',
   transcriptionAdvancedModel: 'gpt-4o-transcribe',
 };
@@ -25,13 +27,13 @@ const DEFAULT_CONFIG: AIModelConfig = {
  * 환경변수에서 AI 모델 설정을 로드합니다.
  * 
  * 환경변수:
- * - AI_PRIMARY_MODEL: 핵심 분석 모델 (기본: gpt-5)
- * - AI_SECONDARY_MODEL: 보조 기능 모델 (기본: gpt-5-mini)
+ * - AI_PRIMARY_MODEL: 핵심 분석 모델 (기본: gpt-5.5)
+ * - AI_SECONDARY_MODEL: 보조 기능 모델 (기본: gpt-5.4-mini)
  * - AI_TRANSCRIPTION_MODEL: STT 모델 (기본: gpt-4o-transcribe)
  * 
  * 예시 (나중에 업그레이드):
- * - AI_PRIMARY_MODEL=gpt-5.4 → 최신 플래그십 모델로 전환
- * - AI_SECONDARY_MODEL=gpt-5.4-mini → 최신 미니 모델로 전환
+ * - AI_PRIMARY_MODEL=gpt-5.6 → 신규 플래그십 출시 시 바로 전환
+ * - AI_SECONDARY_MODEL=gpt-5.6-mini → 신규 미니 모델로 전환
  */
 export function getAIConfig(env: Record<string, any>): AIModelConfig {
   return {
@@ -65,13 +67,15 @@ export async function callOpenAI(params: {
 }): Promise<any> {
   const { apiKey, model, messages, temperature = 0.3, maxTokens, jsonMode = true } = params;
 
-  // GPT-5 계열 감지 (gpt-5, gpt-5-mini, gpt-5.4 등)
+  // GPT-5 계열 감지 (gpt-5, gpt-5-mini, gpt-5.4, gpt-5.5 등)
   const isGpt5 = model.includes('gpt-5');
   
-  // Fallback 모델 매핑
-  const fallbackModel = isGpt5 
-    ? (model.includes('mini') ? 'gpt-4o-mini' : 'gpt-4o') 
+  // Fallback 모델 매핑 (최신 모델 장애 시 안정 모델로 자동 전환)
+  const fallbackModel = isGpt5
+    ? (model.includes('mini') ? 'gpt-5-mini' : 'gpt-5')
     : null;
+  // fallback 자체가 실패하면 gpt-4o 계열까지 내려가지 않도록 1단계만 유지
+  const isAlreadyFallback = model === 'gpt-5' || model === 'gpt-5-mini';
 
   const body: any = {
     model,
@@ -211,7 +215,7 @@ export async function callOpenAI(params: {
   }
 
   // === Fallback to alternative model ===
-  if (fallbackModel && lastError) {
+  if (fallbackModel && lastError && !isAlreadyFallback) {
     console.warn(`[AI Fallback] ${model} failed after ${MAX_RETRIES} attempts. Falling back to ${fallbackModel}`);
     try {
       return await callOpenAI({
