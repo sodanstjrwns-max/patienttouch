@@ -79,3 +79,13 @@ export function isAdmin(c: Context): boolean {
   const auth = getCurrentUser(c);
   return auth?.role === 'admin';
 }
+
+// Middleware: admin/owner only (must run AFTER authMiddleware)
+// 원장 전용 API 보호 — 일반 상담사가 조직 전체 매출/동료 성과 조회 못 하도록 차단
+export async function adminOnly(c: Context, next: Next) {
+  const auth = getCurrentUser(c);
+  if (auth?.role !== 'admin' && auth?.role !== 'owner') {
+    return c.json({ success: false, error: '관리자 권한이 필요합니다.' }, 403);
+  }
+  await next();
+}

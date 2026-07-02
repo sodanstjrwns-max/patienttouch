@@ -276,7 +276,14 @@ consultations.post('/:id/segments', async (c) => {
     if (!audioFile || indexStr === null) {
       return c.json({ success: false, error: '세그먼트 데이터가 없습니다.' }, 400);
     }
+    // 60초 webm 세그먼트는 통상 1~2MB — 10MB 초과는 비정상 (R2 오남용 방지)
+    if (audioFile.size > 10 * 1024 * 1024) {
+      return c.json({ success: false, error: '세그먼트 크기가 10MB를 초과합니다.' }, 413);
+    }
     const segIndex = parseInt(indexStr, 10);
+    if (!Number.isInteger(segIndex) || segIndex < 0 || segIndex > 9999) {
+      return c.json({ success: false, error: '유효하지 않은 세그먼트 번호입니다.' }, 400);
+    }
 
     // R2에 세그먼트 저장
     const segKey = `consultations/${consultId}/segments/${String(segIndex).padStart(4, '0')}.webm`;
@@ -696,6 +703,16 @@ consultations.put('/:id', async (c) => {
       status, treatment_type, treatment_area, amount, summary,
       patient_psychology, emotion_flow, key_quotes, feedback, decision_score
     } = body;
+
+    // status 화이트리스트 검증 — 임의 값 저장 시 KPI 집계/자동 트리거 오작동 방지
+    const VALID_STATUSES = ['pending', 'paid', 'undecided', 'lost'];
+    if (status !== undefined && status !== null && !VALID_STATUSES.includes(status)) {
+      return c.json({ success: false, error: `유효하지 않은 상태값입니다. (허용: ${VALID_STATUSES.join(', ')})` }, 400);
+    }
+    // amount 숫자 검증 — 문자열/음수 유입 시 매출 집계 오염 방지
+    if (amount !== undefined && amount !== null && (typeof amount !== 'number' || amount < 0 || !Number.isFinite(amount))) {
+      return c.json({ success: false, error: '금액은 0 이상의 숫자여야 합니다.' }, 400);
+    }
 
     await db.prepare(`
       UPDATE consultations SET

@@ -792,7 +792,7 @@ function generateContactScript(ctx: ScriptContext): { message: string; tone: str
  */
 retention.post('/predict/:patientId', async (c) => {
   try {
-    const orgId = c.get('organizationId' as any);
+    const orgId = c.get('organizationId');
     const patientId = c.req.param('patientId');
     const db = c.env.DB;
 
@@ -841,7 +841,7 @@ retention.post('/predict/:patientId', async (c) => {
  */
 retention.post('/predict-batch', async (c) => {
   try {
-    const orgId = c.get('organizationId' as any);
+    const orgId = c.get('organizationId');
     const db = c.env.DB;
     const body = await c.req.json().catch(() => ({} as any));
     const useAI = body.use_ai !== false; // 기본 true
@@ -867,6 +867,16 @@ retention.post('/predict-batch', async (c) => {
     const predictions: any[] = [];
     const summary = { critical: 0, high: 0, medium: 0, low: 0, ai_used: 0, rule_only: 0 };
 
+    // INSERT 문을 모아 D1 batch로 한 번에 실행 (라운드트립 N회 → 1회)
+    const insertStmt = db.prepare(`
+      INSERT INTO churn_predictions (
+        id, organization_id, patient_id, churn_probability, risk_level,
+        predicted_window_days, key_risk_factors, recommended_action,
+        recommended_script, confidence, rule_based_score, features_snapshot
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    const batchedInserts: D1PreparedStatement[] = [];
+
     for (const pid of candidateIds) {
       const features = await extractChurnFeaturesFromDB(db, orgId, pid);
       if (!features) continue;
@@ -882,15 +892,8 @@ retention.post('/predict-batch', async (c) => {
         summary.rule_only++;
       }
 
-      const predId = generateId();
-      await db.prepare(`
-        INSERT INTO churn_predictions (
-          id, organization_id, patient_id, churn_probability, risk_level,
-          predicted_window_days, key_risk_factors, recommended_action,
-          recommended_script, confidence, rule_based_score, features_snapshot
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).bind(
-        predId, orgId, pid,
+      batchedInserts.push(insertStmt.bind(
+        generateId(), orgId, pid,
         prediction.churn_probability, prediction.risk_level,
         prediction.predicted_window_days,
         JSON.stringify(prediction.key_risk_factors),
@@ -899,10 +902,14 @@ retention.post('/predict-batch', async (c) => {
         prediction.confidence,
         prediction.rule_based_score,
         JSON.stringify(features)
-      ).run();
+      ));
 
       summary[prediction.risk_level]++;
       predictions.push({ ...prediction, patient_id: pid, patient_name: features.patient_name });
+    }
+
+    if (batchedInserts.length > 0) {
+      await db.batch(batchedInserts);
     }
 
     return c.json({
@@ -925,7 +932,7 @@ retention.post('/predict-batch', async (c) => {
  */
 retention.get('/predictions', async (c) => {
   try {
-    const orgId = c.get('organizationId' as any);
+    const orgId = c.get('organizationId');
     const db = c.env.DB;
     const riskFilter = c.req.query('risk_level');
     const limit = Math.min(200, parseInt(c.req.query('limit') || '50'));
@@ -982,7 +989,7 @@ retention.get('/predictions', async (c) => {
  */
 retention.post('/predictions/:id/feedback', async (c) => {
   try {
-    const orgId = c.get('organizationId' as any);
+    const orgId = c.get('organizationId');
     const predId = c.req.param('id');
     const db = c.env.DB;
     const body = await c.req.json().catch(() => ({} as any));
@@ -1016,7 +1023,7 @@ retention.post('/predictions/:id/feedback', async (c) => {
  */
 retention.get('/predictions/accuracy', async (c) => {
   try {
-    const orgId = c.get('organizationId' as any);
+    const orgId = c.get('organizationId');
     const db = c.env.DB;
 
     const rows = await db.prepare(`
@@ -1088,7 +1095,7 @@ retention.get('/predictions/accuracy', async (c) => {
  */
 retention.get('/predictions/retraining-stats', async (c) => {
   try {
-    const orgId = c.get('organizationId' as any);
+    const orgId = c.get('organizationId');
     const db = c.env.DB;
 
     // 1) 전체 예측 + 피드백 카운트
@@ -1303,7 +1310,7 @@ retention.get('/predictions/retraining-stats', async (c) => {
  */
 retention.get('/predictions/recent-feedback', async (c) => {
   try {
-    const orgId = c.get('organizationId' as any);
+    const orgId = c.get('organizationId');
     const db = c.env.DB;
     const limit = parseInt(c.req.query('limit') || '20');
 

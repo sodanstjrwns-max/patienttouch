@@ -1,7 +1,7 @@
 // Dashboard & KPI Routes
 import { Hono } from 'hono';
 import { safeParseJSON } from '../lib/utils';
-import { authMiddleware } from '../lib/auth';
+import { authMiddleware, adminOnly } from '../lib/auth';
 import { safeInt, validatePeriod, validateAdminPeriod, periodToDays, setCacheHeaders, maskPatientData, maskPhone } from '../lib/middleware';
 import type { AppEnv, Env, KPIData } from '../types';
 
@@ -406,7 +406,7 @@ dashboard.get('/team', async (c) => {
 // ============================================
 
 // GET /api/dashboard/admin-summary - Admin overview (OPTIMIZED)
-dashboard.get('/admin-summary', async (c) => {
+dashboard.get('/admin-summary', adminOnly, async (c) => {
   try {
     const orgId = c.get('organizationId');
     const db = c.env.DB;
@@ -503,7 +503,7 @@ dashboard.get('/admin-summary', async (c) => {
 });
 
 // GET /api/dashboard/staff-performance - Staff performance list
-dashboard.get('/staff-performance', async (c) => {
+dashboard.get('/staff-performance', adminOnly, async (c) => {
   try {
     const orgId = c.get('organizationId');
     const db = c.env.DB;
@@ -547,7 +547,7 @@ dashboard.get('/staff-performance', async (c) => {
 });
 
 // GET /api/dashboard/coaching-breakdown - Coaching area averages
-dashboard.get('/coaching-breakdown', async (c) => {
+dashboard.get('/coaching-breakdown', adminOnly, async (c) => {
   try {
     const orgId = c.get('organizationId');
     const db = c.env.DB;
@@ -586,7 +586,7 @@ dashboard.get('/coaching-breakdown', async (c) => {
 });
 
 // GET /api/dashboard/low-score-consultations - Consultations needing coaching
-dashboard.get('/low-score-consultations', async (c) => {
+dashboard.get('/low-score-consultations', adminOnly, async (c) => {
   try {
     const orgId = c.get('organizationId');
     const db = c.env.DB;
@@ -620,7 +620,7 @@ dashboard.get('/low-score-consultations', async (c) => {
 });
 
 // GET /api/dashboard/proposal-analytics - Proposal statistics
-dashboard.get('/proposal-analytics', async (c) => {
+dashboard.get('/proposal-analytics', adminOnly, async (c) => {
   try {
     const orgId = c.get('organizationId');
     const db = c.env.DB;
