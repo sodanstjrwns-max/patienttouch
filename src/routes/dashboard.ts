@@ -1871,4 +1871,83 @@ dashboard.get('/pre-consultation-briefing', async (c) => {
   }
 });
 
+// GET /api/dashboard/onboarding-status - 신규 가입 병원 온보딩 체크리스트 (v8.7)
+dashboard.get('/onboarding-status', async (c) => {
+  try {
+    const orgId = c.get('organizationId');
+    const db = c.env.DB;
+
+    const [userCount, patientCount, consultCount, analyzedCount, contactCount, brandingRow] = await Promise.all([
+      db.prepare(`SELECT COUNT(*) as cnt FROM users WHERE organization_id = ?`).bind(orgId).first(),
+      db.prepare(`SELECT COUNT(*) as cnt FROM patients WHERE organization_id = ?`).bind(orgId).first(),
+      db.prepare(`SELECT COUNT(*) as cnt FROM consultations WHERE organization_id = ?`).bind(orgId).first(),
+      db.prepare(`SELECT COUNT(*) as cnt FROM consultations WHERE organization_id = ? AND ai_analysis_status = 'completed'`).bind(orgId).first(),
+      db.prepare(`SELECT (SELECT COUNT(*) FROM contact_tasks WHERE organization_id = ?) + (SELECT COUNT(*) FROM retention_contacts WHERE organization_id = ?) as cnt`).bind(orgId, orgId).first(),
+      db.prepare(`SELECT organization_id FROM organization_branding WHERE organization_id = ?`).bind(orgId).first()
+    ]);
+
+    const steps = [
+      {
+        key: 'clinic_setup',
+        title: '병원 정보 설정',
+        desc: '병원명 · 로고 · 브랜딩을 설정하세요',
+        icon: 'fa-hospital',
+        href: '/settings',
+        done: !!brandingRow
+      },
+      {
+        key: 'invite_staff',
+        title: '직원 초대',
+        desc: '상담실장 · 스탭 계정을 추가하세요',
+        icon: 'fa-user-plus',
+        href: '/settings',
+        done: ((userCount?.cnt as number) || 0) >= 2
+      },
+      {
+        key: 'first_patient',
+        title: '첫 환자 등록',
+        desc: '환자를 등록하면 상담 기록이 연결됩니다',
+        icon: 'fa-hospital-user',
+        href: '/patients',
+        done: ((patientCount?.cnt as number) || 0) >= 1
+      },
+      {
+        key: 'first_recording',
+        title: '첫 상담 녹음',
+        desc: '버튼 하나로 상담을 녹음해보세요',
+        icon: 'fa-microphone',
+        href: '/recording',
+        done: ((consultCount?.cnt as number) || 0) >= 1
+      },
+      {
+        key: 'first_analysis',
+        title: '첫 AI 분석 확인',
+        desc: '요약 · 점수 · 코칭 포인트를 확인하세요',
+        icon: 'fa-wand-magic-sparkles',
+        href: '/consultations',
+        done: ((analyzedCount?.cnt as number) || 0) >= 1
+      },
+      {
+        key: 'first_retention',
+        title: '첫 리콜 액션',
+        desc: '미동의 환자에게 팔로업을 시작하세요',
+        icon: 'fa-bell',
+        href: '/retention',
+        done: ((contactCount?.cnt as number) || 0) >= 1
+      }
+    ];
+
+    const doneCount = steps.filter(s => s.done).length;
+    return c.json({
+      steps,
+      done_count: doneCount,
+      total_count: steps.length,
+      completed: doneCount === steps.length
+    });
+  } catch (error) {
+    console.error('Onboarding status error:', error);
+    return c.json({ error: '온보딩 상태 조회에 실패했습니다.' }, 500);
+  }
+});
+
 export default dashboard;

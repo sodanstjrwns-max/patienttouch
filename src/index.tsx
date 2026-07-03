@@ -15,6 +15,8 @@ import retentionRoutes from './routes/retention'
 import kakaoRoutes from './routes/kakao'
 import pushRoutes from './routes/push'
 import privacyRoutes from './routes/privacy'
+import leadRoutes from './routes/leads'
+import { WelcomePage } from './components/pages/WelcomePage'
 
 // Import pages
 import { LoginPage } from './components/pages/LoginPage'
@@ -78,8 +80,10 @@ app.route('/api/retention', retentionRoutes)
 app.route('/api/kakao', kakaoRoutes)
 app.route('/api/push', pushRoutes)
 app.route('/api/privacy', privacyRoutes)
+app.route('/api/leads', leadRoutes)
 
 // Page Routes
+app.get('/welcome', (c) => c.render(<WelcomePage />, { title: '페이션트 터치 — 치과 상담을 매출 엔진으로' }))
 app.get('/login', (c) => c.render(<LoginPage />, { title: '로그인 - 페이션트 터치' }))
 app.get('/register', (c) => c.render(<RegisterPage />, { title: '회원가입 - 페이션트 터치' }))
 app.get('/', (c) => c.render(<HomePage />, { title: '홈 - 페이션트 터치' }))

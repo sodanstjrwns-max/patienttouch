@@ -978,7 +978,72 @@ document.getElementById('headerLogoutBtn').addEventListener('click', async funct
   window.location.href = '/login';
 });
 
+// ============================================
+// ONBOARDING CHECKLIST (v8.7 — 신규 병원 가이드)
+// ============================================
+async function loadOnboardingCard() {
+  try {
+    // 사용자가 닫았으면 다시 표시 안 함
+    if (localStorage.getItem('pt_onboarding_dismissed') === '1') return;
+
+    var res = await fetch('/api/dashboard/onboarding-status');
+    if (!res.ok) return;
+    var data = await res.json();
+    if (!data.steps) return;
+
+    // 전부 완료된 병원은 표시하지 않음 (성숙 병원 노이즈 방지)
+    if (data.completed) return;
+
+    var card = document.getElementById('onboardingCard');
+    var stepsEl = document.getElementById('onboardingSteps');
+    var progressEl = document.getElementById('onboardingProgress');
+    var pctEl = document.getElementById('onboardingPct');
+    var barEl = document.getElementById('onboardingBar');
+    if (!card || !stepsEl) return;
+
+    var pct = Math.round((data.done_count / data.total_count) * 100);
+    if (progressEl) progressEl.textContent = data.done_count + '/' + data.total_count + ' 단계 완료';
+    if (pctEl) pctEl.textContent = pct + '%';
+
+    var html = '';
+    var nextHighlighted = false;
+    data.steps.forEach(function (s) {
+      var isNext = !s.done && !nextHighlighted;
+      if (isNext) nextHighlighted = true;
+      html += '<a href="' + s.href + '" class="flex items-center gap-3 p-3 rounded-xl transition-all ' +
+        (s.done ? 'opacity-50' : isNext ? 'bg-brand-50/70 hover:bg-brand-50' : 'hover:bg-surface-50') + '">' +
+        '<div class="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ' +
+          (s.done ? 'bg-emerald-100 text-emerald-600' : isNext ? 'bg-gradient-to-br from-brand-500 to-purple-500 text-white shadow-sm shadow-brand-400/30' : 'bg-surface-100 text-surface-400') + '">' +
+          '<i class="fas ' + (s.done ? 'fa-check' : s.icon) + ' text-xs"></i></div>' +
+        '<div class="flex-1 min-w-0">' +
+          '<p class="text-xs font-bold ' + (s.done ? 'text-surface-400 line-through' : 'text-surface-900') + '">' + s.title +
+            (isNext ? ' <span class="text-[9px] font-black text-brand-600 bg-brand-100 px-1.5 py-0.5 rounded-full ml-1">다음 단계</span>' : '') + '</p>' +
+          '<p class="text-[10px] text-surface-400 truncate">' + s.desc + '</p></div>' +
+        (s.done ? '' : '<i class="fas fa-chevron-right text-[9px] text-surface-300"></i>') +
+        '</a>';
+    });
+    stepsEl.innerHTML = html;
+    card.classList.remove('hidden');
+
+    // 프로그레스 바 애니메이션
+    setTimeout(function () { if (barEl) barEl.style.width = pct + '%'; }, 100);
+
+    // 닫기 버튼
+    var dismissBtn = document.getElementById('onboardingDismissBtn');
+    if (dismissBtn) {
+      dismissBtn.addEventListener('click', function (e) {
+        e.preventDefault();
+        localStorage.setItem('pt_onboarding_dismissed', '1');
+        card.classList.add('hidden');
+      });
+    }
+  } catch (e) {
+    console.warn('Onboarding card:', e);
+  }
+}
+
 loadHomePage();
+loadOnboardingCard();
 // showAIInsight is called from within loadHomePage with pre-loaded data
 
 // === LEVEL CARD RENDERER ===

@@ -1,4 +1,27 @@
-# 페이션트 터치 (Patient Touch v8.6.1)
+# 페이션트 터치 (Patient Touch v8.7.0)
+
+## 🚀 v8.7.0 마케팅 랜딩페이지 + 리드 접수 + 온보딩 플로우 (2026-07-03)
+
+### 랜딩페이지 `/welcome` (비로그인 공개)
+- 다크 오로라 디자인 언어 통일 (glass-dark, gradient orbs, text-gradient)
+- 히어로: "놓친 상담 한 건이 임플란트 한 건입니다" + 성과 지표 스트립 (62% 전환율 / 2.1배 성장 / 40% 광고비 절감 / 6,000+ 수료 원장)
+- 페인포인트 3종 → 풀사이클 기능 4종 (녹음→AI분석→코칭→리텐션) + 컴플라이언스 스트립
+- ROI 섹션: 전환율 +5%p = 월 +750만원, ROI 25배+
+- 요금제: Starter 149,000 / Growth 290,000 ⭐ / Enterprise 590,000~ (VAT별도, 병원 단위 정액, 초과 건당 2,000원)
+- **파운더 50 프로모션**: 첫 50개 병원 평생 30% 할인 + 실시간 잔여 슬롯 카운터 (`#founderCounter`)
+- 도입 문의 폼 → `POST /api/leads` (성공 시 데모 체험 유도), FAQ 5문항, 하단 CTA
+
+### 리드 접수 API (`src/routes/leads.ts`, migration 0014)
+- `GET /api/leads/founder-count` (공개): 잔여 슬롯 계산 (status != 'lost' 기준 50 - taken)
+- `POST /api/leads` (공개): 병원명/담당자/연락처 검증, 24시간 중복 전화번호 409 처리
+- `GET /api/leads` + `PUT /api/leads/:id/status` (admin 전용): 리드 목록/상태 관리 (new→contacted→demo→won/lost)
+
+### 온보딩 플로우 (신규 병원 가이드)
+- `GET /api/dashboard/onboarding-status`: 6단계 자동 감지 (병원 설정→직원 초대→환자 등록→첫 녹음→첫 AI 분석→첫 리콜)
+- 홈 화면 `#onboardingCard`: 진행률 바 + "다음 단계" 하이라이트 + 완료 시 자동 숨김 + 닫기(localStorage)
+
+### 기타
+- SW 캐시 pt-v8.7.0 범프, 원격 D1 migration 0014 적용 완료
 
 ## 🔎 v8.6.1 뷰어 내부 검색 + 자동 파기 크론 + 부채 상환 2차 (2026-07-03)
 

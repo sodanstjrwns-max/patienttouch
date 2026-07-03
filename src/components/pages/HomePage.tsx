@@ -73,6 +73,35 @@ export const HomePage: FC = () => {
         {/* ====== STALE UNDECIDED ALERT BANNER ====== */}
         <div id="staleAlertBanner" class="hidden"></div>
 
+        {/* ====== ONBOARDING CHECKLIST (v8.7 — 신규 병원 전용) ====== */}
+        <div id="onboardingCard" class="hidden">
+          <div class="card-premium overflow-hidden border border-brand-200/50">
+            <div class="p-4 border-b border-surface-100 bg-gradient-to-r from-brand-50/80 to-purple-50/50 flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-brand-500 to-purple-500 flex items-center justify-center shadow-sm shadow-brand-400/30">
+                  <i class="fas fa-flag-checkered text-xs text-white"></i>
+                </div>
+                <div>
+                  <h3 class="font-bold text-sm text-surface-900">시작하기 가이드</h3>
+                  <p id="onboardingProgress" class="text-[10px] text-surface-400">로딩 중...</p>
+                </div>
+              </div>
+              <div class="flex items-center gap-2">
+                <span id="onboardingPct" class="text-xs font-black text-brand-600"></span>
+                <button id="onboardingDismissBtn" class="w-6 h-6 rounded-lg text-surface-300 hover:text-surface-500 hover:bg-surface-100 transition-all" title="숨기기">
+                  <i class="fas fa-xmark text-xs"></i>
+                </button>
+              </div>
+            </div>
+            <div class="px-4 pt-3">
+              <div class="h-1.5 rounded-full bg-surface-100 overflow-hidden">
+                <div id="onboardingBar" class="h-full rounded-full bg-gradient-to-r from-brand-500 to-purple-500 transition-all duration-700" style="width:0%"></div>
+              </div>
+            </div>
+            <div id="onboardingSteps" class="divide-y divide-surface-50 p-1"></div>
+          </div>
+        </div>
+
         {/* ====== TODAY CHECKLIST ====== */}
         <div id="todayChecklist" class="hidden">
           <div class="card-premium overflow-hidden">
