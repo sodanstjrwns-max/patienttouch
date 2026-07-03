@@ -242,7 +242,7 @@ function renderPatient(p) {
       '<div class="w-16 h-16 rounded-2xl ' + avatarColor + ' flex items-center justify-center font-black text-2xl shrink-0">' + esc(p.name).charAt(0) + '</div>' +
       '<div class="flex-1 min-w-0">' +
         '<div class="flex items-center gap-2 mb-0.5">' +
-          '<h2 onclick="openTranscriptViewer(\'' + p.id + '\', \'' + esc(p.name).replace(/'/g, "\\'") + '\')" class="text-xl font-bold text-brand-700 underline decoration-dotted decoration-brand-300 underline-offset-4 cursor-pointer active:opacity-60">' + esc(p.name) + '</h2>' +
+          PT.patientNameLink(p.id, p.name, {tag:'h2', cls:'text-xl font-bold text-brand-700 underline decoration-dotted decoration-brand-300 underline-offset-4 active:opacity-60'}) +
           (p.age ? '<span class="text-surface-400 text-sm">' + p.age + '세 ' + (p.gender === 'male' ? '남' : p.gender === 'female' ? '여' : '') + '</span>' : '') +
         '</div>' +
         (p.phone ? '<a href="tel:' + (p.phone_full||p.phone) + '" class="inline-flex items-center gap-1.5 text-brand-600 font-semibold text-sm hover:text-brand-700 transition-colors"><i class="fas fa-phone text-xs"></i>' + (p.phone_display||p.phone) + '</a>' : '') +

@@ -284,11 +284,12 @@ function lazyLoad(selector, callback) {
 // === 12. Patient Transcript Viewer (환자 이름 클릭 → 기존 상담 원문 보기) ===
 // 사용법: openTranscriptViewer(patientId, patientName)
 // 어느 페이지에서든 환자 이름에 onclick으로 연결
-var _tvState = { patientId: null, data: null };
+var _tvState = { patientId: null, data: null, keyword: '' };
 
 function openTranscriptViewer(patientId, patientName) {
   if (!patientId) { showToast('환자 정보가 없습니다', 'warning'); return; }
   _tvState.patientId = patientId;
+  _tvState.keyword = '';
 
   var existing = document.getElementById('transcriptViewerModal');
   if (existing) existing.remove();
@@ -307,6 +308,16 @@ function openTranscriptViewer(patientId, patientName) {
         '</div>' +
         '<button onclick="closeTranscriptViewer()" style="width:32px;height:32px;border-radius:10px;background:#f8fafc;border:none;color:#64748b;cursor:pointer;flex-shrink:0;"><i class="fas fa-xmark"></i></button>' +
       '</div>' +
+      // v8.6.1: 뷰어 내부 키워드 검색 바
+      '<div style="padding:8px 16px;border-bottom:1px solid #f1f5f9;flex-shrink:0;background:#fcfcfd;">' +
+        '<div style="position:relative;">' +
+          '<i class="fas fa-magnifying-glass" style="position:absolute;left:12px;top:50%;transform:translateY(-50%);color:#cbd5e1;font-size:12px;pointer-events:none;"></i>' +
+          '<input type="text" id="tvSearchInput" placeholder="원문에서 키워드 검색 (예: 임플란트 가격)" autocomplete="off" ' +
+            'style="width:100%;padding:9px 64px 9px 34px;border:1px solid #e2e8f0;border-radius:12px;font-size:13px;color:#334155;background:white;outline:none;box-sizing:border-box;" />' +
+          '<span id="tvSearchCount" style="position:absolute;right:34px;top:50%;transform:translateY(-50%);font-size:10px;font-weight:700;color:#6366f1;"></span>' +
+          '<button id="tvSearchClear" onclick="clearTvSearch()" style="display:none;position:absolute;right:8px;top:50%;transform:translateY(-50%);width:22px;height:22px;border-radius:8px;background:#f1f5f9;border:none;color:#64748b;cursor:pointer;font-size:10px;"><i class="fas fa-xmark"></i></button>' +
+        '</div>' +
+      '</div>' +
       '<div id="tvBody" style="flex:1;overflow-y:auto;padding:14px 16px;-webkit-overflow-scrolling:touch;">' +
         '<div style="text-align:center;padding:40px 0;"><i class="fas fa-circle-notch fa-spin" style="color:#a5b4fc;font-size:22px;"></i></div>' +
       '</div>' +
@@ -317,6 +328,22 @@ function openTranscriptViewer(patientId, patientName) {
     document.getElementById('tvBackdrop').style.opacity = '1';
     document.getElementById('tvSheet').style.transform = 'translateY(0)';
   }); });
+
+  // v8.6.1: 검색 입력 핸들러 (300ms 디바운스)
+  var tvSearchTimer = null;
+  var searchInput = document.getElementById('tvSearchInput');
+  if (searchInput) {
+    searchInput.addEventListener('input', function() {
+      clearTimeout(tvSearchTimer);
+      var kw = this.value.trim();
+      tvSearchTimer = setTimeout(function() {
+        _tvState.keyword = kw;
+        var clearBtn = document.getElementById('tvSearchClear');
+        if (clearBtn) clearBtn.style.display = kw ? 'block' : 'none';
+        if (_tvState.data) renderTranscriptViewer(_tvState.data);
+      }, 300);
+    });
+  }
 
   fetch('/api/patients/' + patientId + '/transcripts')
     .then(function(r){ return r.json(); })
@@ -331,13 +358,54 @@ function openTranscriptViewer(patientId, patientName) {
     });
 }
 
+// v8.6.1: 키워드 하이라이트 (escapeHtml 후 <mark> 삽입)
+function tvHighlight(text, keyword) {
+  var safe = escapeHtml(text);
+  if (!keyword) return safe;
+  var escKw = escapeHtml(keyword).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  try {
+    return safe.replace(new RegExp('(' + escKw + ')', 'gi'), '<mark style="background:#fde68a;color:#78350f;border-radius:3px;padding:0 2px;font-weight:700;">$1</mark>');
+  } catch (e) { return safe; }
+}
+
+function tvCountMatches(text, keyword) {
+  if (!text || !keyword) return 0;
+  var escKw = keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  try {
+    var m = text.match(new RegExp(escKw, 'gi'));
+    return m ? m.length : 0;
+  } catch (e) { return 0; }
+}
+
 function renderTranscriptViewer(data) {
   var sub = document.getElementById('tvSubtitle');
   var body = document.getElementById('tvBody');
   if (!sub || !body) return;
 
   var list = data.transcripts || [];
-  sub.textContent = '총 상담 ' + data.total + '건 · 원문 보유 ' + data.with_transcript + '건';
+  var kw = _tvState.keyword || '';
+
+  // 검색 모드: 매치된 상담만 필터 + 자동 펼침
+  var matchCounts = {};
+  var totalMatches = 0;
+  if (kw) {
+    list.forEach(function(t, i) {
+      var n = t.has_transcript ? tvCountMatches(t.transcript, kw) + tvCountMatches(t.summary || '', kw) : 0;
+      matchCounts[i] = n;
+      totalMatches += n;
+    });
+  }
+  var countEl = document.getElementById('tvSearchCount');
+  if (countEl) countEl.textContent = kw ? (totalMatches > 0 ? totalMatches + '곳' : '0곳') : '';
+
+  sub.textContent = kw
+    ? '"' + kw + '" 검색 결과 · ' + totalMatches + '곳 일치'
+    : '총 상담 ' + data.total + '건 · 원문 보유 ' + data.with_transcript + '건';
+
+  if (kw && totalMatches === 0) {
+    body.innerHTML = '<div style="text-align:center;padding:48px 16px;"><i class="fas fa-magnifying-glass-minus" style="color:#cbd5e1;font-size:26px;"></i><p style="font-weight:700;font-size:14px;color:#334155;margin:12px 0 4px;">"' + escapeHtml(kw) + '" 검색 결과가 없습니다</p><p style="font-size:12px;color:#94a3b8;">다른 키워드로 검색해보세요</p></div>';
+    return;
+  }
 
   if (list.length === 0) {
     body.innerHTML = '<div style="text-align:center;padding:48px 16px;"><i class="fas fa-microphone-slash" style="color:#cbd5e1;font-size:26px;"></i><p style="font-weight:700;font-size:14px;color:#334155;margin:12px 0 4px;">아직 상담 기록이 없습니다</p><p style="font-size:12px;color:#94a3b8;">첫 상담을 녹음하면 원문이 여기에 쌓입니다</p></div>';
@@ -353,6 +421,8 @@ function renderTranscriptViewer(data) {
 
   var html = '';
   list.forEach(function(t, i) {
+    // 검색 모드에서 매치 없는 상담은 숨김
+    if (kw && !matchCounts[i]) return;
     var s = stMap[t.status] || stMap.pending;
     var d = new Date(t.consultation_date);
     var dateStr = d.getFullYear() + '.' + String(d.getMonth()+1).padStart(2,'0') + '.' + String(d.getDate()).padStart(2,'0');
@@ -365,19 +435,21 @@ function renderTranscriptViewer(data) {
     html += '<button onclick="toggleTvItem(' + i + ')" style="width:100%;padding:13px 14px;background:none;border:none;cursor:pointer;text-align:left;display:flex;align-items:center;gap:10px;">' +
       '<span style="padding:3px 8px;border-radius:8px;font-size:10px;font-weight:700;color:' + s.c + ';background:' + s.bg + ';flex-shrink:0;">' + s.l + '</span>' +
       '<span style="flex:1;min-width:0;font-size:12px;color:#475569;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(meta.join(' · ')) + '</span>' +
+      (kw && matchCounts[i] ? '<span style="padding:2px 7px;border-radius:8px;font-size:10px;font-weight:800;color:#b45309;background:#fef3c7;flex-shrink:0;">' + matchCounts[i] + '곳</span>' : '') +
       (t.has_transcript
-        ? '<span style="font-size:10px;color:#6366f1;font-weight:700;flex-shrink:0;">' + (t.char_count >= 1000 ? (t.char_count/1000).toFixed(1) + 'k자' : t.char_count + '자') + '</span><i id="tvChev' + i + '" class="fas fa-chevron-down" style="color:#cbd5e1;font-size:10px;flex-shrink:0;transition:transform 0.2s;"></i>'
+        ? '<span style="font-size:10px;color:#6366f1;font-weight:700;flex-shrink:0;">' + (t.char_count >= 1000 ? (t.char_count/1000).toFixed(1) + 'k자' : t.char_count + '자') + '</span><i id="tvChev' + i + '" class="fas fa-chevron-down" style="color:#cbd5e1;font-size:10px;flex-shrink:0;transition:transform 0.2s;' + (kw ? 'transform:rotate(180deg);' : '') + '"></i>'
         : '<span style="font-size:10px;color:#cbd5e1;font-weight:600;flex-shrink:0;">원문 없음</span>') +
     '</button>';
 
     if (t.has_transcript) {
-      html += '<div id="tvItem' + i + '" style="display:none;border-top:1px solid #f8fafc;">';
+      // 검색 모드에서는 매치 상담 자동 펼침
+      html += '<div id="tvItem' + i + '" style="display:' + (kw ? 'block' : 'none') + ';border-top:1px solid #f8fafc;">';
       if (t.summary) {
-        html += '<div style="margin:10px 12px 0;padding:10px 12px;background:#f0f4ff;border-radius:12px;"><p style="font-size:10px;font-weight:800;color:#6366f1;margin:0 0 4px;text-transform:uppercase;letter-spacing:0.05em;"><i class="fas fa-wand-magic-sparkles" style="margin-right:4px;"></i>AI 요약</p><p style="font-size:12px;color:#334155;line-height:1.6;margin:0;white-space:pre-line;">' + escapeHtml(t.summary) + '</p></div>';
+        html += '<div style="margin:10px 12px 0;padding:10px 12px;background:#f0f4ff;border-radius:12px;"><p style="font-size:10px;font-weight:800;color:#6366f1;margin:0 0 4px;text-transform:uppercase;letter-spacing:0.05em;"><i class="fas fa-wand-magic-sparkles" style="margin-right:4px;"></i>AI 요약</p><p style="font-size:12px;color:#334155;line-height:1.6;margin:0;white-space:pre-line;">' + tvHighlight(t.summary, kw) + '</p></div>';
       }
       html += '<div style="margin:10px 12px;padding:12px;background:#f8fafc;border-radius:12px;max-height:280px;overflow-y:auto;-webkit-overflow-scrolling:touch;">' +
         '<p style="font-size:10px;font-weight:800;color:#94a3b8;margin:0 0 6px;text-transform:uppercase;letter-spacing:0.05em;"><i class="fas fa-scroll" style="margin-right:4px;"></i>스크립트 원문</p>' +
-        '<p style="font-size:12px;color:#475569;line-height:1.75;margin:0;white-space:pre-line;word-break:break-word;">' + escapeHtml(t.transcript) + '</p>' +
+        '<p style="font-size:12px;color:#475569;line-height:1.75;margin:0;white-space:pre-line;word-break:break-word;">' + tvHighlight(t.transcript, kw) + '</p>' +
       '</div>';
       html += '<div style="padding:0 12px 12px;display:flex;gap:8px;">' +
         '<button onclick="copyTvTranscript(' + i + ')" style="flex:1;padding:9px;border-radius:10px;border:1px solid #e2e8f0;background:white;font-size:11px;font-weight:700;color:#475569;cursor:pointer;"><i class="fas fa-copy" style="margin-right:4px;"></i>원문 복사</button>' +
@@ -416,6 +488,16 @@ function copyTvTranscript(i) {
     catch(e) { showToast('복사에 실패했습니다', 'error'); }
     ta.remove();
   }
+}
+
+function clearTvSearch() {
+  var input = document.getElementById('tvSearchInput');
+  if (input) input.value = '';
+  _tvState.keyword = '';
+  var clearBtn = document.getElementById('tvSearchClear');
+  if (clearBtn) clearBtn.style.display = 'none';
+  if (_tvState.data) renderTranscriptViewer(_tvState.data);
+  if (input) input.focus();
 }
 
 function closeTranscriptViewer() {

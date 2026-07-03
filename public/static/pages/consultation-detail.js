@@ -106,7 +106,7 @@ function renderConsultation(c) {
         '</div>' +
         '<div>' +
           (c.patient_id && esc(c.patient_name)
-            ? '<h2 onclick="openTranscriptViewer(\'' + c.patient_id + '\', \'' + esc(c.patient_name).replace(/'/g, "\\'") + '\')" class="text-lg font-bold text-brand-700 underline decoration-dotted decoration-brand-300 underline-offset-4 cursor-pointer active:opacity-60">' + esc(c.patient_name) + '</h2>'
+            ? PT.patientNameLink(c.patient_id, c.patient_name, {tag:'h2', cls:'text-lg font-bold text-brand-700 underline decoration-dotted decoration-brand-300 underline-offset-4 active:opacity-60'})
             : '<h2 class="text-lg font-bold text-surface-900">' + (esc(c.patient_name) || '환자 미지정') + '</h2>') +
           '<p class="text-surface-500 text-xs">' + (c.patient_age ? c.patient_age + '세 ' : '') + (c.patient_gender === 'male' ? '남성' : c.patient_gender === 'female' ? '여성' : '') + '</p>' +
         '</div>' +

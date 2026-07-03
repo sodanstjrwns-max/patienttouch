@@ -124,7 +124,39 @@
       '<h3 class="font-bold text-sm text-surface-900">' + esc(title) + '</h3></div>';
   };
 
-  // ---------- 6. 스코어 컬러 (상담 점수 60/80 기준) ----------
+  // ---------- 6. 원문 뷰어 연결 요소 (v8.6.1: 11곳 중복 → 1곳) ----------
+  /**
+   * 클릭하면 원문 뷰어가 열리는 환자 이름 요소
+   * @param {string} patientId
+   * @param {string} name
+   * @param {object} [opt] - { tag:'span'|'h2'|'p', cls: 추가 클래스, suffix: '님' 등, stop: true면 이벤트 전파 차단, fallbackCls: id 없을 때 클래스 }
+   */
+  PT.patientNameLink = function(patientId, name, opt) {
+    opt = opt || {};
+    var tag = opt.tag || 'span';
+    var safeName = esc(name || '');
+    var suffix = opt.suffix || '';
+    if (!patientId || !safeName) {
+      return '<' + tag + ' class="' + (opt.fallbackCls || 'font-bold text-sm') + '">' + (safeName || opt.emptyText || '') + suffix + '</' + tag + '>';
+    }
+    var jsName = safeName.replace(/'/g, "\\'");
+    var stop = opt.stop ? 'event.preventDefault();event.stopPropagation();' : '';
+    var cls = opt.cls || 'font-bold text-sm text-brand-700 underline decoration-dotted decoration-brand-300 underline-offset-2 active:opacity-60';
+    return '<' + tag + ' onclick="' + stop + 'openTranscriptViewer(\'' + patientId + '\', \'' + jsName + '\')" class="' + cls + ' cursor-pointer">' + safeName + suffix + '</' + tag + '>';
+  };
+
+  /**
+   * 원문 뷰어를 여는 작은 스크롤(📜) 버튼
+   * @param {string} patientId
+   * @param {string} name
+   */
+  PT.transcriptBtn = function(patientId, name) {
+    if (!patientId) return '';
+    var jsName = esc(name || '').replace(/'/g, "\\'");
+    return '<button onclick="event.preventDefault();event.stopPropagation();openTranscriptViewer(\'' + patientId + '\', \'' + jsName + '\')" title="상담 원문 보기" class="w-5 h-5 rounded-md bg-indigo-50 text-indigo-500 hover:bg-indigo-100 flex items-center justify-center active:scale-90 transition-all"><i class="fas fa-scroll text-[8px]"></i></button>';
+  };
+
+  // ---------- 7. 스코어 컬러 (상담 점수 60/80 기준) ----------
   PT.scoreColor = function(score) {
     return score >= 80 ? 'text-emerald-600' : score >= 60 ? 'text-amber-600' : 'text-rose-600';
   };

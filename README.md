@@ -1,4 +1,25 @@
-# 페이션트 터치 (Patient Touch v8.6.0)
+# 페이션트 터치 (Patient Touch v8.6.1)
+
+## 🔎 v8.6.1 뷰어 내부 검색 + 자동 파기 크론 + 부채 상환 2차 (2026-07-03)
+
+### ⓐ 원문 뷰어 모달 내부 키워드 검색
+- 뷰어 상단 검색 바 (300ms 디바운스) — 매치된 상담만 필터 + 자동 펼침
+- 원문·AI 요약 모두에서 `<mark>` 하이라이트, 상담별 "N곳" 배지 + 헤더에 총 일치 수
+- X 버튼으로 초기화, 결과 없으면 빈 상태 안내
+
+### ⓑ 보존기간 자동 파기 크론
+- cron-worker에 `0 19 * * *` (KST 04:00) 슬롯 추가 — `event.cron` 분기로 `/api/privacy/purge-expired` 호출
+- 기존 브리핑 크론과 동일한 X-Cron-Secret 인증, 워커 배포 완료 (스케줄 3개 활성)
+- 보존기간 설정된 병원만 파기 실행 (무기한 병원은 스킵)
+
+### ⓒ 프론트 부채 상환 2차 — 원문 링크 렌더러 공통화
+- `PT.patientNameLink(id, name, opt)` — 클릭 시 원문 뷰어 열리는 환자 이름 (tag/suffix/stop/fallback 옵션)
+- `PT.transcriptBtn(id, name)` — 📜 스크롤 버튼
+- **10곳 중복 인라인 onclick 문자열 → 1곳** (home ×4, today ×2, patients, patient-detail, consultations, consultation-detail)
+- SW 캐시 pt-v8.6.1 범프
+
+---
+
 
 ## 🔐 v8.6.0 원문 검색 + 컴플라이언스 패키지 + 프론트 부채 상환 1차 (2026-07-02)
 
