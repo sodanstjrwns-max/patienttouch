@@ -238,6 +238,11 @@ retention.post('/treatments', async (c) => {
     const body = await c.req.json();
     const db = c.env.DB;
 
+    // 환자 소유권 검증 — 타 조직 환자 ID로 치료 등록 차단
+    const ownedT = await db.prepare('SELECT id FROM patients WHERE id = ? AND organization_id = ?')
+      .bind(body.patient_id, orgId).first();
+    if (!ownedT) return c.json({ success: false, error: '환자를 찾을 수 없습니다.' }, 404);
+
     const id = 'treat_' + generateId().slice(0, 8);
     await db.prepare(`
       INSERT INTO patient_treatments (id, organization_id, patient_id, treatment_type, treatment_name, status, total_amount, paid_amount, started_at, next_appointment, source_consultation_id, notes)
@@ -307,6 +312,11 @@ retention.post('/contacts', async (c) => {
     const userId = c.get('userId');
     const body = await c.req.json();
     const db = c.env.DB;
+
+    // 환자 소유권 검증
+    const ownedC = await db.prepare('SELECT id FROM patients WHERE id = ? AND organization_id = ?')
+      .bind(body.patient_id, orgId).first();
+    if (!ownedC) return c.json({ success: false, error: '환자를 찾을 수 없습니다.' }, 404);
 
     const id = 'rcon_' + generateId().slice(0, 8);
     await db.prepare(`

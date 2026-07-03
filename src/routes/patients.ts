@@ -46,7 +46,7 @@ patients.get('/', async (c) => {
     }
 
     query += ` ORDER BY p.updated_at DESC LIMIT ? OFFSET ?`;
-    params.push(parseInt(limit), parseInt(offset));
+    params.push(Math.min(parseInt(limit) || 50, 200), Math.max(parseInt(offset) || 0, 0));
 
     const result = await db.prepare(query).bind(...params).all();
 

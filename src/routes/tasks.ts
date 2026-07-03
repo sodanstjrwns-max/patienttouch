@@ -170,7 +170,7 @@ tasks.get('/', async (c) => {
     }
 
     query += ` ORDER BY t.recommended_date DESC LIMIT ? OFFSET ?`;
-    params.push(parseInt(limit), parseInt(offset));
+    params.push(Math.min(parseInt(limit) || 50, 200), Math.max(parseInt(offset) || 0, 0));
 
     const result = await db.prepare(query).bind(...params).all();
 
@@ -198,6 +198,11 @@ tasks.post('/', async (c) => {
     if (!patient_id || !task_type || !recommended_date) {
       return c.json({ success: false, error: '필수 정보를 입력해주세요.' }, 400);
     }
+
+    // 환자 소유권 검증 — 타 조직 환자 ID 유입 차단
+    const owned = await db.prepare('SELECT id FROM patients WHERE id = ? AND organization_id = ?')
+      .bind(patient_id, orgId).first();
+    if (!owned) return c.json({ success: false, error: '환자를 찾을 수 없습니다.' }, 404);
 
     const taskId = 'task_' + generateId().slice(0, 8);
 
@@ -532,8 +537,8 @@ tasks.put('/:id/complete', async (c) => {
     // If booked, update consultation status
     if (outcome === 'booked' && task.consultation_id) {
       await db.prepare(
-        'UPDATE consultations SET status = ? WHERE id = ?'
-      ).bind('paid', task.consultation_id).run();
+        'UPDATE consultations SET status = ? WHERE id = ? AND organization_id = ?'
+      ).bind('paid', task.consultation_id, orgId).run();
     }
 
     // ===== AUTO FOLLOW-UP TASK GENERATION =====
@@ -695,7 +700,7 @@ tasks.get('/logs', async (c) => {
     }
 
     query += ` ORDER BY cl.created_at DESC LIMIT ? OFFSET ?`;
-    params.push(parseInt(limit), parseInt(offset));
+    params.push(Math.min(parseInt(limit) || 50, 200), Math.max(parseInt(offset) || 0, 0));
 
     const result = await db.prepare(query).bind(...params).all();
 

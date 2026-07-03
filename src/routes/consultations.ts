@@ -848,12 +848,12 @@ consultations.put('/:id', async (c) => {
     // When status changes to 'paid', auto-update patient's last_visit_date
     if (status === 'paid') {
       try {
-        const consult = await db.prepare('SELECT patient_id FROM consultations WHERE id = ?').bind(consultId).first();
+        const consult = await db.prepare('SELECT patient_id FROM consultations WHERE id = ? AND organization_id = ?').bind(consultId, orgId).first();
         if (consult?.patient_id) {
           await db.prepare(`
             UPDATE patients SET last_visit_date = datetime('now'), updated_at = datetime('now')
-            WHERE id = ?
-          `).bind(consult.patient_id).run();
+            WHERE id = ? AND organization_id = ?
+          `).bind(consult.patient_id, orgId).run();
         }
       } catch (e) { console.error('Auto retention trigger error:', e); }
     }
@@ -862,8 +862,8 @@ consultations.put('/:id', async (c) => {
     // When a new consultation is created as 'undecided', schedule a closing task for 2 days later
     if (status === 'undecided') {
       try {
-        const consult = await db.prepare('SELECT patient_id, user_id, treatment_type, amount, summary FROM consultations WHERE id = ?')
-          .bind(consultId).first();
+        const consult = await db.prepare('SELECT patient_id, user_id, treatment_type, amount, summary FROM consultations WHERE id = ? AND organization_id = ?')
+          .bind(consultId, orgId).first();
         if (consult?.patient_id) {
           // Check no pending closing task exists for this consultation
           const existingTask = await db.prepare(`

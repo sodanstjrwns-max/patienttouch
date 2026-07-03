@@ -2,13 +2,13 @@
 import { Hono } from 'hono';
 import { generateId, hashPassword, verifyPassword, verifyPasswordDetailed, safeParseJSON } from '../lib/utils';
 import { setAuthCookie, clearAuthCookie, authMiddleware } from '../lib/auth';
-import { sanitize, isValidEmail } from '../lib/middleware';
+import { sanitize, isValidEmail, rateLimit } from '../lib/middleware';
 import type { AppEnv, Env, User, Organization } from '../types';
 
 const auth = new Hono<AppEnv>();
 
 // POST /api/auth/register - Register new organization and admin user
-auth.post('/register', async (c) => {
+auth.post('/register', rateLimit(5, 3600000), async (c) => {
   try {
     const body = await c.req.json();
     const email = sanitize(body.email, 254).toLowerCase();
@@ -76,7 +76,7 @@ auth.post('/register', async (c) => {
 });
 
 // POST /api/auth/login - Login
-auth.post('/login', async (c) => {
+auth.post('/login', rateLimit(10, 60000), async (c) => {
   try {
     const { email, password } = await c.req.json();
 
