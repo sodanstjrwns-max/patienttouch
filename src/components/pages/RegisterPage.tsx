@@ -65,7 +65,7 @@ export const RegisterPage: FC = () => {
             </form>
 
             <p class="text-xs text-surface-500 text-center mt-4 leading-relaxed">
-              가입 시 <span class="text-surface-400">이용약관</span> 및 <span class="text-surface-400">개인정보 처리방침</span>에 동의합니다
+              가입 시 <a href="/terms" target="_blank" class="text-brand-400 hover:text-brand-300 underline underline-offset-2">이용약관</a> 및 <a href="/privacy-policy" target="_blank" class="text-brand-400 hover:text-brand-300 underline underline-offset-2">개인정보 처리방침</a>에 동의합니다
             </p>
           </div>
         </div>

@@ -285,6 +285,8 @@ export const WelcomePage: FC = () => {
               <p class="text-surface-400 text-sm">영업일 기준 1일 내에 연락드립니다. 파운더 50 슬롯은 문의 순서대로 배정됩니다.</p>
             </div>
             <form id="leadForm" class="space-y-5">
+              {/* Honeypot — bots fill this, humans never see it */}
+              <input type="text" id="leadWebsite" name="website" tabindex={-1} autocomplete="off" aria-hidden="true" style="position:absolute;left:-9999px;opacity:0;height:0" />
               <div class="grid md:grid-cols-2 gap-5">
                 <div>
                   <label class="block text-xs font-semibold text-surface-400 mb-2 tracking-wide uppercase">병원명 *</label>
@@ -340,7 +342,7 @@ export const WelcomePage: FC = () => {
                 <span id="leadBtnText"><i class="fas fa-paper-plane mr-2"></i>도입 문의 보내기</span>
                 <span id="leadBtnLoading" class="hidden"><i class="fas fa-circle-notch fa-spin mr-2"></i>전송 중...</span>
               </button>
-              <p class="text-surface-600 text-[11px] text-center">문의 접수 시 개인정보는 상담 목적으로만 이용되며, 상담 완료 후 파기됩니다.</p>
+              <p class="text-surface-600 text-[11px] text-center">문의 접수 시 개인정보(성명·연락처)는 상담 목적으로만 이용되며 상담 완료 후 파기됩니다. <a href="/privacy-policy" target="_blank" class="text-surface-400 hover:text-surface-300 underline underline-offset-2">개인정보처리방침</a></p>
             </form>
 
             {/* Success state */}
@@ -420,6 +422,10 @@ export const WelcomePage: FC = () => {
             <a href="#pricing-section" class="hover:text-surface-400 transition-colors">요금제</a>
             <span>·</span>
             <a href="#faq-section" class="hover:text-surface-400 transition-colors">FAQ</a>
+            <span>·</span>
+            <a href="/terms" class="hover:text-surface-400 transition-colors">이용약관</a>
+            <span>·</span>
+            <a href="/privacy-policy" class="hover:text-surface-400 transition-colors">개인정보처리방침</a>
           </div>
         </footer>
       </div>

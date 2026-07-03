@@ -111,6 +111,33 @@ export const SettingsPage: FC = () => {
           </div>
         </div>
 
+        {/* v8.7.1: 도입 문의(리드) 관리 (admin only — settings.js에서 role 기반 표시) */}
+        <div id="leadsSection" class="card-premium p-5 hidden">
+          <div class="flex items-center justify-between mb-4">
+            <div class="flex items-center gap-2">
+              <div class="w-7 h-7 rounded-lg bg-amber-50 flex items-center justify-center"><i class="fas fa-inbox text-xs text-amber-600"></i></div>
+              <h3 class="font-bold text-sm text-surface-900">도입 문의 (리드)</h3>
+              <span id="leadsNewBadge" class="hidden text-[10px] font-black text-white bg-rose-500 px-1.5 py-0.5 rounded-full"></span>
+            </div>
+            <div class="flex items-center gap-1.5">
+              <select id="leadsStatusFilter" class="text-[11px] font-semibold px-2 py-1 bg-surface-50 border border-surface-200 rounded-lg outline-none">
+                <option value="">전체</option>
+                <option value="new" selected>신규</option>
+                <option value="contacted">연락함</option>
+                <option value="demo">데모</option>
+                <option value="won">계약</option>
+                <option value="lost">이탈</option>
+              </select>
+              <button id="loadLeadsBtn" class="text-[11px] font-semibold text-amber-600 bg-amber-50 px-2.5 py-1 rounded-lg hover:bg-amber-100 transition-all">
+                <i class="fas fa-rotate mr-1 text-[10px]"></i>조회
+              </button>
+            </div>
+          </div>
+          <div id="leadsList" class="space-y-2">
+            <p class="text-xs text-surface-400 text-center py-3">조회 버튼을 눌러 도입 문의를 확인하세요</p>
+          </div>
+        </div>
+
         {/* Feature 11: Data Export (admin only — settings.js에서 role 기반 표시) */}
         <div id="exportSection" class="card-premium p-5 hidden">
           <div class="flex items-center gap-2 mb-4">

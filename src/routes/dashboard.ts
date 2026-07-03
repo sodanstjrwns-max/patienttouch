@@ -1877,23 +1877,31 @@ dashboard.get('/onboarding-status', async (c) => {
     const orgId = c.get('organizationId');
     const db = c.env.DB;
 
-    const [userCount, patientCount, consultCount, analyzedCount, contactCount, brandingRow] = await Promise.all([
+    const [userCount, patientCount, consultCount, analyzedCount, contactCount, orgRow] = await Promise.all([
       db.prepare(`SELECT COUNT(*) as cnt FROM users WHERE organization_id = ?`).bind(orgId).first(),
       db.prepare(`SELECT COUNT(*) as cnt FROM patients WHERE organization_id = ?`).bind(orgId).first(),
       db.prepare(`SELECT COUNT(*) as cnt FROM consultations WHERE organization_id = ?`).bind(orgId).first(),
       db.prepare(`SELECT COUNT(*) as cnt FROM consultations WHERE organization_id = ? AND ai_analysis_status = 'completed'`).bind(orgId).first(),
       db.prepare(`SELECT (SELECT COUNT(*) FROM contact_tasks WHERE organization_id = ?) + (SELECT COUNT(*) FROM retention_contacts WHERE organization_id = ?) as cnt`).bind(orgId, orgId).first(),
-      db.prepare(`SELECT organization_id FROM organization_branding WHERE organization_id = ?`).bind(orgId).first()
+      db.prepare(`SELECT settings FROM organizations WHERE id = ?`).bind(orgId).first()
     ]);
+
+    // v8.7.1: 1단계 기준 = 개인정보 보관정책 설정 완료 (settings.transcript_retention_months 존재)
+    // — 설정 페이지에서 실제로 달성 가능하며, 컴플라이언스 관점에서도 첫 필수 액션
+    let privacyConfigured = false;
+    try {
+      const settings = JSON.parse((orgRow?.settings as string) || '{}');
+      privacyConfigured = settings.transcript_retention_months !== undefined && settings.transcript_retention_months !== null;
+    } catch { privacyConfigured = false; }
 
     const steps = [
       {
         key: 'clinic_setup',
-        title: '병원 정보 설정',
-        desc: '병원명 · 로고 · 브랜딩을 설정하세요',
-        icon: 'fa-hospital',
+        title: '개인정보 보관정책 설정',
+        desc: '녹음 동의 문구·보관 기간을 설정하세요',
+        icon: 'fa-shield-halved',
         href: '/settings',
-        done: !!brandingRow
+        done: privacyConfigured
       },
       {
         key: 'invite_staff',

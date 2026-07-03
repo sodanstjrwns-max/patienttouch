@@ -17,6 +17,8 @@ async function loadSettings() {
         if (exportSec) exportSec.classList.remove('hidden');
         var privacySec = document.getElementById('privacySection');
         if (privacySec) { privacySec.classList.remove('hidden'); loadPrivacyPolicy(); }
+        var leadsSec = document.getElementById('leadsSection');
+        if (leadsSec) { leadsSec.classList.remove('hidden'); loadLeads(); }
       }
 
       document.getElementById('notificationEnabled').checked = settings.notification_enabled !== false;
@@ -324,6 +326,90 @@ if (loadAuditBtn) loadAuditBtn.addEventListener('click', async function() {
     listEl.innerHTML = html;
   } catch (e) { listEl.innerHTML = '<p class="text-xs text-surface-500 text-center py-2">오류가 발생했습니다</p>'; }
 });
+
+// ============================================
+// v8.7.1: 도입 문의(리드) 관리 (admin 전용)
+// ============================================
+var LEAD_STATUS = {
+  'new':       { label: '신규',   cls: 'bg-rose-50 text-rose-600' },
+  'contacted': { label: '연락함', cls: 'bg-sky-50 text-sky-600' },
+  'demo':      { label: '데모',   cls: 'bg-indigo-50 text-indigo-600' },
+  'won':       { label: '계약',   cls: 'bg-emerald-50 text-emerald-600' },
+  'lost':      { label: '이탈',   cls: 'bg-surface-100 text-surface-500' }
+};
+var PLAN_LABEL = { starter: 'Starter', growth: 'Growth', enterprise: 'Enterprise' };
+
+async function loadLeads() {
+  var listEl = document.getElementById('leadsList');
+  if (!listEl) return;
+  var status = document.getElementById('leadsStatusFilter') ? document.getElementById('leadsStatusFilter').value : '';
+  listEl.innerHTML = '<div class="shimmer h-12 rounded-lg w-full"></div>';
+  try {
+    var res = await fetch('/api/leads?limit=30' + (status ? '&status=' + status : ''));
+    if (!res.ok) { listEl.innerHTML = '<p class="text-xs text-surface-400 text-center py-3">조회 권한이 없습니다</p>'; return; }
+    var data = await res.json();
+    var rows = data.data || [];
+
+    // 신규 배지
+    try {
+      var newRes = await fetch('/api/leads?status=new&limit=100');
+      var newData = await newRes.json();
+      var badge = document.getElementById('leadsNewBadge');
+      var newCount = (newData.data || []).length;
+      if (badge) {
+        if (newCount > 0) { badge.textContent = newCount; badge.classList.remove('hidden'); }
+        else badge.classList.add('hidden');
+      }
+    } catch (e) {}
+
+    if (rows.length === 0) { listEl.innerHTML = '<p class="text-xs text-surface-400 text-center py-3">해당 상태의 문의가 없습니다</p>'; return; }
+
+    var html = '';
+    rows.forEach(function (l) {
+      var st = LEAD_STATUS[l.status] || LEAD_STATUS['new'];
+      var t = (l.created_at || '').slice(5, 16);
+      var src = (l.source || '').split('|')[0];
+      html += '<div class="p-3 bg-surface-50 rounded-xl">' +
+        '<div class="flex items-center justify-between gap-2 mb-1.5">' +
+          '<div class="flex items-center gap-2 min-w-0">' +
+            '<span class="font-bold text-xs text-surface-900 truncate">' + esc(l.clinic_name) + '</span>' +
+            '<span class="text-[10px] font-bold px-1.5 py-0.5 rounded ' + st.cls + ' shrink-0">' + st.label + '</span>' +
+            '<span class="text-[10px] font-semibold text-brand-600 shrink-0">' + (PLAN_LABEL[l.plan_interest] || '') + '</span>' +
+          '</div>' +
+          '<span class="text-[10px] text-surface-400 shrink-0">' + t + '</span>' +
+        '</div>' +
+        '<div class="flex items-center justify-between gap-2">' +
+          '<p class="text-[11px] text-surface-600 truncate">' + esc(l.contact_name) + ' · <a href="tel:' + esc(l.phone) + '" class="text-brand-600 font-semibold">' + esc(l.phone) + '</a>' + (l.monthly_consultations ? ' · 월 ' + esc(l.monthly_consultations) + '건' : '') + '</p>' +
+          '<select data-lead-id="' + l.id + '" class="lead-status-select text-[10px] font-semibold px-1.5 py-1 bg-white border border-surface-200 rounded-lg outline-none shrink-0">' +
+            Object.keys(LEAD_STATUS).map(function (k) { return '<option value="' + k + '"' + (k === l.status ? ' selected' : '') + '>' + LEAD_STATUS[k].label + '</option>'; }).join('') +
+          '</select>' +
+        '</div>' +
+        (l.message ? '<p class="text-[11px] text-surface-500 mt-1.5 line-clamp-2">' + esc(l.message) + '</p>' : '') +
+      '</div>';
+    });
+    listEl.innerHTML = html;
+
+    listEl.querySelectorAll('.lead-status-select').forEach(function (sel) {
+      sel.addEventListener('change', async function () {
+        var id = sel.getAttribute('data-lead-id');
+        try {
+          var r = await fetch('/api/leads/' + id + '/status', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ status: sel.value })
+          });
+          if (r.ok) { showToast('상태가 변경되었습니다', 'success'); loadLeads(); }
+          else showToast('변경 실패', 'error');
+        } catch (e) { showToast('네트워크 오류', 'error'); }
+      });
+    });
+  } catch (e) {
+    listEl.innerHTML = '<p class="text-xs text-surface-400 text-center py-3">조회 중 오류가 발생했습니다</p>';
+  }
+}
+
+document.getElementById('loadLeadsBtn') && document.getElementById('loadLeadsBtn').addEventListener('click', loadLeads);
+document.getElementById('leadsStatusFilter') && document.getElementById('leadsStatusFilter').addEventListener('change', loadLeads);
 
 loadSettings();
 loadTeam();

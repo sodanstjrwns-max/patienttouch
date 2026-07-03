@@ -18,6 +18,14 @@ export const renderer = jsxRenderer(({ children, title }) => {
         <meta name="apple-mobile-web-app-title" content="페이션트 터치" />
         <meta name="mobile-web-app-capable" content="yes" />
         <meta name="description" content="Patient Touch - AI 기반 치과 상담 CRM + 환자 소개 네트워크 + 이탈 예측" />
+        {/* v8.7.1: Open Graph — 카카오톡/SNS 공유 미리보기 */}
+        <meta property="og:type" content="website" />
+        <meta property="og:site_name" content="페이션트 터치" />
+        <meta property="og:title" content={title || '페이션트 터치 — 치과 상담을 매출 엔진으로'} />
+        <meta property="og:description" content="상담 녹음 → AI 분석 → 원장 코칭 → 미동의 환자 리콜까지. 찾는 건 기계가, 연락은 사람이. 파운더 50: 첫 50개 병원 평생 30% 할인" />
+        <meta property="og:image" content="https://patienttouch.pages.dev/static/icons/og-image.png" />
+        <meta property="og:url" content="https://patienttouch.pages.dev/welcome" />
+        <meta name="twitter:card" content="summary_large_image" />
         <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
         <link rel="icon" type="image/png" sizes="32x32" href="/static/icons/favicon-32.png" />
         <link rel="apple-touch-icon" href="/static/icons/apple-touch-icon.png" />

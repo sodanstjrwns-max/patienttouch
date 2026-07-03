@@ -71,6 +71,7 @@ document.querySelectorAll('.plan-select-btn').forEach(function (btn) {
     hideError();
 
     const payload = {
+      website: document.getElementById('leadWebsite')?.value || '',  // honeypot
       clinic_name: document.getElementById('clinicName')?.value.trim() || '',
       contact_name: document.getElementById('contactName')?.value.trim() || '',
       phone: document.getElementById('leadPhone')?.value.trim() || '',

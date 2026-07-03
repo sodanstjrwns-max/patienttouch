@@ -17,6 +17,7 @@ import pushRoutes from './routes/push'
 import privacyRoutes from './routes/privacy'
 import leadRoutes from './routes/leads'
 import { WelcomePage } from './components/pages/WelcomePage'
+import { PrivacyPolicyPage, TermsPage } from './components/pages/LegalPage'
 
 // Import pages
 import { LoginPage } from './components/pages/LoginPage'
@@ -84,9 +85,16 @@ app.route('/api/leads', leadRoutes)
 
 // Page Routes
 app.get('/welcome', (c) => c.render(<WelcomePage />, { title: '페이션트 터치 — 치과 상담을 매출 엔진으로' }))
+app.get('/privacy-policy', (c) => c.render(<PrivacyPolicyPage />, { title: '개인정보처리방침 - 페이션트 터치' }))
+app.get('/terms', (c) => c.render(<TermsPage />, { title: '이용약관 - 페이션트 터치' }))
 app.get('/login', (c) => c.render(<LoginPage />, { title: '로그인 - 페이션트 터치' }))
 app.get('/register', (c) => c.render(<RegisterPage />, { title: '회원가입 - 페이션트 터치' }))
-app.get('/', (c) => c.render(<HomePage />, { title: '홈 - 페이션트 터치' }))
+app.get('/', (c) => {
+  // v8.7.1: 비로그인 방문자는 마케팅 랜딩으로 (쿠키 존재만 체크 — 검증은 클라이언트 requireAuth가 수행)
+  const hasAuthCookie = (c.req.header('Cookie') || '').includes('auth_token=')
+  if (!hasAuthCookie) return c.redirect('/welcome')
+  return c.render(<HomePage />, { title: '홈 - 페이션트 터치' })
+})
 app.get('/today', (c) => c.render(<TodayPage />, { title: '오늘의 액션 - 페이션트 터치' }))
 app.get('/consultations', (c) => c.render(<ConsultationsPage />, { title: '상담 - 페이션트 터치' }))
 app.get('/consultations/:id', (c) => c.render(<ConsultationDetailPage id={c.req.param('id')} />, { title: '상담 상세 - 페이션트 터치' }))

@@ -1,6 +1,7 @@
 // v8.7: 도입 문의(리드) API — /welcome 랜딩페이지
 import { Hono } from 'hono'
 import { authMiddleware, adminOnly } from '../lib/auth'
+import { rateLimit } from '../lib/middleware'
 
 type Bindings = { DB: D1Database }
 const leads = new Hono<{ Bindings: Bindings }>()
@@ -19,9 +20,15 @@ leads.get('/founder-count', async (c) => {
 })
 
 // 도입 문의 접수 (공개, 인증 불필요)
-leads.post('/', async (c) => {
+leads.post('/', rateLimit(5, 60000), async (c) => {
   try {
     const body = await c.req.json()
+
+    // v8.7.1 honeypot: hidden field bots fill in — silently accept and drop
+    if (body.website) {
+      return c.json({ success: true, data: { id: 'lead_ok' } })
+    }
+
     const clinicName = String(body.clinic_name || '').trim()
     const contactName = String(body.contact_name || '').trim()
     const phone = String(body.phone || '').trim()
@@ -42,11 +49,20 @@ leads.post('/', async (c) => {
     ).bind(phone).first()
     if (dup) return c.json({ success: false, error: '이미 접수된 문의입니다. 곧 연락드리겠습니다!' }, 409)
 
+    // IP당 일일 접수 캐핑 (다른 전화번호로 대량 등록 방지)
+    const clientIp = c.req.header('cf-connecting-ip') || c.req.header('x-forwarded-for') || 'unknown'
+    const ipCount = await c.env.DB.prepare(
+      `SELECT COUNT(*) as cnt FROM leads WHERE source LIKE ? AND created_at > datetime('now', '-1 day')`
+    ).bind(`%|${clientIp}`).first<{ cnt: number }>()
+    if ((ipCount?.cnt || 0) >= 10) {
+      return c.json({ success: false, error: '접수 한도를 초과했습니다. 내일 다시 시도해주세요.' }, 429)
+    }
+
     const id = 'lead_' + crypto.randomUUID().slice(0, 8)
     await c.env.DB.prepare(`
       INSERT INTO leads (id, clinic_name, contact_name, phone, email, plan_interest, monthly_consultations, message, source)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).bind(id, clinicName, contactName, phone, email || null, planInterest, monthlyConsultations || null, message || null, source).run()
+    `).bind(id, clinicName, contactName, phone, email || null, planInterest, monthlyConsultations || null, message || null, `${source}|${clientIp}`.slice(0, 80)).run()
 
     return c.json({ success: true, data: { id } })
   } catch (e) {

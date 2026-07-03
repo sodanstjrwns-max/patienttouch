@@ -41,7 +41,7 @@ auth.post('/register', async (c) => {
     const orgId = 'org_' + generateId().slice(0, 8);
     await db.prepare(`
       INSERT INTO organizations (id, name, plan_type, subscription_status, subscription_start_date, subscription_end_date)
-      VALUES (?, ?, 'trial', 'trial', datetime('now'), datetime('now', '+30 days'))
+      VALUES (?, ?, 'basic', 'trial', datetime('now'), datetime('now', '+30 days'))
     `).bind(orgId, organization_name).run();
 
     // Create admin user
