@@ -232,6 +232,36 @@ export async function callOpenAI(params: {
 }
 
 /**
+ * 오디오 매직 바이트로 실제 포맷 감지 (webm/mp4/wav/ogg/mp3)
+ * 브라우저별 MediaRecorder 산출물이 달라(Chrome=webm, iOS Safari=mp4) 확장자 오지정 시 STT 실패
+ */
+export function sniffAudioFormat(audioData: ArrayBuffer): { ext: string; mime: string } {
+  const b = new Uint8Array(audioData.slice(0, 12));
+  // EBML (webm/mkv): 1A 45 DF A3
+  if (b[0] === 0x1a && b[1] === 0x45 && b[2] === 0xdf && b[3] === 0xa3) {
+    return { ext: 'webm', mime: 'audio/webm' };
+  }
+  // MP4/M4A: 'ftyp' at offset 4
+  if (b[4] === 0x66 && b[5] === 0x74 && b[6] === 0x79 && b[7] === 0x70) {
+    return { ext: 'mp4', mime: 'audio/mp4' };
+  }
+  // WAV: 'RIFF' .... 'WAVE'
+  if (b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46 &&
+      b[8] === 0x57 && b[9] === 0x41 && b[10] === 0x56 && b[11] === 0x45) {
+    return { ext: 'wav', mime: 'audio/wav' };
+  }
+  // OGG: 'OggS'
+  if (b[0] === 0x4f && b[1] === 0x67 && b[2] === 0x67 && b[3] === 0x53) {
+    return { ext: 'ogg', mime: 'audio/ogg' };
+  }
+  // MP3: ID3 tag or frame sync
+  if ((b[0] === 0x49 && b[1] === 0x44 && b[2] === 0x33) || (b[0] === 0xff && (b[1] & 0xe0) === 0xe0)) {
+    return { ext: 'mp3', mime: 'audio/mpeg' };
+  }
+  return { ext: 'webm', mime: 'audio/webm' };
+}
+
+/**
  * OpenAI Audio Transcription API 호출 헬퍼
  */
 export async function callTranscription(params: {
@@ -244,9 +274,13 @@ export async function callTranscription(params: {
 }): Promise<any> {
   const { apiKey, model, audioData, language = 'ko', responseFormat = 'text', prompt } = params;
 
+  // 오디오 포맷 자동 감지 (매직 바이트) — OpenAI는 파일 확장자로 포맷을 판별하므로
+  // iOS Safari(mp4)·데스크톱(wav 업로드) 등 webm이 아닌 포맷도 정확히 전달해야 함
+  const { ext, mime } = sniffAudioFormat(audioData);
+
   const formData = new FormData();
-  const blob = new Blob([audioData], { type: 'audio/webm' });
-  formData.append('file', blob, 'recording.webm');
+  const blob = new Blob([audioData], { type: mime });
+  formData.append('file', blob, `recording.${ext}`);
   formData.append('model', model);
   formData.append('language', language);
   formData.append('response_format', responseFormat);

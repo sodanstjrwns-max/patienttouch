@@ -184,15 +184,29 @@ function drawWaveform() {
 }
 
 // ===== 세그먼트 녹음 엔진 =====
+// 브라우저별 지원 mimeType 자동 감지 (Chrome/Android=webm, iOS Safari=mp4)
+var recorderMimeType = (function () {
+  var candidates = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg;codecs=opus'];
+  if (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported) {
+    for (var i = 0; i < candidates.length; i++) {
+      if (MediaRecorder.isTypeSupported(candidates[i])) return candidates[i];
+    }
+  }
+  return ''; // 브라우저 기본값에 위임
+})();
+var recorderFileExt = recorderMimeType.indexOf('mp4') >= 0 ? 'mp4' : (recorderMimeType.indexOf('ogg') >= 0 ? 'ogg' : 'webm');
+
 function startSegmentRecorder() {
   segmentChunks = [];
-  mediaRecorder = new MediaRecorder(mediaStream, { mimeType: 'audio/webm' });
+  mediaRecorder = recorderMimeType
+    ? new MediaRecorder(mediaStream, { mimeType: recorderMimeType })
+    : new MediaRecorder(mediaStream);
   mediaRecorder.ondataavailable = function (e) {
     if (e.data.size > 0) segmentChunks.push(e.data);
   };
   mediaRecorder.onstop = function () {
     if (segmentChunks.length > 0) {
-      var blob = new Blob(segmentChunks, { type: 'audio/webm' });
+      var blob = new Blob(segmentChunks, { type: recorderMimeType || 'audio/webm' });
       segmentChunks = [];
       var idx = segmentIndex++;
       enqueueSegmentUpload(blob, idx);
@@ -218,7 +232,7 @@ function enqueueSegmentUpload(blob, idx) {
 
 function uploadSegmentWithRetry(blob, idx, retries) {
   var fd = new FormData();
-  fd.append('audio', blob, 'segment-' + idx + '.webm');
+  fd.append('audio', blob, 'segment-' + idx + '.' + recorderFileExt);
   fd.append('index', String(idx));
   return fetch('/api/consultations/' + consultationId + '/segments', { method: 'POST', body: fd })
     .then(function (r) { return r.json(); })

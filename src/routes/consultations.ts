@@ -652,14 +652,14 @@ consultations.get('/:id/audio', async (c) => {
       if (!chunk?.audio_url) return c.json({ success: false, error: '세그먼트를 찾을 수 없습니다.' }, 404);
       const obj = await c.env.R2.get(chunk.audio_url as string);
       if (!obj) return c.json({ success: false, error: '오디오 파일이 없습니다.' }, 404);
-      return new Response(obj.body, { headers: { 'Content-Type': 'audio/webm', 'Cache-Control': 'private, max-age=3600' } });
+      return new Response(obj.body, { headers: { 'Content-Type': obj.httpMetadata?.contentType || 'audio/webm', 'Cache-Control': 'private, max-age=3600' } });
     }
 
     // 단일 파일 재생 (레거시 녹음)
     if (consultation.audio_url) {
       const obj = await c.env.R2.get(consultation.audio_url as string);
       if (obj) {
-        return new Response(obj.body, { headers: { 'Content-Type': 'audio/webm', 'Cache-Control': 'private, max-age=3600' } });
+        return new Response(obj.body, { headers: { 'Content-Type': obj.httpMetadata?.contentType || 'audio/webm', 'Cache-Control': 'private, max-age=3600' } });
       }
     }
 
