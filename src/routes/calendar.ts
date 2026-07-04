@@ -41,6 +41,7 @@ calendar.get('/month', async (c) => {
     const userFilter = myOnly ? ' AND user_id = ?' : '';
 
     // 1) 상담 기록 (consultation_date)
+    // NOTE: 필터는 raw 범위 비교(인덱스 활용), date()는 GROUP BY에만 사용
     const consultQuery = `
       SELECT date(consultation_date) as d,
         COUNT(*) as cnt,
@@ -48,7 +49,7 @@ calendar.get('/month', async (c) => {
         SUM(CASE WHEN status = 'paid' THEN COALESCE(amount,0) ELSE 0 END) as paid_amount
       FROM consultations
       WHERE organization_id = ?${userFilter}
-        AND date(consultation_date) >= ? AND date(consultation_date) < ?
+        AND consultation_date >= ? AND consultation_date < ?
       GROUP BY date(consultation_date)
     `;
     const consultParams: (string | number)[] = myOnly ? [orgId, userId, from, to] : [orgId, from, to];
@@ -60,7 +61,7 @@ calendar.get('/month', async (c) => {
         SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending_cnt
       FROM contact_tasks
       WHERE organization_id = ?${userFilter}
-        AND date(recommended_date) >= ? AND date(recommended_date) < ?
+        AND recommended_date >= ? AND recommended_date < ?
       GROUP BY date(recommended_date)
     `;
 
@@ -68,8 +69,8 @@ calendar.get('/month', async (c) => {
     const apptQuery = `
       SELECT date(next_appointment) as d, COUNT(*) as cnt
       FROM patient_treatments
-      WHERE organization_id = ? AND next_appointment IS NOT NULL
-        AND date(next_appointment) >= ? AND date(next_appointment) < ?
+      WHERE organization_id = ?
+        AND next_appointment >= ? AND next_appointment < ?
         AND status NOT IN ('completed', 'abandoned')
       GROUP BY date(next_appointment)
     `;
@@ -78,8 +79,8 @@ calendar.get('/month', async (c) => {
     const retentionQuery = `
       SELECT date(next_contact_date) as d, COUNT(*) as cnt
       FROM retention_contacts
-      WHERE organization_id = ? AND next_contact_date IS NOT NULL
-        AND date(next_contact_date) >= ? AND date(next_contact_date) < ?
+      WHERE organization_id = ?
+        AND next_contact_date >= ? AND next_contact_date < ?
       GROUP BY date(next_contact_date)
     `;
 
@@ -153,10 +154,15 @@ calendar.get('/day', async (c) => {
       return c.json({ error: '유효하지 않은 날짜입니다. (YYYY-MM-DD)' }, 400);
     }
 
-    const userFilter = myOnly ? ' AND c.user_id = ?' : '';
-    const consultParams: (string | number)[] = myOnly ? [orgId, userId, date] : [orgId, date];
+    // 인덱스 활용을 위해 date(col)=? 대신 [date, nextDay) 범위 비교 사용
+    const nextDay = new Date(date + 'T00:00:00Z');
+    nextDay.setUTCDate(nextDay.getUTCDate() + 1);
+    const dateEnd = nextDay.toISOString().slice(0, 10);
 
-    // 1) 상담 기록
+    const userFilter = myOnly ? ' AND c.user_id = ?' : '';
+    const consultParams: (string | number)[] = myOnly ? [orgId, userId, date, dateEnd] : [orgId, date, dateEnd];
+
+    // 1) 상담 기록 (일 200건 캐핑 — 방어적 상한)
     const consultQuery = `
       SELECT c.id, c.consultation_date, c.treatment_type, c.amount, c.status,
         c.decision_score, c.ai_analysis_status,
@@ -164,8 +170,10 @@ calendar.get('/day', async (c) => {
       FROM consultations c
       LEFT JOIN patients p ON c.patient_id = p.id
       JOIN users u ON c.user_id = u.id
-      WHERE c.organization_id = ?${userFilter} AND date(c.consultation_date) = ?
+      WHERE c.organization_id = ?${userFilter}
+        AND c.consultation_date >= ? AND c.consultation_date < ?
       ORDER BY c.consultation_date ASC
+      LIMIT 200
     `;
 
     // 2) 연락 태스크
@@ -178,8 +186,10 @@ calendar.get('/day', async (c) => {
       FROM contact_tasks t
       LEFT JOIN patients p ON t.patient_id = p.id
       LEFT JOIN consultations c ON t.consultation_id = c.id
-      WHERE t.organization_id = ?${taskFilter} AND date(t.recommended_date) = ?
+      WHERE t.organization_id = ?${taskFilter}
+        AND t.recommended_date >= ? AND t.recommended_date < ?
       ORDER BY t.status ASC, t.recommended_date ASC
+      LIMIT 200
     `;
 
     // 3) 치료 예약
@@ -189,9 +199,11 @@ calendar.get('/day', async (c) => {
         p.id as patient_id, p.name as patient_name, p.phone as patient_phone
       FROM patient_treatments tr
       LEFT JOIN patients p ON tr.patient_id = p.id
-      WHERE tr.organization_id = ? AND date(tr.next_appointment) = ?
+      WHERE tr.organization_id = ?
+        AND tr.next_appointment >= ? AND tr.next_appointment < ?
         AND tr.status NOT IN ('completed', 'abandoned')
       ORDER BY tr.next_appointment ASC
+      LIMIT 200
     `;
 
     // 4) 리텐션 다음 연락 예정
@@ -203,15 +215,17 @@ calendar.get('/day', async (c) => {
       FROM retention_contacts rc
       LEFT JOIN patients p ON rc.patient_id = p.id
       LEFT JOIN users u ON rc.staff_id = u.id
-      WHERE rc.organization_id = ? AND date(rc.next_contact_date) = ?
+      WHERE rc.organization_id = ?
+        AND rc.next_contact_date >= ? AND rc.next_contact_date < ?
       ORDER BY rc.next_contact_date ASC
+      LIMIT 200
     `;
 
     const [consults, tasksRes, appts, retention] = await Promise.all([
       db.prepare(consultQuery).bind(...consultParams).all(),
       db.prepare(taskQuery).bind(...consultParams).all(),
-      db.prepare(apptQuery).bind(orgId, date).all(),
-      db.prepare(retentionQuery).bind(orgId, date).all(),
+      db.prepare(apptQuery).bind(orgId, date, dateEnd).all(),
+      db.prepare(retentionQuery).bind(orgId, date, dateEnd).all(),
     ]);
 
     return c.json({
