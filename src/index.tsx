@@ -16,6 +16,7 @@ import kakaoRoutes from './routes/kakao'
 import pushRoutes from './routes/push'
 import privacyRoutes from './routes/privacy'
 import leadRoutes from './routes/leads'
+import calendarRoutes from './routes/calendar'
 import { WelcomePage } from './components/pages/WelcomePage'
 import { PrivacyPolicyPage, TermsPage } from './components/pages/LegalPage'
 
@@ -25,6 +26,7 @@ import { RegisterPage } from './components/pages/RegisterPage'
 import { HomePage } from './components/pages/HomePage'
 import { TodayPage } from './components/pages/TodayPage'
 import { ConsultationsPage } from './components/pages/ConsultationsPage'
+import { CalendarPage } from './components/pages/CalendarPage'
 import { ConsultationDetailPage } from './components/pages/ConsultationDetailPage'
 import { PatientsPage } from './components/pages/PatientsPage'
 import { PatientDetailPage } from './components/pages/PatientDetailPage'
@@ -82,6 +84,7 @@ app.route('/api/kakao', kakaoRoutes)
 app.route('/api/push', pushRoutes)
 app.route('/api/privacy', privacyRoutes)
 app.route('/api/leads', leadRoutes)
+app.route('/api/calendar', calendarRoutes)
 
 // Page Routes
 app.get('/welcome', (c) => c.render(<WelcomePage />, { title: '페이션트 터치 — 치과 상담을 매출 엔진으로' }))
@@ -97,6 +100,7 @@ app.get('/', (c) => {
 })
 app.get('/today', (c) => c.render(<TodayPage />, { title: '오늘의 액션 - 페이션트 터치' }))
 app.get('/consultations', (c) => c.render(<ConsultationsPage />, { title: '상담 - 페이션트 터치' }))
+app.get('/calendar', (c) => c.render(<CalendarPage />, { title: '일정 캘린더 - 페이션트 터치' }))
 app.get('/consultations/:id', (c) => c.render(<ConsultationDetailPage id={c.req.param('id')} />, { title: '상담 상세 - 페이션트 터치' }))
 app.get('/consultations/:id/report', (c) => c.render(<ConsultationReportPage id={c.req.param('id')} />, { title: '상담 레포트 - 페이션트 터치' }))
 app.get('/patients', (c) => c.render(<PatientsPage />, { title: '환자 - 페이션트 터치' }))

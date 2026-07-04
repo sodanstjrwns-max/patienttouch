@@ -182,6 +182,12 @@ export const HomePage: FC = () => {
             </div>
             <span class="text-[10px] font-bold text-surface-700">성장 추적</span>
           </a>
+          <a href="/calendar" class="card-premium p-3 flex flex-col items-center gap-1.5 hover:shadow-md transition-all active:scale-[0.97] group">
+            <div class="w-10 h-10 bg-rose-50 rounded-xl flex items-center justify-center group-hover:bg-rose-100 transition-colors">
+              <i class="fas fa-calendar-days text-rose-500 text-base"></i>
+            </div>
+            <span class="text-[10px] font-bold text-surface-700">일정 캘린더</span>
+          </a>
         </div>
 
         {/* ====== LEVEL PROGRESS CARD ====== */}

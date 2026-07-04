@@ -9,6 +9,9 @@ export const ConsultationsPage: FC = () => {
         subtitle="AI 분석 기반 상담 기록"
         rightAction={
           <div class="flex items-center gap-2">
+            <a href="/calendar" class="w-10 h-10 bg-rose-50 rounded-xl flex items-center justify-center text-rose-500 hover:bg-rose-100 active:scale-95 transition-all" title="일정 캘린더">
+              <i class="fas fa-calendar-days text-sm"></i>
+            </a>
             <button id="addManualBtn" class="w-10 h-10 bg-emerald-500 rounded-xl flex items-center justify-center text-white shadow-md shadow-emerald-500/20 active:scale-95 transition-transform" title="수동 기록">
               <i class="fas fa-pen-to-square text-sm"></i>
             </button>
