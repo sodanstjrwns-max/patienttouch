@@ -17,6 +17,7 @@ import pushRoutes from './routes/push'
 import privacyRoutes from './routes/privacy'
 import leadRoutes from './routes/leads'
 import calendarRoutes from './routes/calendar'
+import touchReportRoutes from './routes/touch-report'
 import { WelcomePage } from './components/pages/WelcomePage'
 import { PrivacyPolicyPage, TermsPage } from './components/pages/LegalPage'
 
@@ -41,6 +42,9 @@ import { GrowthPage } from './components/pages/GrowthPage'
 import { ReferralNetworkPage } from './components/pages/ReferralNetworkPage'
 import { ChurnPredictionPage } from './components/pages/ChurnPredictionPage'
 import { ChurnRetrainingPage } from './components/pages/ChurnRetrainingPage'
+import { TouchReportViewPage } from './components/pages/TouchReportViewPage'
+import { TouchReportReviewPage } from './components/pages/TouchReportReviewPage'
+import { TouchReportListPage } from './components/pages/TouchReportListPage'
 
 import type { AppEnv } from './types'
 
@@ -85,6 +89,7 @@ app.route('/api/push', pushRoutes)
 app.route('/api/privacy', privacyRoutes)
 app.route('/api/leads', leadRoutes)
 app.route('/api/calendar', calendarRoutes)
+app.route('/api/touch-report', touchReportRoutes)
 
 // Page Routes
 app.get('/welcome', (c) => c.render(<WelcomePage />, { title: '페이션트 터치 — 치과 상담을 매출 엔진으로' }))
@@ -116,7 +121,12 @@ app.get('/retention/churn', (c) => c.render(<ChurnPredictionPage />, { title: 'A
 app.get('/retention/retraining', (c) => c.render(<ChurnRetrainingPage />, { title: '모델 재학습 대시보드 - 페이션트 터치' }))
 app.get('/admin', (c) => c.render(<AdminDashboardPage />, { title: '원장 대시보드 - 페이션트 터치' }))
 
+// Touch Report (실장용)
+app.get('/touch-reports', (c) => c.render(<TouchReportListPage />, { title: '터치 리포트 - 페이션트 터치' }))
+app.get('/touch-reports/:id/review', (c) => c.render(<TouchReportReviewPage id={c.req.param('id')} />, { title: '리포트 검수 - 페이션트 터치' }))
+
 // Public Pages (no auth)
 app.get('/proposal/:token', (c) => c.render(<ProposalPage token={c.req.param('token')} />, { title: '치료 제안서' }))
+app.get('/r/:token', (c) => c.render(<TouchReportViewPage token={c.req.param('token')} />, { title: '상담 보고서' }))
 
 export default app

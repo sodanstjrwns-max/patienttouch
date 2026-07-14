@@ -1,4 +1,30 @@
-# 페이션트 터치 (Patient Touch v8.9.0)
+# 페이션트 터치 (Patient Touch v9.0.0)
+
+## 📋 v9.0.0 터치 리포트 — 환자용 상담 보고서 (2026-07-14)
+
+상담 녹음 한 번으로 실장용 CRM 기록 + **환자에게 보낼 상담 보고서**가 만들어지고, 실장 승인 후 카카오톡(또는 링크)으로 전달되는 신규 기능. **자동 발송 없음 — 모든 보고서는 실장 승인 후에만 발송.**
+
+### 정확성 설계 (제품 1원칙)
+- **근거 기반 생성**: 모든 문장에 녹취 인용(evidence_quote) 필수. 녹취에 없으면 생성 금지 (`src/lib/touch-report.ts` GENERATION_SYSTEM_PROMPT)
+- **숫자 이중 검증**: 생성 1콜(gpt-5.5) + 검증 1콜(gpt-5.4-mini) 분리. 불일치/검증불가 → 노란 "확인 필요" 배지. 검증 콜 실패 시 모든 숫자 자동 플래그 (안전 우선)
+- **금칙어 필터**: 의료광고법 방어 12개 기본 사전 + 병원별 추가. 생성 후 + 발송 승인 직전 2회 검사, 대체 표현 제안
+- **발송 게이트**: 배지/금칙어 1건이라도 남으면 승인 API 400 (`FLAGS_REMAINING`/`BANNED_WORDS`) + 검수 화면 발송버튼 비활성화
+- **동의 게이트**: `kakao_delivery` 동의 없으면 생성 자체 차단 (403 `CONSENT_REQUIRED`) → 상담 상세에서 동의 기록 모달
+
+### 플로우
+상담 상세 → [터치 리포트 만들기] → (동의 확인) → AI 생성(백그라운드) → `/touch-reports/:id/review` 검수 (근거 패널 + 배지 + 인라인 수정/이력 로그) → 승인 → 발송(auth_hint 입력) → 환자 `/r/:token` 열람 (생년월일 4자리 인증, 90일 TTL)
+
+### 화면 / API
+- `/touch-reports` 목록 (상태 필터: 검수대기/승인/발송완료 + 열람 배지)
+- `/touch-reports/:id/review` 실장 검수 — 미리보기·근거(녹취 맥락 하이라이트)·배지·인라인 수정·승인·발송
+- `/r/:token` 환자 보고서 — 다크 커버 + 밝은 본문, FDI 치식도, 치료옵션 비교카드, QnA, 예약 버튼, 공유/PDF, 고지문구 고정, 빈 섹션 숨김
+- API: `/api/touch-report/manage/*` (인증) — generate/list/:id/content(PATCH)/resolve-flag/approve/send/brand-kit/consent · `/api/touch-report/public/:token` (+/meta, /event) — 열람 추적(opened/pdf_saved/shared/booking_clicked, open_count)
+- 알림톡: org kakao 키 설정 시 솔라피 어댑터 발송, 미설정 시 `manual_link` (링크 복사 전달)
+
+### DB (migration 0017, 0018)
+`touch_reports`(id=토큰 PK, status: generating/review/approved/sent/failed, content_json, flags_json, banned_hits_json, auth_hint, expires_at, open_count), `touch_report_revisions`(수정 이력), `touch_report_events`, `clinic_brand_kits`(병원 브랜드/금칙어/TTL), `patient_consents` + organizations kakao 컬럼 정식 마이그레이션(0018)
+
+---
 
 ## 📅 v8.9.0 일정 캘린더 + 스케일 검증 (2026-07-04)
 

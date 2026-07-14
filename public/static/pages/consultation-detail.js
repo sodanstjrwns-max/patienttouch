@@ -160,6 +160,20 @@ function renderConsultation(c) {
     '<i class="fas fa-chevron-right text-surface-300 text-xs group-hover:text-brand-500 transition-colors"></i>' +
   '</a>';
 
+  // === 터치 리포트 (환자용 상담 보고서) ===
+  html += '<div class="card-premium p-4" id="touchReportCard">' +
+    '<div class="flex items-center gap-3">' +
+      '<div class="w-10 h-10 rounded-xl bg-gradient-to-br from-brand-500 to-fuchsia-600 flex items-center justify-center shrink-0 shadow-sm shadow-brand-500/20">' +
+        '<i class="fas fa-file-medical text-white text-sm"></i>' +
+      '</div>' +
+      '<div class="flex-1 min-w-0">' +
+        '<p class="font-bold text-sm text-surface-900">터치 리포트 <span class="text-[10px] font-bold text-brand-500 bg-brand-50 px-1.5 py-0.5 rounded-md align-middle ml-1">NEW</span></p>' +
+        '<p class="text-xs text-surface-500 mt-0.5">환자에게 보낼 상담 보고서</p>' +
+      '</div>' +
+      '<div id="touchReportAction"><span class="text-xs text-surface-300"><i class="fas fa-spinner fa-spin"></i></span></div>' +
+    '</div>' +
+  '</div>';
+
   // Summary
   if (esc(c.summary)) {
     html += '<div class="card-premium p-5">' +
@@ -415,6 +429,9 @@ function renderConsultation(c) {
   html += '</div></div>';
 
   container.innerHTML = html;
+
+  // 터치 리포트 상태 로드 (비동기 — 카드 액션 버튼 갱신)
+  loadTouchReportStatus(c);
 
   // Render Charts after DOM update
   setTimeout(function() {
@@ -698,6 +715,127 @@ function playSegment(idx, autoplay) {
   if (label) label.textContent = '구간 ' + (idx + 1) + ' / ' + _audioSegments.length + ' (각 1분)';
   audio.src = '/api/consultations/' + consultationId + '/audio?segment=' + _audioSegments[idx];
   if (autoplay) audio.play().catch(function () {});
+}
+
+// ============================================
+// 터치 리포트 — 상담 상세 진입점
+// ============================================
+async function loadTouchReportStatus(c) {
+  var el = document.getElementById('touchReportAction');
+  if (!el) return;
+  try {
+    var res = await fetch('/api/touch-report/manage/list');
+    var data = await res.json();
+    var mine = (data.success ? data.data : []).filter(function (r) { return r.consultation_id === consultationId; });
+    // 최신 리포트 1건
+    var r = mine.length ? mine[0] : null;
+    renderTouchReportAction(el, r, c);
+  } catch (e) {
+    el.innerHTML = '';
+  }
+}
+
+function renderTouchReportAction(el, r, c) {
+  var canGenerate = c && c.transcript && String(c.transcript).trim().length >= 50 && c.patient_id;
+  if (!r) {
+    if (!canGenerate) {
+      el.innerHTML = '<span class="text-[11px] text-surface-400">' + (c && c.patient_id ? '녹취록 필요' : '환자 연결 필요') + '</span>';
+      return;
+    }
+    el.innerHTML = '<button onclick="generateTouchReport()" class="px-3.5 py-2 rounded-lg bg-brand-50 text-brand-600 text-xs font-semibold hover:bg-brand-100 transition-colors"><i class="fas fa-wand-magic-sparkles mr-1 text-[10px]"></i>만들기</button>';
+    return;
+  }
+  var map = {
+    generating: '<span class="px-3 py-1.5 rounded-full text-[11px] font-bold bg-surface-100 text-surface-600"><i class="fas fa-spinner fa-spin mr-1"></i>생성중</span>',
+    review: '<a href="/touch-reports/' + r.id + '/review" class="px-3.5 py-2 rounded-lg bg-amber-50 text-amber-700 text-xs font-bold hover:bg-amber-100 transition-colors"><i class="fas fa-magnifying-glass mr-1 text-[10px]"></i>검수하기</a>',
+    approved: '<a href="/touch-reports/' + r.id + '/review" class="px-3.5 py-2 rounded-lg bg-brand-50 text-brand-600 text-xs font-bold hover:bg-brand-100 transition-colors"><i class="fas fa-paper-plane mr-1 text-[10px]"></i>발송하기</a>',
+    sent: '<a href="/touch-reports/' + r.id + '/review" class="px-3.5 py-2 rounded-lg bg-emerald-50 text-emerald-700 text-xs font-bold hover:bg-emerald-100 transition-colors"><i class="fas fa-check mr-1 text-[10px]"></i>발송완료' + (r.open_count ? ' · 열람 ' + r.open_count : '') + '</a>',
+    failed: '<button onclick="generateTouchReport()" class="px-3.5 py-2 rounded-lg bg-rose-50 text-rose-600 text-xs font-bold hover:bg-rose-100 transition-colors"><i class="fas fa-rotate-right mr-1 text-[10px]"></i>재시도</button>',
+  };
+  el.innerHTML = map[r.status] || '';
+  // 생성중이면 5초 후 재확인
+  if (r.status === 'generating') {
+    setTimeout(function () { loadTouchReportStatus(currentConsultation); }, 5000);
+  }
+}
+
+async function generateTouchReport() {
+  var el = document.getElementById('touchReportAction');
+  el.innerHTML = '<span class="text-xs text-surface-300"><i class="fas fa-spinner fa-spin"></i></span>';
+  try {
+    var res = await fetch('/api/touch-report/manage/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ consultation_id: consultationId }),
+    });
+    var data = await res.json();
+    if (!data.success) {
+      if (data.code === 'CONSENT_REQUIRED') {
+        showConsentModal();
+        renderTouchReportAction(el, null, currentConsultation);
+        return;
+      }
+      alert(data.error || '생성 실패');
+      renderTouchReportAction(el, null, currentConsultation);
+      return;
+    }
+    loadTouchReportStatus(currentConsultation);
+  } catch (e) {
+    alert('네트워크 오류');
+    renderTouchReportAction(el, null, currentConsultation);
+  }
+}
+
+// 동의 기록 모달 (제작서 §7: 동의 없으면 생성 차단)
+function showConsentModal() {
+  var existing = document.getElementById('trConsentModal');
+  if (existing) existing.remove();
+  var modal = document.createElement('div');
+  modal.id = 'trConsentModal';
+  modal.className = 'fixed inset-0 bg-surface-900/60 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center';
+  modal.innerHTML =
+    '<div class="bg-white rounded-t-3xl sm:rounded-3xl w-full sm:max-w-lg p-6 animate-slide-up">' +
+      '<div class="flex justify-between items-center mb-4">' +
+        '<h3 class="text-base font-bold text-surface-900"><i class="fas fa-file-signature text-brand-500 mr-2"></i>환자 동의 기록</h3>' +
+        '<button onclick="document.getElementById(\'trConsentModal\').remove()" class="w-9 h-9 flex items-center justify-center rounded-xl bg-surface-100 text-surface-500"><i class="fas fa-xmark"></i></button>' +
+      '</div>' +
+      '<p class="text-sm text-surface-500 mb-4 leading-relaxed">보고서 생성·발송에는 환자 동의가 필요합니다.<br/>동의서를 받았다면 아래 항목을 체크해주세요.</p>' +
+      '<div class="space-y-2.5 mb-5">' +
+        consentRow('recording', '상담 녹음 동의') +
+        consentRow('ai_processing', 'AI 요약 처리 동의') +
+        consentRow('kakao_delivery', '카카오톡 보고서 발송 동의 <span class="text-[10px] text-rose-500 font-bold">(필수)</span>') +
+      '</div>' +
+      '<button onclick="saveConsents()" class="w-full py-3.5 rounded-xl bg-gradient-brand text-white font-bold text-sm shadow-md shadow-brand-600/20 active:scale-[0.98] transition-all">동의 기록 저장</button>' +
+    '</div>';
+  modal.addEventListener('click', function (e) { if (e.target === modal) modal.remove(); });
+  document.body.appendChild(modal);
+}
+
+function consentRow(type, label) {
+  return '<label class="flex items-center gap-3 px-4 py-3 rounded-xl bg-surface-50 border border-surface-200 cursor-pointer">' +
+    '<input type="checkbox" class="tr-consent-cb w-5 h-5 rounded-md accent-[#7c4dff]" data-type="' + type + '" checked/>' +
+    '<span class="text-sm font-semibold text-surface-800">' + label + '</span></label>';
+}
+
+async function saveConsents() {
+  if (!currentConsultation || !currentConsultation.patient_id) { alert('환자가 연결되지 않았습니다'); return; }
+  var consents = Array.prototype.map.call(document.querySelectorAll('.tr-consent-cb'), function (cb) {
+    return { type: cb.dataset.type, granted: cb.checked };
+  });
+  var kakao = consents.find(function (x) { return x.type === 'kakao_delivery'; });
+  try {
+    var res = await fetch('/api/touch-report/manage/consent', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ patient_id: currentConsultation.patient_id, consents: consents }),
+    });
+    var data = await res.json();
+    if (!data.success) { alert(data.error || '저장 실패'); return; }
+    document.getElementById('trConsentModal').remove();
+    if (kakao && kakao.granted) generateTouchReport();
+  } catch (e) {
+    alert('네트워크 오류');
+  }
 }
 
 loadConsultation();
