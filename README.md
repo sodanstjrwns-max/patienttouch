@@ -1,4 +1,34 @@
-# 페이션트 터치 (Patient Touch v9.0.0)
+# 페이션트 터치 (Patient Touch v9.1.0)
+
+## 🔧 v9.1.0 poll-to-advance 분석 파이프라인 — 프로덕션 88% 멈춤 근본 수정 (2026-07-17)
+
+### 🚨 근본 원인 (실오디오 프로덕션 E2E로 확정)
+Cloudflare 프로덕션은 `waitUntil` 백그라운드 작업을 **응답 후 ~30초 내에 강제 종료**한다. 레포트 생성 등 60~90초 걸리는 AI 콜이 중간에 죽어 분석이 **88%(reporting)에서 영구 멈춤**. 로컬 `wrangler pages dev`는 이 제한이 없어 **로컬 테스트만으로는 절대 재현 불가** — 이것이 "로컬은 되는데 프로덕션은 안 되는" 이유였음.
+
+### ✅ 해결: poll-to-advance 아키텍처
+- **클라이언트 폴링 요청이 곧 파이프라인 실행자**: `analysis-status` 폴링(3초)이 들어올 때마다 서버가 다음 단계를 **동기 실행** 후 응답 (클라이언트 연결이 워커를 살려둠 — waitUntil 의존 제거)
+- **클레임 락** (migration 0019: `analysis_claim`/`analysis_claim_at`, TTL 150초): 동시 폴링이 와도 한 요청만 실행, 나머지는 현재 상태만 반환
+- **단계별 아티팩트 D1 영속화**: transcribing(세그먼트 STT 배치3, 재시도 2회) → diarizing → extracting(NER+SPIN 병렬) → reporting. 어느 요청이든 이어서 재개 가능
+- **터치 리포트 동일 패턴**: `gen_claim` 락, content_json 유무로 생성/검증 단계 구분, `manage/list`·`manage/:id` 조회가 진행시킴
+- **finalize/reanalyze/generate**는 상태만 세팅 + best-effort 1회 advance 후 즉시 응답
+- stale 감지는 15분 안전망으로만 유지 (클레임이 updated_at 갱신)
+- `src/routes/reports.ts` 레거시 waitUntil 백그라운드 잡(9.5KB) 전면 삭제
+
+### 📊 실오디오 E2E 검증 결과 (TTS 한국어 상담 73초 → webm opus 60초 세그먼트, 브라우저 녹음 동일 포맷)
+| 환경 | 결과 |
+|---|---|
+| 로컬 | 214초 완료 (score 50) ✅ |
+| **프로덕션** | **118초 완료 (score 51)** ✅ — 세그먼트 업로드→STT→finalize→분석→레포트 전 구간 |
+| 프로덕션 터치리포트 | 생성→review 18초 (flag 5건) → resolve→approve→send→환자 열람 `/r/:token` (인증·open tracking) 전부 통과 ✅ |
+
+### 📏 실사용 시뮬레이션 필수 절차 (배포 전 체크리스트 — 반드시 준수)
+1. **실제 오디오 필수**: TTS로 한국어 상담 대화 생성 → ffmpeg로 webm opus 60초 세그먼트 분할 (브라우저 MediaRecorder 포맷 재현). 텍스트 재분석 숏컷 테스트만으로 통과 처리 금지
+2. **로컬 E2E**: 세그먼트 업로드 → finalize → analysis-status 폴링 → completed + coaching_score 확인
+3. **프로덕션 E2E**: 배포 후 **프로덕션에서 동일 플로우 반복** — waitUntil 등 프로덕션 전용 제약은 로컬에서 재현되지 않음
+4. **터치 리포트 전 구간**: 동의 → 생성 → 검수(flag resolve) → 승인 → 발송 → 환자 열람(인증 성공/실패) → open_count/이벤트 기록 확인
+5. **전 페이지·핵심 API 스모크**: 주요 페이지 200 + dashboard/patients/consultations/tasks API 응답 확인
+
+---
 
 ## 📋 v9.0.0 터치 리포트 — 환자용 상담 보고서 (2026-07-14)
 
