@@ -63,6 +63,21 @@ export const RecordingPage: FC<RecordingPageProps> = ({ patientId }) => {
           <div id="timerSub" class="text-xs text-surface-500 mt-2">녹음 버튼을 눌러 시작하세요</div>
         </div>
 
+        {/* File Upload (이미 녹음된 파일) */}
+        <div class="px-5 mb-4" id="uploadFileSection">
+          <input type="file" id="audioFileInput" accept="audio/*,.m4a,.mp3,.wav,.webm,.ogg,.mp4,.aac" class="hidden" />
+          <button id="uploadFileBtn" class="w-full glass-dark rounded-2xl p-4 flex items-center gap-3 hover:bg-white/5 transition-colors text-left" onclick="pickAudioFile()">
+            <div class="w-11 h-11 rounded-xl bg-cyan-500/20 flex items-center justify-center shrink-0">
+              <i class="fas fa-file-audio text-cyan-400"></i>
+            </div>
+            <div class="flex-1 min-w-0">
+              <p class="text-sm font-bold text-white">녹음 파일 업로드</p>
+              <p class="text-xs text-surface-400">이미 녹음된 파일(mp3·m4a·wav·webm 등, 최대 25MB)로 바로 분석</p>
+            </div>
+            <i class="fas fa-chevron-right text-surface-500 text-xs"></i>
+          </button>
+        </div>
+
         {/* Quality indicator (shown after save) */}
         <div id="qualityIndicator" class="px-5 mb-4 hidden"></div>
 

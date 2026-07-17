@@ -307,7 +307,8 @@ export async function callTranscription(params: {
 
   if (!response.ok) {
     const error = await response.text();
-    throw new Error(`Transcription failed (${model}): ${error}`);
+    // status를 [4xx] 형태로 포함 — 호출측에서 영구실패(파일 손상 등) 판별에 사용
+    throw new Error(`Transcription failed (${model}) [${response.status}]: ${error}`);
   }
 
   if (responseFormat === 'verbose_json' || responseFormat === 'json') {

@@ -682,16 +682,25 @@ consultations.post('/:id/upload-audio', async (c) => {
     if (!audioFile) {
       return c.json({ success: false, error: '녹음 파일이 없습니다.' }, 400);
     }
+    // v9.1.1: 파일 검증 — OpenAI STT 한도 25MB, 빈 파일 거부
+    if (audioFile.size > 25 * 1024 * 1024) {
+      return c.json({ success: false, error: '파일이 25MB를 초과합니다. 더 짧게 나누어 업로드해주세요.' }, 400);
+    }
+    if (audioFile.size < 1024) {
+      return c.json({ success: false, error: '파일이 너무 작습니다. 정상 녹음 파일인지 확인해주세요.' }, 400);
+    }
 
     const apiKey = c.env.OPENAI_API_KEY;
     if (!apiKey) {
       return c.json({ success: false, error: 'OpenAI API 키가 설정되지 않았습니다.' }, 500);
     }
 
-    // R2 저장
-    const audioKey = `consultations/${consultId}/recording.webm`;
+    // R2 저장 — 원본 포맷 유지 (매직바이트로 확장자 감지: mp3/m4a/wav/webm/ogg)
     const audioData = await audioFile.arrayBuffer();
-    await c.env.R2.put(audioKey, audioData, { httpMetadata: { contentType: audioFile.type } });
+    const { sniffAudioFormat } = await import('../lib/ai-config');
+    const fmt = sniffAudioFormat(audioData);
+    const audioKey = `consultations/${consultId}/recording.${fmt.ext}`;
+    await c.env.R2.put(audioKey, audioData, { httpMetadata: { contentType: audioFile.type || fmt.mime } });
 
     // 즉시 processing 전환 후 응답 — 분석은 백그라운드
     await db.prepare(`

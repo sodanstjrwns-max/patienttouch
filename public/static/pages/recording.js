@@ -197,24 +197,28 @@ var recorderMimeType = (function () {
 var recorderFileExt = recorderMimeType.indexOf('mp4') >= 0 ? 'mp4' : (recorderMimeType.indexOf('ogg') >= 0 ? 'ogg' : 'webm');
 
 function startSegmentRecorder() {
-  segmentChunks = [];
-  mediaRecorder = recorderMimeType
+  // v9.1.1: 세그먼트별 chunks를 클로저로 격리 — 이전 버전은 전역 배열을 공유해
+  // 로테이션 시 새 레코더가 배열을 초기화, 이전 레코더의 onstop이 헤더 없는
+  // 조각만 담긴 깨진 webm을 업로드하는 레이스가 있었음 (STT 인식 불가 원인)
+  var chunks = [];
+  var rec = recorderMimeType
     ? new MediaRecorder(mediaStream, { mimeType: recorderMimeType })
     : new MediaRecorder(mediaStream);
-  mediaRecorder.ondataavailable = function (e) {
-    if (e.data.size > 0) segmentChunks.push(e.data);
+  rec.ondataavailable = function (e) {
+    if (e.data.size > 0) chunks.push(e.data);
   };
-  mediaRecorder.onstop = function () {
-    if (segmentChunks.length > 0) {
-      var blob = new Blob(segmentChunks, { type: recorderMimeType || 'audio/webm' });
-      segmentChunks = [];
+  rec.onstop = function () {
+    if (chunks.length > 0) {
+      var blob = new Blob(chunks, { type: recorderMimeType || 'audio/webm' });
+      chunks = [];
       var idx = segmentIndex++;
       enqueueSegmentUpload(blob, idx);
     }
     // 마지막 세그먼트 flush 대기자 (saveRecording)에게 알림
     if (stopResolver) { var r = stopResolver; stopResolver = null; r(); }
   };
-  mediaRecorder.start(1000);
+  rec.start(1000);
+  mediaRecorder = rec;
 }
 
 // 60초마다 recorder 재시작 → 각 세그먼트가 독립 재생/STT 가능한 webm이 됨
@@ -301,6 +305,8 @@ function closeConsentSheet() {
   if (el) el.remove();
 }
 
+var pendingConsentAction = null; // 동의 완료 후 실행할 액션 (기본: 녹음 시작)
+
 function confirmConsent() {
   var cb = document.getElementById('consentCheck');
   if (!cb || !cb.checked) {
@@ -309,7 +315,101 @@ function confirmConsent() {
   }
   consentConfirmed = true;
   closeConsentSheet();
-  toggleRecording(); // 동의 완료 → 녹음 시작 재진입
+  if (pendingConsentAction) {
+    var act = pendingConsentAction;
+    pendingConsentAction = null;
+    act();
+  } else {
+    toggleRecording(); // 동의 완료 → 녹음 시작 재진입
+  }
+}
+
+// ===== v9.1.1: 이미 녹음된 파일 업로드 =====
+var MAX_UPLOAD_BYTES = 25 * 1024 * 1024; // OpenAI STT 한도 25MB
+
+function pickAudioFile() {
+  if (isRecording || finalizing) { showToast('녹음 중에는 파일을 업로드할 수 없습니다', 'warning'); return; }
+  var input = document.getElementById('audioFileInput');
+  if (!input) return;
+  input.onchange = function () {
+    var file = input.files && input.files[0];
+    input.value = ''; // 같은 파일 재선택 허용
+    if (!file) return;
+    if (file.size > MAX_UPLOAD_BYTES) {
+      showToast('파일이 25MB를 초과합니다. 더 짧게 나누어 업로드해주세요.', 'error');
+      return;
+    }
+    if (file.size < 1024) {
+      showToast('파일이 너무 작습니다. 정상 녹음 파일인지 확인해주세요.', 'error');
+      return;
+    }
+    var proceed = function () { uploadPickedFile(file); };
+    if (!consentConfirmed) { pendingConsentAction = proceed; showConsentSheet(); return; }
+    proceed();
+  };
+  input.click();
+}
+
+function readAudioDurationMin(file) {
+  // 브라우저 디코더로 길이(분) 추정 — 실패하면 null (서버는 null 허용)
+  return new Promise(function (resolve) {
+    try {
+      var url = URL.createObjectURL(file);
+      var a = new Audio();
+      var done = false;
+      var finish = function (v) { if (done) return; done = true; URL.revokeObjectURL(url); resolve(v); };
+      a.onloadedmetadata = function () {
+        var d = a.duration;
+        finish(isFinite(d) && d > 0 ? Math.max(1, Math.round(d / 60)) : null);
+      };
+      a.onerror = function () { finish(null); };
+      setTimeout(function () { finish(null); }, 5000);
+      a.src = url;
+    } catch (e) { resolve(null); }
+  });
+}
+
+async function uploadPickedFile(file) {
+  finalizing = true;
+  var btn = document.getElementById('uploadFileBtn');
+  if (btn) { btn.classList.add('opacity-50', 'pointer-events-none'); }
+  document.getElementById('statusText').textContent = '파일 업로드 중...';
+  document.getElementById('statusText').className = 'text-xs text-brand-400 font-semibold animate-pulse-soft';
+  document.getElementById('timerSub').textContent = escapeHtmlSafe(file.name) + ' 업로드 중...';
+
+  try {
+    // 1. 상담 레코드 생성
+    var createRes = await fetch('/api/consultations', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ patient_id: selectedPatientId, recording_consent: consentConfirmed })
+    });
+    var createData = await createRes.json();
+    if (!createData.success) throw new Error(createData.error || '상담 기록 생성 실패');
+    consultationId = createData.data.id;
+
+    // 2. 길이 추정 + 업로드 → 서버가 바로 분석 시작 (processing)
+    var durationMin = await readAudioDurationMin(file);
+    var fd = new FormData();
+    fd.append('audio', file, file.name || 'upload.webm');
+    if (durationMin) fd.append('duration', String(durationMin));
+    var upRes = await fetch('/api/consultations/' + consultationId + '/upload-audio', { method: 'POST', body: fd });
+    var upData = await upRes.json();
+    if (!upData.success) throw new Error(upData.error || '업로드 실패');
+
+    // 3. 분석 폴링 (녹음 플로우와 동일 UI)
+    consentConfirmed = false;
+    document.getElementById('recordBtn').classList.add('opacity-50', 'pointer-events-none');
+    document.getElementById('timerSub').textContent = 'AI가 상담을 분석하고 있습니다... (이 화면을 벗어나도 분석은 계속됩니다)';
+    showAnalysisProgress();
+    pollAnalysis();
+  } catch (err) {
+    finalizing = false;
+    if (btn) { btn.classList.remove('opacity-50', 'pointer-events-none'); }
+    document.getElementById('statusText').textContent = '업로드 실패';
+    document.getElementById('statusText').className = 'text-xs text-rose-400 font-semibold';
+    showToast(err.message || '파일 업로드에 실패했습니다', 'error');
+  }
 }
 
 // ===== 녹음 시작/일시정지/재개 =====

@@ -560,7 +560,15 @@ export async function transcribeSegmentJob(
       .bind(text || '', chunkId).run();
     console.log('[AnalysisRunner] Segment transcribed:', chunkId, (text || '').length, 'chars');
   } catch (err: any) {
-    console.error('[AnalysisRunner] Segment STT failed:', chunkId, err?.message);
-    // transcript NULL로 남음 → finalize 시 재시도
+    const msg = String(err?.message || '');
+    console.error('[AnalysisRunner] Segment STT failed:', chunkId, msg);
+    // 4xx = 영구 실패 (파일 손상/포맷 불량 등) — ''로 마킹해 재시도 루프에서 제외,
+    // 나머지 정상 세그먼트만으로 분석을 계속 진행
+    if (/\[4\d\d\]/.test(msg)) {
+      await db.prepare("UPDATE stt_chunks SET transcript = '', confidence = 0 WHERE id = ?")
+        .bind(chunkId).run();
+      return;
+    }
+    // 5xx/네트워크 오류 → transcript NULL 유지 → 다음 폴링에서 재시도
   }
 }
