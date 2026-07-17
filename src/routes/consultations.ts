@@ -258,6 +258,7 @@ consultations.get('/:id', async (c) => {
         emotion_flow: safeParseJSON(consultation.emotion_flow as string, {}),
         key_quotes: safeParseJSON(consultation.key_quotes as string, []),
         feedback: safeParseJSON(consultation.feedback as string, {}),
+        spin_analysis: safeParseJSON(consultation.spin_analysis as string, null),
         companion: safeParseJSON(consultation.companion as string, null),
         referrer: safeParseJSON(consultation.referrer as string, null)
       }

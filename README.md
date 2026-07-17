@@ -1,4 +1,26 @@
-# 페이션트 터치 (Patient Touch v9.1.1)
+# 페이션트 터치 (Patient Touch v9.1.2)
+
+## 🩺 v9.1.2 상담 상세 화면 데이터 정합성 전면 수리 (2026-07-17)
+
+### 🚨 "모자란거 파악해봐" — 화면 vs DB 감사 결과 (9개 갭 발견, 전부 수정)
+사용자 화면에는 코칭 점수 0점·가짜 SPIN 숫자·중립 감정 등이 표시됐지만 **DB에는 실데이터가 전부 존재**했음. 원인은 프론트↔백엔드 스키마 불일치 8건 + UI 부재 1건.
+
+| # | 갭 | 원인 | 수정 |
+|---|-----|------|------|
+| 1 | 상태 배지 "분석중" 오표기 | `pending`(결과 미입력)을 분석 상태로 오해석 | 배지 → **"결과 미입력"** |
+| 2 | 코칭 점수 전부 0 표시 | 프론트가 구 4키(needs/value…) 기대, 백엔드는 6키(rapport 0-20, spin 0-25, objection_handling 0-20, pricing_framing 0-15, closing 0-10, structure 0-10) | 6영역 신스키마 렌더 + 구스키마 폴백 |
+| 3 | 잘한 점/개선점 미표시 | `strengths`/`improvements` 키 미대응 | strengths·improvements(💡suggestion+example)·patient_code_evaluation 렌더 |
+| 4 | 레이더 차트 왜곡 | 만점이 영역별로 달라(20/25/…) 절대값 비교 불가 | 100% 환산 정규화 |
+| 5 | SPIN 카드 가짜 숫자 | 코칭 점수에서 유도한 파생값 표시 | `spin_analysis` 실데이터(질문 감지수·질문 텍스트·spin_score/100·spin_feedback) 렌더 |
+| 6 | spin_analysis API 미반환 | GET /:id에서 파싱 자체를 안 함 | `safeParseJSON` 추가 반환 |
+| 7 | 감정 "중립" 오표기 | `very_positive`/`very_negative` 톤 미매핑, `timeline` 대신 `phases` 기대 | 톤 5단계 매핑 + timeline 차트(-1~+1→0~4, mm:ss) + 하이라이트 멘트(화자 표기) |
+| 8 | 환자 심리 결정권자만 표시 | 백엔드 키 {main_concern, budget_range, timeline} 미대응 | 핵심 고민·예산 민감도·결정 타임라인 렌더 추가 (구키 폴백 유지) |
+| 9 | 상담 결과 입력 UI 부재 | pending에서 벗어날 방법이 화면에 없었음 | **상담 결과 카드** 신설: 결제완료(금액 입력)/미결정/이탈 버튼 → `PUT /api/consultations/:id` |
+
+### ✅ 검증 (실사용 시뮬레이션 — 필수 절차 준수)
+- 로컬: API 응답에 spin_analysis(score=25)·6키 scores·신 psychology 키·timeline 12pt 확인, DOM 스텁 렌더 스모크 13/13 통과, PUT paid(₩3,500,000)→undecided→pending 왕복 + 화이트리스트 400 확인
+- 프로덕션: sw `pt-v9.1.2` 서빙, consultation-detail.js 신코드 서빙, consult_3c44f8b7 API 필드 전부 확인, PUT paid(₩1,200,000)→pending 왕복 성공
+- consult_bd5c780d 원본 데이터(remote D1): main_concern·very_positive·spin_analysis 실존 확인 → 새 프론트에서 정상 표시됨
 
 ## 🎙 v9.1.1 녹음 파일 업로드 + 세그먼트 손상 근본 수정 (2026-07-17)
 

@@ -44,7 +44,8 @@ function renderConsultation(c) {
     paid: { bg:'bg-emerald-50', text:'text-emerald-700', label:'결제완료', ring:'ring-emerald-200/60', dot:'bg-emerald-500' },
     undecided: { bg:'bg-amber-50', text:'text-amber-700', label:'미결정', ring:'ring-amber-200/60', dot:'bg-amber-500' },
     lost: { bg:'bg-rose-50', text:'text-rose-700', label:'이탈', ring:'ring-rose-200/60', dot:'bg-rose-500' },
-    pending: { bg:'bg-surface-50', text:'text-surface-600', label:'분석중', ring:'ring-surface-200/60', dot:'bg-surface-400' }
+    // v9.1.2: pending은 '상담 결과 미입력' 상태 — AI 분석 상태(ai_analysis_status)와 별개임
+    pending: { bg:'bg-surface-50', text:'text-surface-600', label:'결과 미입력', ring:'ring-surface-200/60', dot:'bg-surface-400' }
   }[c.status] || { bg:'bg-surface-50', text:'text-surface-600', label:c.status, ring:'ring-surface-200/60', dot:'bg-surface-400' };
 
   const psychology = c.patient_psychology || {};
@@ -190,18 +191,21 @@ function renderConsultation(c) {
   }
 
   // Patient Psychology
-  if (psychology.fear || psychology.hesitation_reason || psychology.decision_factor || psychology.decision_maker) {
+  // v9.1.2: 백엔드 실제 스키마({main_concern, decision_maker, budget_range, timeline}) 키 매핑 추가 (구 키는 폴백 유지)
+  if (psychology.main_concern || psychology.budget_range || psychology.timeline || psychology.fear || psychology.hesitation_reason || psychology.decision_factor || psychology.decision_maker) {
     html += '<div class="card-premium p-5">' +
       '<div class="flex items-center gap-2 mb-3">' +
         '<div class="w-7 h-7 rounded-lg bg-rose-50 flex items-center justify-center"><i class="fas fa-brain text-xs text-rose-600"></i></div>' +
         '<h3 class="font-bold text-sm text-surface-900">환자 심리 분석</h3>' +
       '</div>' +
       '<div class="space-y-2.5">' +
+        (psychology.main_concern ? '<div class="flex gap-3 items-start p-2.5 bg-rose-50/50 rounded-xl"><span class="text-base shrink-0">🎯</span><div><p class="text-[10px] font-semibold text-rose-500 uppercase tracking-wider mb-0.5">핵심 고민</p><p class="text-sm text-surface-800">' + esc(psychology.main_concern) + '</p></div></div>' : '') +
         (psychology.fear ? '<div class="flex gap-3 items-start p-2.5 bg-rose-50/50 rounded-xl"><span class="text-base shrink-0">😰</span><div><p class="text-[10px] font-semibold text-rose-500 uppercase tracking-wider mb-0.5">두려움</p><p class="text-sm text-surface-800">' + psychology.fear + '</p></div></div>' : '') +
         (psychology.hesitation_reason ? '<div class="flex gap-3 items-start p-2.5 bg-amber-50/50 rounded-xl"><span class="text-base shrink-0">🤔</span><div><p class="text-[10px] font-semibold text-amber-500 uppercase tracking-wider mb-0.5">미결정 사유</p><p class="text-sm text-surface-800">' + psychology.hesitation_reason + '</p></div></div>' : '') +
         (psychology.decision_maker ? '<div class="flex gap-3 items-start p-2.5 bg-sky-50/50 rounded-xl"><span class="text-base shrink-0">👥</span><div><p class="text-[10px] font-semibold text-sky-500 uppercase tracking-wider mb-0.5">결정권자</p><p class="text-sm text-surface-800">' + psychology.decision_maker + '</p></div></div>' : '') +
         (psychology.decision_factor ? '<div class="flex gap-3 items-start p-2.5 bg-emerald-50/50 rounded-xl"><span class="text-base shrink-0">⭐</span><div><p class="text-[10px] font-semibold text-emerald-500 uppercase tracking-wider mb-0.5">결정 요인</p><p class="text-sm text-surface-800">' + psychology.decision_factor + '</p></div></div>' : '') +
-        (psychology.budget ? '<div class="flex gap-3 items-start p-2.5 bg-violet-50/50 rounded-xl"><span class="text-base shrink-0">💰</span><div><p class="text-[10px] font-semibold text-violet-500 uppercase tracking-wider mb-0.5">예산</p><p class="text-sm text-surface-800">' + psychology.budget + '</p></div></div>' : '') +
+        ((psychology.budget || psychology.budget_range) ? '<div class="flex gap-3 items-start p-2.5 bg-violet-50/50 rounded-xl"><span class="text-base shrink-0">💰</span><div><p class="text-[10px] font-semibold text-violet-500 uppercase tracking-wider mb-0.5">예산 민감도</p><p class="text-sm text-surface-800">' + esc(psychology.budget || psychology.budget_range) + '</p></div></div>' : '') +
+        (psychology.timeline ? '<div class="flex gap-3 items-start p-2.5 bg-cyan-50/50 rounded-xl"><span class="text-base shrink-0">⏳</span><div><p class="text-[10px] font-semibold text-cyan-600 uppercase tracking-wider mb-0.5">결정 타임라인</p><p class="text-sm text-surface-800">' + esc(psychology.timeline) + '</p></div></div>' : '') +
         (psychology.hidden_needs ? '<div class="flex gap-3 items-start p-2.5 bg-purple-50/50 rounded-xl"><span class="text-base shrink-0">🔮</span><div><p class="text-[10px] font-semibold text-purple-500 uppercase tracking-wider mb-0.5">숨겨진 니즈</p><p class="text-sm text-surface-800">' + psychology.hidden_needs + '</p></div></div>' : '') +
         (psychology.personality_type ? '<div class="flex gap-3 items-start p-2.5 bg-indigo-50/50 rounded-xl"><span class="text-base shrink-0">🧬</span><div><p class="text-[10px] font-semibold text-indigo-500 uppercase tracking-wider mb-0.5">환자 성향</p><p class="text-sm text-surface-800">' + psychology.personality_type + '</p></div></div>' : '') +
       '</div>' +
@@ -210,9 +214,9 @@ function renderConsultation(c) {
 
   // Emotion Flow + Chart
   if (emotionFlow.overall_tone || esc(emotionFlow.summary)) {
-    var toneEmoji = { positive: '😊', neutral: '😐', negative: '😔' };
-    var toneName = { positive: '긍정적', neutral: '중립', negative: '부정적' };
-    var toneColor = { positive: 'emerald', neutral: 'amber', negative: 'rose' };
+    var toneEmoji = { very_positive: '🤩', positive: '😊', neutral: '😐', negative: '😔', very_negative: '😟' };
+    var toneName = { very_positive: '매우 긍정적', positive: '긍정적', neutral: '중립', negative: '부정적', very_negative: '매우 부정적' };
+    var toneColor = { very_positive: 'emerald', positive: 'emerald', neutral: 'amber', negative: 'rose', very_negative: 'rose' };
     var tc = toneColor[emotionFlow.overall_tone] || 'amber';
     html += '<div class="card-premium p-5">' +
       '<div class="flex items-center gap-2 mb-3">' +
@@ -227,10 +231,22 @@ function renderConsultation(c) {
         '</div>' +
         (c.decision_score ? '<div class="text-center"><p class="text-2xl font-black text-brand-600">' + c.decision_score + '<span class="text-xs font-semibold text-surface-400">/10</span></p><p class="text-[9px] text-surface-400">결정도</p></div>' : '') +
       '</div>';
-    // Emotion flow timeline chart
-    if (emotionFlow.phases && emotionFlow.phases.length > 0) {
+    // Emotion flow timeline chart (v9.1.2: 백엔드는 timeline 배열을 저장 — phases 구버전도 폴백)
+    var emoPoints = (emotionFlow.timeline && emotionFlow.timeline.length > 0) ? emotionFlow.timeline
+                  : (emotionFlow.phases && emotionFlow.phases.length > 0) ? emotionFlow.phases : null;
+    if (emoPoints) {
       html += '<div class="mb-3"><p class="text-[10px] font-bold text-surface-500 uppercase tracking-wider mb-2">감정 변화 흐름</p>' +
         '<canvas id="emotionFlowChart" height="120"></canvas></div>';
+      // 하이라이트 순간 메모
+      var hls = emoPoints.filter(function(p){ return p.highlight && p.note; }).slice(0, 3);
+      if (hls.length > 0) {
+        html += '<div class="space-y-1.5 mb-3">' + hls.map(function(p) {
+          var spk = p.speaker === 'patient' ? '🧑 환자' : p.speaker === 'consultant' ? '👩‍⚕️ 상담사' : '';
+          return '<div class="flex items-start gap-2 text-xs text-surface-600 bg-purple-50/40 rounded-lg px-2.5 py-1.5">' +
+            '<span class="shrink-0 font-bold text-purple-500">' + (p.timestamp !== undefined ? Math.floor(p.timestamp/60) + ':' + String(Math.floor(p.timestamp%60)).padStart(2,'0') : '') + '</span>' +
+            '<span>' + (spk ? '<b>' + spk + '</b> · ' : '') + esc(p.note) + '</span></div>';
+        }).join('') + '</div>';
+      }
     } else {
       // Simple bar representation of decision score
       html += (c.decision_score ? '<div class="mb-3">' +
@@ -242,24 +258,42 @@ function renderConsultation(c) {
     '</div>';
   }
 
-  // Key Quotes
+  // Patient Concerns (v9.1.2: 데이터 실체는 '환자 우려사항' — 인용문 형식 따옴표 제거)
   if (keyQuotes.length > 0) {
     html += '<div class="card-premium p-5">' +
       '<div class="flex items-center gap-2 mb-3">' +
-        '<div class="w-7 h-7 rounded-lg bg-amber-50 flex items-center justify-center"><i class="fas fa-quote-left text-xs text-amber-600"></i></div>' +
-        '<h3 class="font-bold text-sm text-surface-900">핵심 멘트</h3>' +
+        '<div class="w-7 h-7 rounded-lg bg-amber-50 flex items-center justify-center"><i class="fas fa-comment-dots text-xs text-amber-600"></i></div>' +
+        '<h3 class="font-bold text-sm text-surface-900">환자 우려 포인트</h3>' +
       '</div>' +
       '<div class="space-y-2">' +
         keyQuotes.map(function(q) {
-          return '<div class="p-3 bg-amber-50/50 rounded-xl text-sm text-surface-800 border-l-3 border-amber-400 italic">"' + q + '"</div>';
+          return '<div class="p-3 bg-amber-50/50 rounded-xl text-sm text-surface-800 border-l-3 border-amber-400">' + esc(q) + '</div>';
         }).join('') +
       '</div>' +
     '</div>';
   }
 
   // Coaching Feedback with Radar Chart
-  if (feedback.good_points || feedback.improve_points || feedback.total_score) {
+  // v9.1.2: 백엔드 실제 스키마(rapport/spin/objection_handling/pricing_framing/closing/structure,
+  // strengths/improvements)에 맞춤. 구버전 키(good_points/needs_identification 등)도 폴백 지원.
+  if (feedback.strengths || feedback.improvements || feedback.good_points || feedback.improve_points || feedback.total_score) {
     var scores = feedback.scores || {};
+    var isNewSchema = scores.rapport !== undefined || scores.spin !== undefined || scores.structure !== undefined;
+    var coachAreas = isNewSchema ? [
+      {key:'rapport', name:'라포 형성', icon:'fa-heart', max:20, color:'rose'},
+      {key:'spin', name:'SPIN 질문', icon:'fa-magnifying-glass', max:25, color:'violet'},
+      {key:'objection_handling', name:'반론 처리', icon:'fa-shield', max:20, color:'amber'},
+      {key:'pricing_framing', name:'가격 프레이밍', icon:'fa-tag', max:15, color:'emerald'},
+      {key:'closing', name:'클로징', icon:'fa-handshake', max:10, color:'sky'},
+      {key:'structure', name:'상담 구조', icon:'fa-sitemap', max:10, color:'orange'}
+    ] : [
+      {key:'needs_identification', name:'니즈 파악', icon:'fa-magnifying-glass', max:25, color:'sky'},
+      {key:'value_delivery', name:'가치 전달', icon:'fa-gem', max:25, color:'emerald'},
+      {key:'objection_handling', name:'이의 처리', icon:'fa-shield', max:25, color:'amber'},
+      {key:'closing', name:'클로징', icon:'fa-handshake', max:25, color:'rose'}
+    ];
+    var coachStrengths = feedback.strengths || feedback.good_points || [];
+    var coachImprovements = feedback.improvements || feedback.improve_points || [];
     html += '<div class="card-premium p-5">' +
       '<div class="flex items-center gap-2 mb-3">' +
         '<div class="w-7 h-7 rounded-lg bg-emerald-50 flex items-center justify-center"><i class="fas fa-lightbulb text-xs text-emerald-600"></i></div>' +
@@ -274,12 +308,7 @@ function renderConsultation(c) {
       html += '<div class="w-1/2"><canvas id="coachingRadarChart" height="160"></canvas></div>';
       // Score grid (right)
       html += '<div class="w-1/2 flex flex-col justify-center space-y-2">';
-      var areaItems = [
-        {key:'needs_identification', name:'니즈 파악', icon:'fa-magnifying-glass', max:25, color:'sky'},
-        {key:'value_delivery', name:'가치 전달', icon:'fa-gem', max:25, color:'emerald'},
-        {key:'objection_handling', name:'이의 처리', icon:'fa-shield', max:25, color:'amber'},
-        {key:'closing', name:'클로징', icon:'fa-handshake', max:25, color:'rose'}
-      ];
+      var areaItems = coachAreas;
       areaItems.forEach(function(a) {
         var s = scores[a.key] || 0;
         var pct = Math.round(s / a.max * 100);
@@ -306,70 +335,84 @@ function renderConsultation(c) {
       '</div>';
     }
 
-    if (feedback.good_points && feedback.good_points.length > 0) {
+    if (coachStrengths.length > 0) {
       html += '<div class="mb-3"><p class="text-xs font-semibold text-emerald-600 mb-2 flex items-center gap-1"><i class="fas fa-check-circle"></i>잘한 점</p>' +
         '<div class="space-y-1">' +
-          feedback.good_points.map(function(p) { return '<div class="flex items-start gap-2 text-sm text-surface-700"><span class="text-emerald-500 mt-0.5 shrink-0">•</span>' + p + '</div>'; }).join('') +
+          coachStrengths.map(function(p) {
+            var txt = typeof p === 'string' ? p : (p.issue || p.text || '');
+            return '<div class="flex items-start gap-2 text-sm text-surface-700"><span class="text-emerald-500 mt-0.5 shrink-0">•</span>' + esc(txt) + '</div>';
+          }).join('') +
         '</div></div>';
     }
 
-    if (feedback.improve_points && feedback.improve_points.length > 0) {
+    if (coachImprovements.length > 0) {
       html += '<div><p class="text-xs font-semibold text-amber-600 mb-2 flex items-center gap-1"><i class="fas fa-arrow-trend-up"></i>개선 포인트</p>' +
         '<div class="space-y-2">' +
-          feedback.improve_points.map(function(p) {
+          coachImprovements.map(function(p) {
+            if (typeof p === 'string') return '<div class="bg-amber-50/50 rounded-xl p-3"><p class="text-sm text-surface-800">• ' + esc(p) + '</p></div>';
             return '<div class="bg-amber-50/50 rounded-xl p-3"><p class="text-sm text-surface-800">• ' + esc(p.issue) + '</p>' +
-              (esc(p.suggestion) ? '<p class="text-xs text-brand-600 mt-1 ml-3">💡 "' + esc(p.suggestion) + '"</p>' : '') + '</div>';
+              (p.suggestion ? '<p class="text-xs text-brand-600 mt-1 ml-3">💡 ' + esc(p.suggestion) + '</p>' : '') +
+              (p.example ? '<p class="text-xs text-surface-500 mt-1 ml-3 italic">예시: ' + esc(p.example) + '</p>' : '') + '</div>';
           }).join('') +
         '</div></div>';
+    }
+
+    if (feedback.patient_code_evaluation) {
+      html += '<div class="mt-3 p-3 bg-brand-50/40 rounded-xl border border-brand-100/60">' +
+        '<p class="text-[10px] font-bold text-brand-600 mb-1"><i class="fas fa-stethoscope mr-1"></i>Patient Code 종합 평가</p>' +
+        '<p class="text-xs text-surface-700 leading-relaxed">' + esc(feedback.patient_code_evaluation) + '</p></div>';
     }
 
     html += '</div>';
   }
 
-  // SPIN Analysis Card (from coaching feedback scores)
-  if (feedback.total_score) {
-    var spinData = {
-      situation: { label: '상황 질문', desc: '환자의 현재 상태 파악', score: scores.needs_identification || 0, max: 25, icon: '🔍' },
-      problem: { label: '문제 인식', desc: '환자의 불편/필요 탐색', score: Math.round((scores.needs_identification || 0) * 0.6 + (scores.objection_handling || 0) * 0.4), max: 25, icon: '⚡' },
-      implication: { label: '시사 제시', desc: '방치 시 결과 안내', score: scores.value_delivery || 0, max: 25, icon: '💡' },
-      needPayoff: { label: '해결 가치', desc: '치료 후 기대 효과', score: scores.closing || 0, max: 25, icon: '🎯' }
-    };
+  // SPIN Analysis Card — v9.1.2: 실제 spin_analysis 데이터(질문 검출 목록 + spin_score + AI 피드백) 사용.
+  // 이전 버전은 코칭 점수를 임의 가공한 가짜 수치를 표시했음 (예: 시사=가치전달 점수 복사)
+  var spinRaw = c.spin_analysis;
+  if (spinRaw && (spinRaw.spin_score !== undefined || spinRaw.situation_questions)) {
+    var spinCats = [
+      { label: '상황 질문', desc: '환자의 현재 상태 파악', icon: '🔍', qs: spinRaw.situation_questions || [] },
+      { label: '문제 질문', desc: '환자의 불편/필요 탐색', icon: '⚡', qs: spinRaw.problem_questions || [] },
+      { label: '시사 질문', desc: '방치 시 결과를 스스로 느끼게', icon: '💡', qs: spinRaw.implication_questions || [] },
+      { label: '해결 질문', desc: '치료 후 기대를 말하게', icon: '🎯', qs: spinRaw.need_payoff_questions || [] }
+    ];
     html += '<div class="card-premium p-5">' +
       '<div class="flex items-center gap-2 mb-3">' +
         '<div class="w-7 h-7 rounded-lg bg-violet-50 flex items-center justify-center"><i class="fas fa-chess-knight text-xs text-violet-600"></i></div>' +
         '<h3 class="font-bold text-sm text-surface-900">SPIN 상담 전략 분석</h3>' +
-        '<span class="ml-auto text-[10px] font-semibold text-violet-600 bg-violet-50 px-2 py-0.5 rounded-lg">Patient Funnel</span>' +
+        (spinRaw.spin_score !== undefined ? '<span class="ml-auto text-lg font-black text-violet-600">' + spinRaw.spin_score + '<span class="text-xs font-semibold text-surface-400">/100</span></span>' : '<span class="ml-auto text-[10px] font-semibold text-violet-600 bg-violet-50 px-2 py-0.5 rounded-lg">Patient Funnel</span>') +
       '</div>';
-    
-    // SPIN Progress Bars
+
+    // 검출된 질문 개수 + 실제 질문 목록
     html += '<div class="space-y-3">';
-    ['situation','problem','implication','needPayoff'].forEach(function(key) {
-      var sp = spinData[key];
-      var pct = Math.round(sp.score / sp.max * 100);
-      var barColor = pct >= 80 ? 'from-emerald-500 to-emerald-400' : pct >= 60 ? 'from-brand-500 to-brand-400' : pct >= 40 ? 'from-amber-500 to-amber-400' : 'from-rose-500 to-rose-400';
+    spinCats.forEach(function(cat) {
+      var n = cat.qs.length;
+      var badge = n > 0
+        ? '<span class="text-xs font-black text-emerald-600">' + n + '회 감지</span>'
+        : '<span class="text-xs font-bold text-rose-400">질문 없음</span>';
       html += '<div>' +
         '<div class="flex items-center justify-between mb-1">' +
-          '<div class="flex items-center gap-1.5"><span class="text-sm">' + sp.icon + '</span><span class="text-xs font-bold text-surface-800">' + sp.label + '</span></div>' +
-          '<span class="text-xs font-black text-surface-700">' + sp.score + '<span class="text-surface-400 font-semibold">/' + sp.max + '</span></span>' +
+          '<div class="flex items-center gap-1.5"><span class="text-sm">' + cat.icon + '</span><span class="text-xs font-bold text-surface-800">' + cat.label + '</span></div>' + badge +
         '</div>' +
-        '<div class="h-2 bg-surface-100 rounded-full overflow-hidden"><div class="h-full bg-gradient-to-r ' + barColor + ' rounded-full transition-all duration-1000" style="width:' + pct + '%"></div></div>' +
-        '<p class="text-[10px] text-surface-400 mt-0.5">' + sp.desc + '</p>' +
-      '</div>';
+        '<p class="text-[10px] text-surface-400">' + cat.desc + '</p>';
+      if (n > 0) {
+        html += '<div class="mt-1 space-y-1">' + cat.qs.slice(0, 3).map(function(q) {
+          var qt = typeof q === 'string' ? q : (q.question || q.text || JSON.stringify(q));
+          return '<p class="text-xs text-surface-600 bg-violet-50/50 rounded-lg px-2.5 py-1.5 italic">"' + esc(qt) + '"</p>';
+        }).join('') + '</div>';
+      }
+      html += '</div>';
     });
     html += '</div>';
 
-    // SPIN Strategy Tip
-    var weakest = ['situation','problem','implication','needPayoff'].sort(function(a,b) { return spinData[a].score - spinData[b].score; })[0];
-    var tipMap = {
-      situation: '현재 환자의 생활 습관, 통증 빈도, 이전 치과 경험을 더 깊이 물어보세요.',
-      problem: '환자가 겪는 불편함을 구체적으로 표현하도록 유도하세요. "어떤 점이 가장 불편하세요?"',
-      implication: '치료를 미루면 어떤 결과가 생기는지 시각화하여 설명하세요.',
-      needPayoff: '치료 후 달라지는 일상의 변화를 구체적으로 그려주세요.'
-    };
-    html += '<div class="mt-3 p-3 bg-gradient-to-r from-violet-50 to-purple-50/30 rounded-xl border border-violet-100/50">' +
-      '<p class="text-[10px] font-bold text-violet-600 mb-1"><i class="fas fa-lightbulb mr-1"></i>AI 전략 코칭 — ' + spinData[weakest].label + ' 강화 필요</p>' +
-      '<p class="text-xs text-surface-700 leading-relaxed">' + tipMap[weakest] + '</p>' +
-    '</div></div>';
+    // AI SPIN 피드백 (실제 분석 코멘트)
+    if (spinRaw.spin_feedback) {
+      html += '<div class="mt-3 p-3 bg-gradient-to-r from-violet-50 to-purple-50/30 rounded-xl border border-violet-100/50">' +
+        '<p class="text-[10px] font-bold text-violet-600 mb-1"><i class="fas fa-lightbulb mr-1"></i>AI 전략 코칭</p>' +
+        '<p class="text-xs text-surface-700 leading-relaxed whitespace-pre-line">' + esc(spinRaw.spin_feedback) + '</p>' +
+      '</div>';
+    }
+    html += '</div>';
   }
 
   // Next Step Strategy Card (for undecided patients)
@@ -413,6 +456,29 @@ function renderConsultation(c) {
     '</div>';
   }
 
+  // v9.1.2: 상담 결과 입력/변경 UI (pending = 결과 미입력 상태)
+  {
+    var stOpts = [
+      { key: 'paid', label: '결제완료', icon: '✅', activeCls: 'bg-emerald-600 text-white shadow-lg shadow-emerald-600/25', idleCls: 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100' },
+      { key: 'undecided', label: '미결정', icon: '⏳', activeCls: 'bg-amber-500 text-white shadow-lg shadow-amber-500/25', idleCls: 'bg-amber-50 text-amber-700 hover:bg-amber-100' },
+      { key: 'lost', label: '이탈', icon: '🚪', activeCls: 'bg-surface-700 text-white shadow-lg shadow-surface-700/25', idleCls: 'bg-surface-100 text-surface-600 hover:bg-surface-200' }
+    ];
+    html += '<div class="card-premium p-4">' +
+      '<div class="flex items-center gap-2 mb-3">' +
+        '<div class="w-7 h-7 rounded-lg bg-brand-50 flex items-center justify-center"><i class="fas fa-flag-checkered text-xs text-brand-600"></i></div>' +
+        '<h3 class="font-bold text-sm text-surface-900">상담 결과</h3>' +
+        (c.status === 'pending' ? '<span class="ml-auto text-[10px] font-semibold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full">미입력</span>' : '') +
+      '</div>' +
+      '<div class="grid grid-cols-3 gap-2">' +
+      stOpts.map(function(o) {
+        var active = c.status === o.key;
+        return '<button onclick="changeConsultStatus(\'' + o.key + '\')" class="py-2.5 px-2 rounded-xl text-xs font-bold transition-all active:scale-[0.97] ' + (active ? o.activeCls : o.idleCls) + '">' + o.icon + ' ' + o.label + (active ? ' ✓' : '') + '</button>';
+      }).join('') +
+      '</div>' +
+      (c.status === 'paid' && c.amount ? '<p class="mt-2.5 text-xs text-surface-500 text-center">결제 금액: <span class="font-bold text-surface-800">' + Number(c.amount).toLocaleString() + '원</span> <button onclick="changeConsultStatus(\'paid\')" class="ml-1 text-brand-600 font-semibold underline">수정</button></p>' : '') +
+    '</div>';
+  }
+
   // Actions
   html += '<div class="space-y-2 pt-2">';
   if (isUnlinked) {
@@ -439,13 +505,16 @@ function renderConsultation(c) {
     var radarCanvas = document.getElementById('coachingRadarChart');
     if (radarCanvas && window.Chart && feedback.total_score) {
       var sc = feedback.scores || {};
+      // v9.1.2: 영역별 만점이 달라(20/25/20/15/10/10) 100% 환산 값으로 표시
+      var radarLabels = coachAreas.map(function(a){ return a.name; });
+      var radarData = coachAreas.map(function(a){ return Math.round((sc[a.key] || 0) / a.max * 100); });
       new Chart(radarCanvas.getContext('2d'), {
         type: 'radar',
         data: {
-          labels: ['니즈 파악', '가치 전달', '이의 처리', '클로징'],
+          labels: radarLabels,
           datasets: [{
-            label: '이번 상담',
-            data: [sc.needs_identification||0, sc.value_delivery||0, sc.objection_handling||0, sc.closing||0],
+            label: '이번 상담 (달성률 %)',
+            data: radarData,
             backgroundColor: 'rgba(99,102,241,0.15)',
             borderColor: 'rgba(99,102,241,0.8)',
             borderWidth: 2,
@@ -453,8 +522,8 @@ function renderConsultation(c) {
             pointRadius: 4,
             pointHoverRadius: 6
           }, {
-            label: '목표 (25)',
-            data: [25, 25, 25, 25],
+            label: '목표 (100%)',
+            data: radarLabels.map(function(){ return 100; }),
             backgroundColor: 'rgba(148,163,184,0.05)',
             borderColor: 'rgba(148,163,184,0.3)',
             borderWidth: 1,
@@ -465,18 +534,25 @@ function renderConsultation(c) {
         options: {
           responsive: true,
           maintainAspectRatio: true,
-          scales: { r: { beginAtZero: true, max: 25, ticks: { display: false, stepSize: 5 }, grid: { color: 'rgba(148,163,184,0.15)' }, pointLabels: { font: { size: 9, family: 'Pretendard Variable', weight: '600' }, color: '#64748b' } } },
-          plugins: { legend: { display: false } }
+          scales: { r: { beginAtZero: true, max: 100, ticks: { display: false, stepSize: 20 }, grid: { color: 'rgba(148,163,184,0.15)' }, pointLabels: { font: { size: 9, family: 'Pretendard Variable', weight: '600' }, color: '#64748b' } } },
+          plugins: { legend: { display: false }, tooltip: { callbacks: { label: function(ctx){ return ctx.raw + '%'; } } } }
         }
       });
     }
 
     // Emotion Flow Chart
     var emotionCanvas = document.getElementById('emotionFlowChart');
-    if (emotionCanvas && window.Chart && emotionFlow.phases) {
-      var phases = emotionFlow.phases;
-      var phaseLabels = phases.map(function(p) { return p.label || p.phase || ''; });
+    var emoChartPoints = (emotionFlow.timeline && emotionFlow.timeline.length > 0) ? emotionFlow.timeline
+                       : (emotionFlow.phases && emotionFlow.phases.length > 0) ? emotionFlow.phases : null;
+    if (emotionCanvas && window.Chart && emoChartPoints) {
+      var phases = emoChartPoints;
+      var phaseLabels = phases.map(function(p) {
+        if (p.timestamp !== undefined) return Math.floor(p.timestamp/60) + ':' + String(Math.floor(p.timestamp%60)).padStart(2,'0');
+        return p.label || p.phase || '';
+      });
       var phaseScores = phases.map(function(p) {
+        // timeline은 score -1~+1 → 0~4 스케일 변환, phases 구버전은 sentiment 매핑
+        if (typeof p.score === 'number' && p.score >= -1 && p.score <= 1 && p.timestamp !== undefined) return (p.score + 1) * 2;
         if (p.sentiment === 'positive' || p.tone === 'positive') return 3;
         if (p.sentiment === 'neutral' || p.tone === 'neutral') return 2;
         if (p.sentiment === 'negative' || p.tone === 'negative') return 1;
@@ -547,6 +623,33 @@ function renderPatientList(patients) {
       '<div class="min-w-0"><p class="font-semibold text-surface-900 text-sm">' + esc(p.name) + '</p><p class="text-surface-500 text-xs">' + (p.phone || '연락처 없음') + '</p></div>' +
     '</button>';
   }).join('');
+}
+
+// v9.1.2: 상담 결과 상태 변경 (paid/undecided/lost) — PUT /api/consultations/:id
+async function changeConsultStatus(newStatus) {
+  var body = { status: newStatus };
+  if (newStatus === 'paid') {
+    var cur = (currentConsultation && currentConsultation.amount) ? String(currentConsultation.amount) : '';
+    var input = prompt('결제 금액을 입력하세요 (원, 숫자만)', cur);
+    if (input === null) return; // 취소
+    var amt = Number(String(input).replace(/[^0-9]/g, ''));
+    if (!isFinite(amt) || amt < 0) { showToast('금액은 0 이상의 숫자로 입력해주세요.', 'error'); return; }
+    body.amount = amt;
+  }
+  try {
+    var res = await fetch('/api/consultations/' + consultationId, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    var data = await res.json();
+    if (data.success) {
+      var msg = { paid: '결제완료로 변경되었습니다 🎉', undecided: '미결정으로 변경되었습니다', lost: '이탈로 기록되었습니다' };
+      showToast(msg[newStatus] || '상태가 변경되었습니다.', 'success');
+      loadConsultation();
+    } else {
+      showToast(data.error || '상태 변경에 실패했습니다.', 'error');
+    }
+  } catch (err) { showToast('오류가 발생했습니다.', 'error'); }
 }
 
 async function linkPatient(patientId) {
