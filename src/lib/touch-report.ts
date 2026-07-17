@@ -175,18 +175,16 @@ const VERIFY_SYSTEM_PROMPT = `당신은 의료 문서 검증 감사관입니다.
 
 // ---------- 파이프라인 ----------
 
-export async function generateTouchReport(params: {
+// v9.1: 1단계 — 근거 기반 생성 (primary model). poll-to-advance에서 단독 호출 가능
+export async function generateReportContentStep(params: {
   transcript: string;
   patientName: string;
   consultationDate: string;
   apiKey: string;
   env?: Record<string, any>;
-  extraBannedWords?: Array<{ word: string; suggestion: string }>;
-}): Promise<TouchReportResult> {
-  const { transcript, patientName, consultationDate, apiKey, env, extraBannedWords } = params;
+}): Promise<TouchReportContent> {
+  const { transcript, patientName, consultationDate, apiKey, env } = params;
   const config = getAIConfig(env || {});
-
-  // === 1콜: 근거 기반 생성 (primary model) ===
   console.log('[TouchReport] Generating with', config.primaryModel);
   const generated = await callOpenAI({
     apiKey,
@@ -198,8 +196,7 @@ export async function generateTouchReport(params: {
     jsonMode: true,
     maxTokens: 16384,
   });
-
-  const content: TouchReportContent = {
+  return {
     patient_name: patientName,
     consultation_date: consultationDate,
     summary: Array.isArray(generated.summary) ? generated.summary : [],
@@ -209,10 +206,17 @@ export async function generateTouchReport(params: {
     qna: Array.isArray(generated.qna) ? generated.qna : [],
     next_steps: generated.next_steps || null,
   };
+}
 
-  // === 2콜: 숫자 이중 검증 (secondary model — 독립 대조) ===
+// v9.1: 2단계 — 숫자 이중 검증 (secondary model). 실패 시 안전 우선 flag 전량 생성
+export async function verifyReportContentStep(
+  content: TouchReportContent,
+  transcript: string,
+  apiKey: string,
+  env?: Record<string, any>
+): Promise<ReportFlag[]> {
+  const config = getAIConfig(env || {});
   console.log('[TouchReport] Verifying with', config.secondaryModel);
-  let flags: ReportFlag[] = [];
   try {
     const verification = await callOpenAI({
       apiKey,
@@ -225,7 +229,7 @@ export async function generateTouchReport(params: {
       maxTokens: 16384,
     });
     const checks: any[] = Array.isArray(verification.checks) ? verification.checks : [];
-    flags = checks
+    return checks
       .filter((ch) => ch.verdict === 'flag')
       .map((ch) => ({
         path: String(ch.path || ''),
@@ -237,7 +241,7 @@ export async function generateTouchReport(params: {
   } catch (err: any) {
     // 검증 콜 실패 시: 안전 우선 — 모든 숫자 항목을 flag 처리하여 실장 확인 강제
     console.error('[TouchReport] Verification call failed:', err?.message);
-    flags = content.treatment_options.flatMap((opt, i) => {
+    return content.treatment_options.flatMap((opt, i) => {
       const f: ReportFlag[] = [];
       if (opt.cost) f.push({ path: `treatment_options[${i}].cost`, label: `${opt.name} 비용`, value: opt.cost, reason: '자동 검증 실패 — 수동 확인 필요', quote: opt.evidence_quote || '' });
       if (opt.duration) f.push({ path: `treatment_options[${i}].duration`, label: `${opt.name} 기간`, value: opt.duration, reason: '자동 검증 실패 — 수동 확인 필요', quote: opt.evidence_quote || '' });
@@ -245,8 +249,21 @@ export async function generateTouchReport(params: {
       return f;
     });
   }
+}
 
-  // === 금칙어 스캔 (1차: 생성 직후) ===
+export async function generateTouchReport(params: {
+  transcript: string;
+  patientName: string;
+  consultationDate: string;
+  apiKey: string;
+  env?: Record<string, any>;
+  extraBannedWords?: Array<{ word: string; suggestion: string }>;
+}): Promise<TouchReportResult> {
+  const { transcript, patientName, consultationDate, apiKey, env, extraBannedWords } = params;
+  const config = getAIConfig(env || {});
+
+  const content = await generateReportContentStep({ transcript, patientName, consultationDate, apiKey, env });
+  const flags = await verifyReportContentStep(content, transcript, apiKey, env);
   const bannedHits = scanBannedWords(content, extraBannedWords);
 
   return {

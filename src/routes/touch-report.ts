@@ -6,12 +6,91 @@ import { Hono } from 'hono';
 import { safeParseJSON } from '../lib/utils';
 import { authMiddleware } from '../lib/auth';
 import {
-  generateTouchReport, generateReportToken, scanBannedWords, setContentByPath,
+  generateReportToken, scanBannedWords, setContentByPath,
+  generateReportContentStep, verifyReportContentStep,
   type TouchReportContent, type ReportFlag,
 } from '../lib/touch-report';
+import { getAIConfig } from '../lib/ai-config';
 import type { AppEnv } from '../types';
 
 const tr = new Hono<AppEnv>();
+
+// ============================================================
+// v9.1 poll-to-advance 생성 파이프라인
+// 프로덕션 waitUntil 조기종료 대응: 검수 화면 폴링(GET manage/:id)이
+// 생성(1콜) → 검증(2콜)을 단계별로 전진시킨다. gen_claim으로 중복 방지.
+// content_json 유무가 단계 마커: NULL=생성 전, 있음=검증 대기.
+// ============================================================
+const TR_CLAIM_TTL = 150; // seconds
+
+async function advanceTouchReportGeneration(
+  db: D1Database,
+  env: Record<string, any>,
+  apiKey: string,
+  reportId: string,
+  orgId: string
+): Promise<boolean> {
+  const report: any = await db.prepare(`
+    SELECT r.id, r.status, r.content_json, r.patient_id, r.consultation_id,
+           c.transcript, c.consultation_date, p.name as patient_name
+    FROM touch_reports r
+    JOIN consultations c ON r.consultation_id = c.id
+    JOIN patients p ON r.patient_id = p.id
+    WHERE r.id = ? AND r.organization_id = ?
+  `).bind(reportId, orgId).first();
+  if (!report || report.status !== 'generating') return false;
+
+  // 클레임
+  const claimId = 'trc_' + Math.random().toString(36).slice(2, 10);
+  const claimed = await db.prepare(`
+    UPDATE touch_reports SET gen_claim = ?, gen_claim_at = datetime('now'), updated_at = datetime('now')
+    WHERE id = ? AND status = 'generating'
+      AND (gen_claim IS NULL OR gen_claim_at IS NULL OR gen_claim_at < datetime('now', '-${TR_CLAIM_TTL} seconds'))
+  `).bind(claimId, reportId).run();
+  if (!(claimed.meta?.changes || 0)) return false;
+
+  const config = getAIConfig(env);
+  try {
+    if (!report.content_json) {
+      // === 1단계: 근거 기반 생성 ===
+      const content = await generateReportContentStep({
+        transcript: String(report.transcript),
+        patientName: String(report.patient_name),
+        consultationDate: String(report.consultation_date || '').slice(0, 10),
+        apiKey, env,
+      });
+      await db.prepare(`
+        UPDATE touch_reports SET content_json = ?, generation_model = ?,
+          gen_claim = NULL, gen_claim_at = NULL, updated_at = datetime('now')
+        WHERE id = ?
+      `).bind(JSON.stringify(content), config.primaryModel, reportId).run();
+      return true;
+    }
+
+    // === 2단계: 숫자 이중 검증 + 금칙어 → review 전환 ===
+    const content = safeParseJSON(report.content_json, null) as TouchReportContent | null;
+    if (!content) throw new Error('생성된 콘텐츠 파싱 실패');
+    const flags = await verifyReportContentStep(content, String(report.transcript), apiKey, env);
+    const kit: any = await db.prepare('SELECT banned_words_json FROM clinic_brand_kits WHERE organization_id = ?').bind(orgId).first();
+    const extraBanned = kit?.banned_words_json ? safeParseJSON(kit.banned_words_json, []) : [];
+    const bannedHits = scanBannedWords(content, extraBanned);
+    await db.prepare(`
+      UPDATE touch_reports SET status = 'review', flags_json = ?, banned_hits_json = ?,
+        verify_model = ?, gen_claim = NULL, gen_claim_at = NULL, updated_at = datetime('now')
+      WHERE id = ?
+    `).bind(JSON.stringify(flags), JSON.stringify(bannedHits), config.secondaryModel, reportId).run();
+    console.log('[TouchReport] advance: review ready', reportId, 'flags:', flags.length, 'banned:', bannedHits.length);
+    return true;
+  } catch (err: any) {
+    console.error('[TouchReport] advance failed:', err?.message);
+    await db.prepare(`
+      UPDATE touch_reports SET status = 'failed', error_message = ?,
+        gen_claim = NULL, gen_claim_at = NULL, updated_at = datetime('now')
+      WHERE id = ?
+    `).bind(String(err?.message || '생성 실패').slice(0, 500), reportId).run();
+    return true;
+  }
+}
 
 // ---- 인증 필요 라우트 (실장/직원용) ----
 tr.use('/manage/*', authMiddleware);
@@ -62,37 +141,12 @@ tr.post('/manage/generate', async (c) => {
       VALUES (?, ?, ?, ?, 'generating', ?, datetime('now', '+' || ? || ' days'))
     `).bind(token, orgId, consultation_id, consult.patient_id, kit?.auth_required ?? 1, ttlDays).run();
 
+    // v9.1 poll-to-advance: 첫 단계만 waitUntil로 즉시 시도.
+    // 이후 단계는 검수 화면/상담 상세 폴링(GET manage/:id, manage/list?tick)이 전진시킴.
     const env = c.env as any;
-    const extraBanned = kit?.banned_words_json ? safeParseJSON(kit.banned_words_json, []) : [];
-
-    // 백그라운드 생성 (제작서 §3.1~3.4: 근거기반 + 이중검증 + 금칙어)
-    const job = (async () => {
-      try {
-        const result = await generateTouchReport({
-          transcript: String(consult.transcript),
-          patientName: String(consult.patient_name),
-          consultationDate: String(consult.consultation_date || '').slice(0, 10),
-          apiKey, env, extraBannedWords: extraBanned,
-        });
-        await db.prepare(`
-          UPDATE touch_reports SET status = 'review',
-            content_json = ?, flags_json = ?, banned_hits_json = ?,
-            generation_model = ?, verify_model = ?, updated_at = datetime('now')
-          WHERE id = ?
-        `).bind(
-          JSON.stringify(result.content),
-          JSON.stringify(result.flags),
-          JSON.stringify(result.bannedHits),
-          result.generationModel, result.verifyModel, token
-        ).run();
-        console.log('[TouchReport] Generated:', token, 'flags:', result.flags.length, 'banned:', result.bannedHits.length);
-      } catch (err: any) {
-        console.error('[TouchReport] Generation failed:', err?.message);
-        await db.prepare(`UPDATE touch_reports SET status = 'failed', error_message = ?, updated_at = datetime('now') WHERE id = ?`)
-          .bind(String(err?.message || '생성 실패').slice(0, 500), token).run();
-      }
-    })();
-    c.executionCtx.waitUntil(job);
+    c.executionCtx.waitUntil(
+      advanceTouchReportGeneration(db, env, apiKey, token, orgId).catch(() => {})
+    );
 
     return c.json({ success: true, data: { report_id: token, status: 'generating' } });
   } catch (error: any) {
@@ -108,6 +162,20 @@ tr.get('/manage/list', async (c) => {
   const orgId = c.get('organizationId');
   const db = c.env.DB;
   const status = c.req.query('status');
+
+  // v9.1 poll-to-advance: 상담 상세가 5초 간격으로 이 목록을 폴링하므로,
+  // generating 상태 리포트가 있으면 가장 오래된 1건을 여기서 전진시킨다.
+  if (c.env.OPENAI_API_KEY) {
+    try {
+      const generating: any = await db.prepare(
+        "SELECT id FROM touch_reports WHERE organization_id = ? AND status = 'generating' ORDER BY created_at ASC LIMIT 1"
+      ).bind(orgId).first();
+      if (generating) {
+        await advanceTouchReportGeneration(db, c.env as any, c.env.OPENAI_API_KEY, generating.id, orgId);
+      }
+    } catch (e) { console.warn('[TouchReport] list advance error:', e); }
+  }
+
   let sql = `
     SELECT r.id, r.consultation_id, r.patient_id, r.status, r.open_count,
       r.sent_at, r.first_opened_at, r.last_opened_at, r.created_at, r.error_message,
@@ -136,13 +204,23 @@ tr.get('/manage/list', async (c) => {
 tr.get('/manage/:id', async (c) => {
   const orgId = c.get('organizationId');
   const db = c.env.DB;
+  const reportId = c.req.param('id');
+
+  // v9.1 poll-to-advance: generating이면 이 폴링 요청이 생성 단계를 전진시킴
+  const statusRow: any = await db.prepare('SELECT status FROM touch_reports WHERE id = ? AND organization_id = ?').bind(reportId, orgId).first();
+  if (statusRow?.status === 'generating' && c.env.OPENAI_API_KEY) {
+    try {
+      await advanceTouchReportGeneration(db, c.env as any, c.env.OPENAI_API_KEY, reportId, orgId);
+    } catch (e) { console.warn('[TouchReport] advance error:', e); }
+  }
+
   const report: any = await db.prepare(`
     SELECT r.*, p.name as patient_name, p.phone as patient_phone, c.consultation_date, c.transcript
     FROM touch_reports r
     JOIN patients p ON r.patient_id = p.id
     JOIN consultations c ON r.consultation_id = c.id
     WHERE r.id = ? AND r.organization_id = ?
-  `).bind(c.req.param('id'), orgId).first();
+  `).bind(reportId, orgId).first();
   if (!report) return c.json({ success: false, error: '보고서를 찾을 수 없습니다' }, 404);
   return c.json({
     success: true,

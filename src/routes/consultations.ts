@@ -3,7 +3,7 @@ import { Hono } from 'hono';
 import { generateId, safeParseJSON } from '../lib/utils';
 import { authMiddleware } from '../lib/auth';
 import { analyzeConsultation } from '../lib/ai';
-import { runAnalysisJob, transcribeSegmentJob } from '../lib/analysis-runner';
+import { transcribeSegmentJob, advanceAnalysisPipeline } from '../lib/analysis-runner';
 import { safeInt } from '../lib/middleware';
 import type { AppEnv, Env, Consultation } from '../types';
 
@@ -447,64 +447,27 @@ consultations.post('/:id/finalize', async (c) => {
       WHERE id = ?
     `).bind(duration, consultId).run();
 
-    const patientInfo = {
-      name: (consultation.patient_name as string) || '미지정',
-      age: consultation.patient_age as number | undefined,
-      gender: consultation.patient_gender as string | undefined,
-    };
+    // v9.1: 세그먼트 존재 확인만 하고 즉시 응답.
+    // 실제 파이프라인은 analysis-status 폴링이 단계별로 전진시킴 (poll-to-advance).
+    // 이유: 프로덕션 Cloudflare에서 waitUntil은 응답 후 ~30초에 강제 종료되어
+    // 긴 AI 콜(리포트 생성 60~90초)이 중간에 죽고 88%에서 영구 멈춤이 발생했음.
+    const segCheck = await db.prepare(
+      'SELECT COUNT(*) as n FROM stt_chunks WHERE consultation_id = ?'
+    ).bind(consultId).first();
+    if (!segCheck || !(segCheck.n as number)) {
+      await db.prepare(`
+        UPDATE consultations SET ai_analysis_status = 'failed', analysis_step = 'failed:transcribing',
+          analysis_error = '업로드된 녹음 세그먼트가 없습니다.', updated_at = datetime('now') WHERE id = ?
+      `).bind(consultId).run();
+      return c.json({ success: false, error: '업로드된 녹음 세그먼트가 없습니다.' }, 400);
+    }
 
-    // 백그라운드 잡: 미완료 세그먼트 STT 재시도 → transcript 병합 → 분석
+    // 첫 단계를 즉시 한 번 시도 (이미 세그먼트 STT가 끝났으면 diarizing까지 빠르게 진행)
+    // 실패해도 폴링이 이어받으므로 오류 무시
     const env = c.env as any;
-    const job = (async () => {
-      try {
-        const chunks = await db.prepare(
-          'SELECT id, chunk_index, audio_url, transcript FROM stt_chunks WHERE consultation_id = ? ORDER BY chunk_index ASC'
-        ).bind(consultId).all();
-
-        if (!chunks.results.length) {
-          throw new Error('업로드된 녹음 세그먼트가 없습니다.');
-        }
-
-        // 누락 STT 재시도 (세그먼트 업로드 시 백그라운드 STT 실패분)
-        for (const ch of chunks.results as any[]) {
-          if (!ch.transcript && ch.audio_url) {
-            const obj = await env.R2.get(ch.audio_url);
-            if (obj) {
-              const buf = await obj.arrayBuffer();
-              await transcribeSegmentJob(db, env, apiKey, ch.id, buf);
-            }
-          }
-        }
-
-        // 병합
-        const refreshed = await db.prepare(
-          'SELECT chunk_index, transcript FROM stt_chunks WHERE consultation_id = ? ORDER BY chunk_index ASC'
-        ).bind(consultId).all();
-        const mergedTranscript = (refreshed.results as any[])
-          .map(r => (r.transcript || '').trim())
-          .filter(Boolean)
-          .join(' ');
-
-        if (!mergedTranscript) {
-          throw new Error('음성 인식 결과가 없습니다. 녹음 상태를 확인해주세요.');
-        }
-
-        // audioKey는 null — audio_url을 세그먼트 하나로 오염시키면 재생이 첫 1분만 됨.
-        // 세그먼트 녹음의 재생은 /audio 가 stt_chunks 목록으로 순차 재생 처리.
-        await runAnalysisJob({
-          db, env, apiKey, consultId, orgId, userId, patientInfo,
-          transcript: mergedTranscript,
-          audioKey: null,
-        });
-      } catch (err: any) {
-        console.error('[Finalize] job failed:', err?.message);
-        await db.prepare(`
-          UPDATE consultations SET ai_analysis_status = 'failed', analysis_step = 'failed:transcribing', analysis_error = ?, updated_at = datetime('now')
-          WHERE id = ?
-        `).bind(String(err?.message || '알 수 없는 오류').slice(0, 500), consultId).run();
-      }
-    })();
-    c.executionCtx.waitUntil(job);
+    c.executionCtx.waitUntil(
+      advanceAnalysisPipeline(db, env, apiKey, consultId, orgId).catch(() => {})
+    );
 
     return c.json({ success: true, data: { consultation_id: consultId, status: 'processing' } });
   } catch (error) {
@@ -530,9 +493,41 @@ consultations.get('/:id/analysis-status', async (c) => {
 
     if (!row) return c.json({ success: false, error: '상담 기록을 찾을 수 없습니다.' }, 404);
 
-    // 좌초 감지: 10분 이상 진행 없는 processing → failed 전환 (워커 재배포/크래시로 waitUntil 유실 케이스)
-    // v9.0.1: AI 호출 타임아웃 축소(90s×2)로 정상 스텝은 최대 ~6분 → 10분이면 확실히 좌초
-    if (row.ai_analysis_status === 'processing' && (row.stale_minutes as number) >= 10) {
+    // v9.1 poll-to-advance: processing이면 이 폴링 요청이 파이프라인을 한 단계 전진시킨다.
+    // waitUntil은 프로덕션에서 응답 후 조기 종료되므로, 클라이언트가 연결을 유지하는
+    // 폴링 요청 안에서 동기 실행하는 것이 유일하게 확실한 방법.
+    // 클레임 락으로 동시 폴링 중복 실행은 1개만 통과.
+    if (row.ai_analysis_status === 'processing') {
+      const apiKey = c.env.OPENAI_API_KEY;
+      if (apiKey) {
+        try {
+          const advanced = await advanceAnalysisPipeline(db, c.env as any, apiKey, consultId, orgId);
+          if (advanced) {
+            // 단계가 바뀌었을 수 있으니 최신 상태 재조회
+            const fresh: any = await db.prepare(`
+              SELECT c.ai_analysis_status, c.analysis_step, c.analysis_error,
+                (SELECT r.id FROM consultation_reports r WHERE r.consultation_id = c.id) as report_id,
+                (SELECT r.coaching_score FROM consultation_reports r WHERE r.consultation_id = c.id) as coaching_score
+              FROM consultations c WHERE c.id = ?
+            `).bind(consultId).first();
+            if (fresh) {
+              (row as any).ai_analysis_status = fresh.ai_analysis_status;
+              (row as any).analysis_step = fresh.analysis_step;
+              (row as any).analysis_error = fresh.analysis_error;
+              (row as any).report_id = fresh.report_id;
+              (row as any).coaching_score = fresh.coaching_score;
+            }
+          }
+        } catch (e) {
+          console.warn('[AnalysisStatus] advance error:', e);
+        }
+      }
+    }
+
+    // 좌초 감지 (안전망): 15분 이상 진행 없는 processing → failed 전환
+    // poll-to-advance 구조에서는 폴링이 계속되는 한 updated_at이 갱신되므로
+    // 여기 걸리는 건 클라이언트가 폴링을 완전히 중단한 뒤 재방문한 경우뿐.
+    if (row.ai_analysis_status === 'processing' && (row.stale_minutes as number) >= 15) {
       await db.prepare(`
         UPDATE consultations SET ai_analysis_status = 'failed', analysis_step = 'failed:stalled',
           analysis_error = '분석이 중단되었습니다. 다시 분석해주세요. (녹음은 안전하게 저장되어 있습니다)', updated_at = datetime('now')
@@ -587,42 +582,27 @@ consultations.post('/:id/reanalyze', async (c) => {
     const apiKey = c.env.OPENAI_API_KEY;
     if (!apiKey) return c.json({ success: false, error: 'OpenAI API 키가 설정되지 않았습니다.' }, 500);
 
-    const patientInfo = {
-      name: (consultation.patient_name as string) || '미지정',
-      age: consultation.patient_age as number | undefined,
-      gender: consultation.patient_gender as string | undefined,
-    };
+    // v9.1: 분석 가능한 소스가 있는지 먼저 검증 (세그먼트 transcript / 기존 transcript / 오디오)
+    const chunks = await db.prepare(
+      'SELECT COUNT(*) as n FROM stt_chunks WHERE consultation_id = ?'
+    ).bind(consultId).all();
+    const hasChunks = ((chunks.results?.[0] as any)?.n || 0) > 0;
+    const hasTranscript = !!(consultation.transcript && String(consultation.transcript).trim());
+    if (!hasChunks && !hasTranscript && !consultation.audio_url) {
+      return c.json({ success: false, error: '분석할 녹음이나 스크립트가 없습니다.' }, 400);
+    }
 
+    // processing 전환 → 폴링(analysis-status)이 poll-to-advance로 파이프라인 실행
     await db.prepare(`
-      UPDATE consultations SET ai_analysis_status = 'processing', analysis_step = 'transcribing', analysis_error = NULL, updated_at = datetime('now')
+      UPDATE consultations SET ai_analysis_status = 'processing', analysis_step = 'transcribing',
+        analysis_error = NULL, analysis_claim = NULL, analysis_claim_at = NULL, updated_at = datetime('now')
       WHERE id = ?
     `).bind(consultId).run();
 
-    const env = c.env as any;
-    const job = (async () => {
-      // 소스 우선순위: 세그먼트 transcript → 기존 transcript → 단일 오디오 파일
-      const chunks = await db.prepare(
-        'SELECT chunk_index, transcript FROM stt_chunks WHERE consultation_id = ? AND transcript IS NOT NULL ORDER BY chunk_index ASC'
-      ).bind(consultId).all();
-      const mergedTranscript = (chunks.results as any[]).map(r => (r.transcript || '').trim()).filter(Boolean).join(' ');
-
-      if (mergedTranscript) {
-        await runAnalysisJob({ db, env, apiKey, consultId, orgId, userId, patientInfo, transcript: mergedTranscript, audioKey: null });
-      } else if (consultation.transcript) {
-        await runAnalysisJob({ db, env, apiKey, consultId, orgId, userId, patientInfo, transcript: consultation.transcript as string, audioKey: null });
-      } else if (consultation.audio_url) {
-        const obj = await env.R2.get(consultation.audio_url as string);
-        if (!obj) {
-          await db.prepare('UPDATE consultations SET ai_analysis_status = \'failed\', analysis_step = \'failed:transcribing\', analysis_error = \'저장된 녹음 파일을 찾을 수 없습니다.\' WHERE id = ?').bind(consultId).run();
-          return;
-        }
-        const buf = await obj.arrayBuffer();
-        await runAnalysisJob({ db, env, apiKey, consultId, orgId, userId, patientInfo, audioData: buf, audioKey: consultation.audio_url as string });
-      } else {
-        await db.prepare('UPDATE consultations SET ai_analysis_status = \'failed\', analysis_step = \'failed:transcribing\', analysis_error = \'분석할 녹음이나 스크립트가 없습니다.\' WHERE id = ?').bind(consultId).run();
-      }
-    })();
-    c.executionCtx.waitUntil(job);
+    // 첫 단계 즉시 시도 (transcript가 이미 있으면 STT 스킵되어 빠름) — 실패해도 폴링이 이어받음
+    c.executionCtx.waitUntil(
+      advanceAnalysisPipeline(db, c.env as any, apiKey, consultId, orgId).catch(() => {})
+    );
 
     return c.json({ success: true, data: { consultation_id: consultId, status: 'processing' } });
   } catch (error) {
@@ -720,15 +700,10 @@ consultations.post('/:id/upload-audio', async (c) => {
       WHERE id = ?
     `).bind(duration ? parseInt(duration) : null, audioKey, consultId).run();
 
-    const patientInfo = {
-      name: (consultation.patient_name as string) || '미지정',
-      age: consultation.patient_age as number | undefined,
-      gender: consultation.patient_gender as string | undefined,
-    };
-
-    c.executionCtx.waitUntil(runAnalysisJob({
-      db, env: c.env as any, apiKey, consultId, orgId, userId, patientInfo, audioData, audioKey,
-    }));
+    // v9.1: poll-to-advance — 폴링이 파이프라인을 전진시킴 (waitUntil 조기종료 대응)
+    c.executionCtx.waitUntil(
+      advanceAnalysisPipeline(db, c.env as any, apiKey, consultId, orgId).catch(() => {})
+    );
 
     return c.json({ success: true, data: { consultation_id: consultId, status: 'processing', async: true } });
   } catch (error) {

@@ -352,6 +352,200 @@ export async function runAnalysisJob(params: AnalysisJobParams): Promise<void> {
   }
 }
 
+// ============================================================
+// v9.1: Poll-to-Advance 파이프라인
+// 프로덕션 Cloudflare에서 waitUntil 백그라운드는 응답 후 조기 종료됨 →
+// 긴 AI 콜(리포트 생성 60~90s)이 중간에 죽어 88%에서 영구 멈춤.
+// 해결: 폴링 요청(analysis-status)이 직접 "다음 한 단계"를 실행.
+// 클레임 락(analysis_claim)으로 동시 폴링 중복 실행 방지.
+// ============================================================
+
+const CLAIM_TTL_SECONDS = 150; // AI 콜 타임아웃 90s×1 + 여유
+
+async function claimAnalysis(db: D1Database, consultId: string): Promise<string | null> {
+  const claimId = 'claim_' + generateId().slice(0, 10);
+  try {
+    const res = await db.prepare(`
+      UPDATE consultations SET analysis_claim = ?, analysis_claim_at = datetime('now'), updated_at = datetime('now')
+      WHERE id = ? AND ai_analysis_status = 'processing'
+        AND (analysis_claim IS NULL OR analysis_claim_at IS NULL
+             OR analysis_claim_at < datetime('now', '-${CLAIM_TTL_SECONDS} seconds'))
+    `).bind(claimId, consultId).run();
+    return (res.meta?.changes || 0) > 0 ? claimId : null;
+  } catch (e) {
+    console.warn('[AnalysisRunner] claim failed:', e);
+    return null;
+  }
+}
+
+async function releaseClaim(db: D1Database, consultId: string, claimId: string) {
+  try {
+    await db.prepare('UPDATE consultations SET analysis_claim = NULL, analysis_claim_at = NULL WHERE id = ? AND analysis_claim = ?')
+      .bind(consultId, claimId).run();
+  } catch {}
+}
+
+async function failAnalysis(db: D1Database, consultId: string, step: string, message: string) {
+  try {
+    await db.prepare(`
+      UPDATE consultations SET ai_analysis_status = 'failed', analysis_step = ?, analysis_error = ?,
+        analysis_claim = NULL, analysis_claim_at = NULL, updated_at = datetime('now')
+      WHERE id = ?
+    `).bind(`failed:${step}`, message.slice(0, 500), consultId).run();
+  } catch {}
+}
+
+// 폴링 1회당 파이프라인을 한 단계 전진시킨다.
+// 반환: true = 이 요청이 실제 작업을 수행함 / false = 다른 요청이 진행 중이거나 대상 아님
+export async function advanceAnalysisPipeline(
+  db: D1Database,
+  env: Record<string, any>,
+  apiKey: string,
+  consultId: string,
+  orgId: string
+): Promise<boolean> {
+  const row: any = await db.prepare(`
+    SELECT c.id, c.user_id, c.ai_analysis_status, c.analysis_step, c.transcript, c.transcript_diarized,
+           c.ner_extracted, c.spin_analysis, c.audio_url,
+           p.name as patient_name, p.age as patient_age, p.gender as patient_gender
+    FROM consultations c LEFT JOIN patients p ON c.patient_id = p.id
+    WHERE c.id = ? AND c.organization_id = ?
+  `).bind(consultId, orgId).first();
+  if (!row || row.ai_analysis_status !== 'processing') return false;
+
+  const claimId = await claimAnalysis(db, consultId);
+  if (!claimId) return false; // 다른 요청이 진행 중
+
+  const step = (row.analysis_step as string) || 'transcribing';
+  const patientInfo = {
+    name: (row.patient_name as string) || '미지정',
+    age: row.patient_age as number | undefined,
+    gender: row.patient_gender as string | undefined,
+  };
+
+  try {
+    if (step === 'transcribing' || step === '' || step === 'starting' || step === 'pending') {
+      // === 1단계: STT — 세그먼트 누락분 전사 → 병합 (세그먼트 없으면 단일 오디오/기존 transcript 폴백)
+      const chunks = await db.prepare(
+        'SELECT id, chunk_index, audio_url, transcript FROM stt_chunks WHERE consultation_id = ? ORDER BY chunk_index ASC'
+      ).bind(consultId).all();
+      const chunkRows = (chunks.results || []) as any[];
+
+      if (chunkRows.length > 0) {
+        const missing = chunkRows.filter((ch) => (!ch.transcript || !String(ch.transcript).trim()) && ch.audio_url);
+        // 한 요청당 최대 3개 병렬 전사 (각 ~15s) — 남으면 다음 폴링이 이어서
+        const batch = missing.slice(0, 3);
+        if (batch.length > 0) {
+          await Promise.all(batch.map(async (ch) => {
+            const obj = await (env as any).R2.get(ch.audio_url);
+            if (!obj) {
+              // R2 유실 세그먼트 — 빈 문자열로 마킹해 무한 재시도 방지
+              await db.prepare("UPDATE stt_chunks SET transcript = '' WHERE id = ?").bind(ch.id).run();
+              return;
+            }
+            const buf = await obj.arrayBuffer();
+            await transcribeSegmentJob(db, env, apiKey, ch.id, buf);
+          }));
+        }
+        if (missing.length > batch.length) { await releaseClaim(db, consultId, claimId); return true; }
+
+        // 전사 실패(NULL 유지) 세그먼트 확인 — 재시도 1회는 위에서 이미 수행됨
+        const refreshed = await db.prepare(
+          'SELECT chunk_index, transcript FROM stt_chunks WHERE consultation_id = ? ORDER BY chunk_index ASC'
+        ).bind(consultId).all();
+        const stillMissing = (refreshed.results as any[]).filter((r) => r.transcript === null);
+        if (stillMissing.length > 0 && batch.length > 0) {
+          // 방금 시도한 배치가 실패 → 다음 폴링에서 한 번 더 (claim TTL이 무한루프 방지: 3회 실패 시 fail)
+          const retryCount = Number((row as any).analysis_error?.match?.(/^stt_retry:(\d+)/)?.[1] || 0);
+          if (retryCount >= 2) {
+            await failAnalysis(db, consultId, 'transcribing', '음성 인식에 반복 실패했습니다. 재분석을 시도해주세요. (녹음은 안전하게 저장되어 있습니다)');
+            return true;
+          }
+          await db.prepare("UPDATE consultations SET analysis_error = ?, updated_at = datetime('now') WHERE id = ?")
+            .bind(`stt_retry:${retryCount + 1}`, consultId).run();
+          await releaseClaim(db, consultId, claimId);
+          return true;
+        }
+        const merged = (refreshed.results as any[])
+          .map((r) => (r.transcript || '').trim()).filter(Boolean).join(' ');
+        if (!merged) {
+          await failAnalysis(db, consultId, 'transcribing', '음성 인식 결과가 없습니다. 녹음 상태를 확인해주세요.');
+          return true;
+        }
+        await persistRawTranscript(db, consultId, merged);
+      } else if (row.transcript && String(row.transcript).trim()) {
+        // 세그먼트 없음 + transcript 이미 존재 (재분석 경로) — 그대로 진행
+      } else if (row.audio_url) {
+        // 단일 오디오 파일 경로 (legacy upload-audio / reports:generate)
+        const obj = await (env as any).R2.get(row.audio_url);
+        if (!obj) { await failAnalysis(db, consultId, 'transcribing', '저장된 녹음 파일을 찾을 수 없습니다.'); return true; }
+        const buf = await obj.arrayBuffer();
+        const { text } = await transcribeWithTimestamps(buf, apiKey, env);
+        if (!text || !text.trim()) { await failAnalysis(db, consultId, 'transcribing', '음성 인식 결과가 비어 있습니다.'); return true; }
+        await persistRawTranscript(db, consultId, text);
+      } else {
+        await failAnalysis(db, consultId, 'transcribing', '분석할 녹음이나 스크립트가 없습니다.');
+        return true;
+      }
+      await db.prepare("UPDATE consultations SET analysis_step = 'diarizing', analysis_error = NULL, analysis_claim = NULL, analysis_claim_at = NULL, updated_at = datetime('now') WHERE id = ?")
+        .bind(consultId).run();
+      return true;
+    }
+
+    if (step === 'diarizing') {
+      const transcript = String(row.transcript || '');
+      if (!transcript.trim()) { await failAnalysis(db, consultId, 'diarizing', '스크립트가 비어 있습니다.'); return true; }
+      const { diarizeSpeakers } = await import('./ai-presenter');
+      const segments = await diarizeSpeakers(transcript, apiKey, env);
+      await db.prepare("UPDATE consultations SET transcript_diarized = ?, analysis_step = 'extracting', analysis_claim = NULL, analysis_claim_at = NULL, updated_at = datetime('now') WHERE id = ?")
+        .bind(JSON.stringify(segments), consultId).run();
+      return true;
+    }
+
+    if (step === 'extracting') {
+      const transcript = String(row.transcript || '');
+      const diarized = safeParseJSON(row.transcript_diarized as string, [] as any[]);
+      const { extractEntities, analyzeSPIN } = await import('./ai-presenter');
+      const [nerData, spinAnalysis] = await Promise.all([
+        extractEntities(transcript, apiKey, env),
+        analyzeSPIN(diarized, apiKey, env),
+      ]);
+      await db.prepare("UPDATE consultations SET ner_extracted = ?, spin_analysis = ?, analysis_step = 'reporting', analysis_claim = NULL, analysis_claim_at = NULL, updated_at = datetime('now') WHERE id = ?")
+        .bind(JSON.stringify(nerData), JSON.stringify(spinAnalysis), consultId).run();
+      return true;
+    }
+
+    if (step === 'reporting') {
+      const transcript = String(row.transcript || '');
+      const diarized = safeParseJSON(row.transcript_diarized as string, [] as any[]);
+      const nerData = safeParseJSON(row.ner_extracted as string, {} as any);
+      const spinAnalysis = safeParseJSON(row.spin_analysis as string, {} as any);
+      const previousFeedback = await loadPreviousFeedback(db, row.user_id as string, orgId);
+      const { generateConsultationReport } = await import('./ai-presenter');
+      const report = await generateConsultationReport(
+        transcript, diarized, nerData, spinAnalysis, patientInfo, apiKey, env, previousFeedback
+      );
+      const fullAnalysis: FullAnalysisResult = {
+        transcript, diarizedSegments: diarized, nerData, spinAnalysis, report,
+      };
+      await persistAnalysisResults(db, orgId, consultId, null, fullAnalysis, env);
+      await syncFollowupTask(db, orgId, row.user_id as string, consultId, report);
+      await db.prepare('UPDATE consultations SET analysis_claim = NULL, analysis_claim_at = NULL WHERE id = ?').bind(consultId).run();
+      console.log('[AnalysisRunner] advance: completed', consultId, 'score:', report.coaching_feedback?.total_score);
+      return true;
+    }
+
+    // 알 수 없는 step — 방어적으로 transcribing으로 리셋
+    await db.prepare("UPDATE consultations SET analysis_step = 'transcribing', analysis_claim = NULL, analysis_claim_at = NULL, updated_at = datetime('now') WHERE id = ?")
+      .bind(consultId).run();
+    return true;
+  } catch (err: any) {
+    console.error('[AnalysisRunner] advance failed at', step, ':', err?.message || err);
+    await failAnalysis(db, consultId, step, String(err?.message || '알 수 없는 오류'));
+    return true;
+  }
+}
+
 // 세그먼트 STT (업로드 직후 백그라운드 실행)
 export async function transcribeSegmentJob(
   db: D1Database,

@@ -92,206 +92,27 @@ reports.post('/:consultationId/generate', async (c) => {
       return c.json({ success: false, error: '상담 기록을 찾을 수 없습니다.' }, 404);
     }
 
-    if (!consultation.audio_url) {
-      return c.json({ success: false, error: '녹음 파일이 없습니다.' }, 400);
+    // v9.1: 분석 소스 검증 — 세그먼트 transcript / 기존 transcript / 단일 오디오 중 하나면 OK
+    const segCnt: any = await db.prepare('SELECT COUNT(*) as n FROM stt_chunks WHERE consultation_id = ?').bind(consultationId).first();
+    const hasSource = (segCnt?.n || 0) > 0
+      || !!(consultation.transcript && String(consultation.transcript).trim())
+      || !!consultation.audio_url;
+    if (!hasSource) {
+      return c.json({ success: false, error: '분석할 녹음이나 스크립트가 없습니다.' }, 400);
     }
 
-    // Mark as processing immediately
+    // v9.1 poll-to-advance: processing 전환만 하고 즉시 응답.
+    // 파이프라인은 /status 폴링이 단계별로 전진 (waitUntil 프로덕션 조기종료 대응)
     await db.prepare(`
-      UPDATE consultations SET ai_analysis_status = 'processing', updated_at = datetime('now') WHERE id = ?
+      UPDATE consultations SET ai_analysis_status = 'processing', analysis_step = 'transcribing',
+        analysis_error = NULL, analysis_claim = NULL, analysis_claim_at = NULL, updated_at = datetime('now') WHERE id = ?
     `).bind(consultationId).run();
 
-    // Get audio from R2
-    const audioObject = await c.env.R2.get(consultation.audio_url as string);
-    if (!audioObject) {
-      await db.prepare(`UPDATE consultations SET ai_analysis_status = 'failed' WHERE id = ?`).bind(consultationId).run();
-      return c.json({ success: false, error: '녹음 파일을 찾을 수 없습니다.' }, 404);
-    }
+    const { advanceAnalysisPipeline } = await import('../lib/analysis-runner');
+    c.executionCtx.waitUntil(
+      advanceAnalysisPipeline(db, c.env as any, apiKey, consultationId, orgId).catch(() => {})
+    );
 
-    const audioData = await audioObject.arrayBuffer();
-
-    // Get AI config for model name
-    const { getAIConfig } = await import('../lib/ai-config');
-    const aiConfig = getAIConfig(c.env as any);
-
-    // Run pipeline in background with waitUntil (won't block response)
-    const bgTask = (async () => {
-      try {
-        console.log('[BG Pipeline] Starting for', consultationId);
-
-        // Fetch previous feedback for growth comparison
-        let previousFeedback: PreviousFeedbackContext | null = null;
-        try {
-          const prevReports = await db.prepare(`
-            SELECT r.coaching_feedback, r.coaching_score, c.consultation_date, c.treatment_type
-            FROM consultation_reports r
-            JOIN consultations c ON r.consultation_id = c.id
-            WHERE c.user_id = ? AND c.organization_id = ? AND r.coaching_score > 0
-            ORDER BY c.consultation_date DESC
-            LIMIT 5
-          `).bind(userId, orgId).all();
-
-          if (prevReports.results.length > 0) {
-            const sessions = prevReports.results.map((r: any) => {
-              const fb = safeParseJSON<any>(r.coaching_feedback, {});
-              return {
-                date: r.consultation_date?.split('T')[0] || '',
-                total_score: r.coaching_score || 0,
-                scores: fb.scores || { rapport: 0, spin: 0, objection_handling: 0, pricing_framing: 0, closing: 0, structure: 0 },
-                top_improvement: fb.improvements?.[0]?.issue || '없음',
-                treatment_type: r.treatment_type || undefined,
-              };
-            });
-            const avgScores = { rapport: 0, spin: 0, objection_handling: 0, pricing_framing: 0, closing: 0, structure: 0 };
-            let totalSum = 0;
-            sessions.forEach((s: any) => {
-              totalSum += s.total_score;
-              (Object.keys(avgScores) as Array<keyof typeof avgScores>).forEach(k => { avgScores[k] += (s.scores[k] || 0); });
-            });
-            const cnt = sessions.length;
-            (Object.keys(avgScores) as Array<keyof typeof avgScores>).forEach(k => { avgScores[k] = avgScores[k] / cnt; });
-            const issueCounts: Record<string, number> = {};
-            sessions.forEach((s: any) => { if (s.top_improvement !== '없음') { const k = s.top_improvement.slice(0, 30); issueCounts[k] = (issueCounts[k] || 0) + 1; } });
-            const recurring = Object.entries(issueCounts).filter(([, c]) => c >= 2).map(([i]) => i);
-            previousFeedback = { sessions, avg_scores: avgScores, avg_total: totalSum / cnt, recurring_issues: recurring.length > 0 ? recurring : sessions.slice(0, 2).map((s: any) => s.top_improvement).filter(Boolean) };
-          }
-        } catch (e) { console.warn('[BG Pipeline] Previous feedback load failed:', e); }
-
-        // STT 먼저 수행 → 원문 즉시 저장 (분석 실패해도 스크립트 원문은 상담 기록에 보존)
-        const { text: rawTranscript } = await transcribeWithTimestamps(audioData, apiKey, c.env as any);
-        const { persistRawTranscript } = await import('../lib/analysis-runner');
-        await persistRawTranscript(db, consultationId, rawTranscript);
-
-        const analysis = await runAnalysisFromTranscript(
-          rawTranscript,
-          {
-            name: consultation.patient_name as string || '미지정',
-            age: consultation.patient_age as number,
-            gender: consultation.patient_gender as string
-          },
-          apiKey,
-          c.env as any,
-          previousFeedback
-        );
-
-        // Safely convert values for D1
-        const toStr = (v: any): string => {
-          if (v === null || v === undefined) return '';
-          if (typeof v === 'string') return v;
-          if (Array.isArray(v)) return v.join('\n');
-          if (typeof v === 'object') return JSON.stringify(v);
-          return String(v);
-        };
-        const toJsonStr = (v: any): string => {
-          if (typeof v === 'string') return v;
-          return JSON.stringify(v ?? null);
-        };
-
-        // Create or update report
-        const existingReport = await db.prepare(
-          'SELECT id FROM consultation_reports WHERE consultation_id = ?'
-        ).bind(consultationId).first();
-
-        const reportId = existingReport?.id || 'report_' + generateId().slice(0, 8);
-        const modelName = aiConfig.primaryModel;
-
-        if (existingReport) {
-          await db.prepare(`
-            UPDATE consultation_reports SET
-              consultation_summary = ?, treatment_options = ?, discussed_amount = ?,
-              payment_options = ?, patient_concerns = ?, emotion_timeline = ?,
-              emotion_summary = ?, overall_sentiment = ?, decision_factors = ?,
-              decision_score = ?, decision_prediction = ?, next_actions = ?,
-              recommended_followup_date = ?, followup_message = ?,
-              coaching_feedback = ?, coaching_score = ?,
-              generation_model = ?, updated_at = datetime('now')
-            WHERE id = ?
-          `).bind(
-            toStr(analysis.report.consultation_summary),
-            toJsonStr(analysis.report.treatment_options),
-            analysis.report.discussed_amount || null,
-            toJsonStr(analysis.report.payment_options),
-            toJsonStr(analysis.report.patient_concerns),
-            toJsonStr(analysis.report.emotion_timeline),
-            toStr(analysis.report.emotion_summary),
-            toStr(analysis.report.overall_sentiment),
-            toJsonStr(analysis.report.decision_factors),
-            analysis.report.decision_score || 5,
-            toStr(analysis.report.decision_prediction),
-            toJsonStr(analysis.report.next_actions),
-            toStr(analysis.report.recommended_followup_date),
-            toStr(analysis.report.followup_message),
-            toJsonStr(analysis.report.coaching_feedback),
-            analysis.report.coaching_feedback?.total_score || 0,
-            modelName,
-            reportId
-          ).run();
-        } else {
-          await db.prepare(`
-            INSERT INTO consultation_reports (
-              id, organization_id, consultation_id,
-              consultation_summary, treatment_options, discussed_amount, payment_options,
-              patient_concerns, emotion_timeline, emotion_summary, overall_sentiment,
-              decision_factors, decision_score, decision_prediction,
-              next_actions, recommended_followup_date, followup_message,
-              coaching_feedback, coaching_score, generation_model
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-          `).bind(
-            reportId, orgId, consultationId,
-            toStr(analysis.report.consultation_summary),
-            toJsonStr(analysis.report.treatment_options),
-            analysis.report.discussed_amount || null,
-            toJsonStr(analysis.report.payment_options),
-            toJsonStr(analysis.report.patient_concerns),
-            toJsonStr(analysis.report.emotion_timeline),
-            toStr(analysis.report.emotion_summary),
-            toStr(analysis.report.overall_sentiment),
-            toJsonStr(analysis.report.decision_factors),
-            analysis.report.decision_score || 5,
-            toStr(analysis.report.decision_prediction),
-            toJsonStr(analysis.report.next_actions),
-            toStr(analysis.report.recommended_followup_date),
-            toStr(analysis.report.followup_message),
-            toJsonStr(analysis.report.coaching_feedback),
-            analysis.report.coaching_feedback?.total_score || 0,
-            modelName
-          ).run();
-        }
-
-        // Update consultation
-        await db.prepare(`
-          UPDATE consultations SET
-            transcript = ?, transcript_diarized = ?, ner_extracted = ?,
-            spin_analysis = ?, summary = ?, decision_score = ?,
-            ai_analysis_status = 'completed', updated_at = datetime('now')
-          WHERE id = ?
-        `).bind(
-          toStr(analysis.transcript),
-          toJsonStr(analysis.diarizedSegments),
-          toJsonStr(analysis.nerData),
-          toJsonStr(analysis.spinAnalysis),
-          toStr(analysis.report.consultation_summary),
-          analysis.report.decision_score || 5,
-          consultationId
-        ).run();
-
-        // v8.2: 리포트 생성 완료 즉시 AI 팔로업 태스크 동기화
-        const { syncFollowupTask } = await import('../lib/analysis-runner');
-        await syncFollowupTask(db, orgId, userId, consultationId, analysis.report);
-
-        console.log('[BG Pipeline] Complete for', consultationId, '— Score:', analysis.report.coaching_feedback?.total_score);
-      } catch (error: any) {
-        console.error('[BG Pipeline] Failed for', consultationId, ':', error?.message || error);
-        await db.prepare(`
-          UPDATE consultations SET ai_analysis_status = 'failed', updated_at = datetime('now') WHERE id = ?
-        `).bind(consultationId).run();
-      }
-    })();
-
-    // Use waitUntil to keep the background task alive after response
-    c.executionCtx.waitUntil(bgTask);
-
-    // Return immediately — client will poll for status
     return c.json({
       success: true,
       data: { status: 'processing', consultation_id: consultationId }
@@ -317,7 +138,17 @@ reports.get('/:consultationId/status', async (c) => {
       return c.json({ success: false, error: '상담을 찾을 수 없습니다.' }, 404);
     }
 
-    const status = consultation.ai_analysis_status || 'pending';
+    let status = consultation.ai_analysis_status || 'pending';
+
+    // v9.1 poll-to-advance: 이 폴링 요청이 파이프라인을 한 단계 전진시킴
+    if (status === 'processing' && c.env.OPENAI_API_KEY) {
+      try {
+        const { advanceAnalysisPipeline } = await import('../lib/analysis-runner');
+        await advanceAnalysisPipeline(db, c.env as any, c.env.OPENAI_API_KEY, consultationId, orgId);
+        const fresh: any = await db.prepare('SELECT ai_analysis_status FROM consultations WHERE id = ?').bind(consultationId).first();
+        if (fresh) status = fresh.ai_analysis_status || status;
+      } catch (e) { console.warn('[ReportStatus] advance error:', e); }
+    }
 
     if (status === 'completed') {
       // Fetch the full report
