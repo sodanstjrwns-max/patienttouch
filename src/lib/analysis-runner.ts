@@ -20,6 +20,24 @@ const toJsonStr = (v: any): string => {
   return JSON.stringify(v ?? null);
 };
 
+// D1 스칼라 컬럼용 안전 변환 — AI가 배열/객체로 반환해도 TEXT로 강제
+// (예: treatment_type이 ['신경치료','크라운']으로 오면 '신경치료, 크라운')
+const toScalarStr = (v: any): string | null => {
+  if (v === null || v === undefined || v === '') return null;
+  if (typeof v === 'string') return v;
+  if (typeof v === 'number' || typeof v === 'boolean') return String(v);
+  if (Array.isArray(v)) return v.map((x) => toScalarStr(x) ?? '').filter(Boolean).join(', ') || null;
+  return JSON.stringify(v);
+};
+
+// D1 숫자 컬럼용 안전 변환 — "180만원", "1,800,000" 같은 문자열도 숫자로
+const toNum = (v: any): number | null => {
+  if (v === null || v === undefined || v === '') return null;
+  if (typeof v === 'number') return Number.isFinite(v) ? v : null;
+  const n = parseFloat(String(v).replace(/[^0-9.\-]/g, ''));
+  return Number.isFinite(n) ? n : null;
+};
+
 // 상담사의 최근 피드백 이력 로드 (성장 비교용 — 채점에는 미사용, 블라인드 채점 정책)
 export async function loadPreviousFeedback(db: D1Database, userId: string, orgId: string): Promise<PreviousFeedbackContext | null> {
   try {
@@ -116,9 +134,9 @@ export async function persistAnalysisResults(
     toJsonStr(fullAnalysis.nerData),
     toJsonStr(fullAnalysis.spinAnalysis),
     toStr(fullAnalysis.report.consultation_summary),
-    fullAnalysis.nerData.treatment_type || null,
-    fullAnalysis.nerData.treatment_area || null,
-    fullAnalysis.nerData.discussed_amount || null,
+    toScalarStr(fullAnalysis.nerData.treatment_type),
+    toScalarStr(fullAnalysis.nerData.treatment_area),
+    toNum(fullAnalysis.nerData.discussed_amount),
     toJsonStr(fullAnalysis.report.decision_factors),
     toJsonStr({
       overall_tone: fullAnalysis.report.overall_sentiment,
@@ -149,7 +167,7 @@ export async function persistAnalysisResults(
     reportId, orgId, consultId,
     toStr(fullAnalysis.report.consultation_summary),
     toJsonStr(fullAnalysis.report.treatment_options),
-    fullAnalysis.report.discussed_amount || null,
+    toNum(fullAnalysis.report.discussed_amount),
     toJsonStr(fullAnalysis.report.payment_options),
     toJsonStr(fullAnalysis.report.patient_concerns),
     toJsonStr(fullAnalysis.report.emotion_timeline),

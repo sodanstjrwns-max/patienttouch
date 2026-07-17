@@ -64,8 +64,11 @@ export async function callOpenAI(params: {
   temperature?: number;
   maxTokens?: number;
   jsonMode?: boolean;
+  // GPT-5 계열 추론 강도: minimal/low/medium/high. 미지정 시 'low'.
+  // 속도 병목의 주범 — medium 기본값은 리포트 생성에서 수 분까지 걸림
+  reasoningEffort?: 'minimal' | 'low' | 'medium' | 'high';
 }): Promise<any> {
-  const { apiKey, model, messages, temperature = 0.3, maxTokens, jsonMode = true } = params;
+  const { apiKey, model, messages, temperature = 0.3, maxTokens, jsonMode = true, reasoningEffort } = params;
 
   // GPT-5 계열 감지 (gpt-5, gpt-5-mini, gpt-5.4, gpt-5.5 등)
   const isGpt5 = model.includes('gpt-5');
@@ -94,6 +97,9 @@ export async function callOpenAI(params: {
 
   if (isGpt5) {
     body.max_completion_tokens = maxTokens ? Math.max(maxTokens, 16384) : 16384;
+    // 추론 강도 제한 — 기본 medium은 reasoning 토큰을 과도하게 소비해 응답이 수 분씩 걸림.
+    // 구조화 JSON 추출 작업은 low로 충분 (품질 유지 + 3~5배 빠름)
+    body.reasoning_effort = reasoningEffort || 'low';
   } else if (maxTokens) {
     body.max_tokens = maxTokens;
   }
@@ -101,8 +107,9 @@ export async function callOpenAI(params: {
   console.log(`[AI Call] Model: ${model}, JSON mode: ${jsonMode}, GPT-5: ${isGpt5}, Messages: ${messages.length}`);
 
   // === Retry with exponential backoff ===
-  const MAX_RETRIES = 3;
-  const TIMEOUT_MS = 180000; // 180 seconds
+  // v9.0.1: 180s×3회 → 90s×2회 — 장애 시 폴백까지 최대 3분 (기존 최대 9분)
+  const MAX_RETRIES = 2;
+  const TIMEOUT_MS = 90000; // 90 seconds
   let lastError: Error | null = null;
 
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {

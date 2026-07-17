@@ -530,8 +530,9 @@ consultations.get('/:id/analysis-status', async (c) => {
 
     if (!row) return c.json({ success: false, error: '상담 기록을 찾을 수 없습니다.' }, 404);
 
-    // 좌초 감지: 15분 이상 진행 없는 processing → failed 전환 (워커 재배포/크래시로 waitUntil 유실 케이스)
-    if (row.ai_analysis_status === 'processing' && (row.stale_minutes as number) >= 15) {
+    // 좌초 감지: 10분 이상 진행 없는 processing → failed 전환 (워커 재배포/크래시로 waitUntil 유실 케이스)
+    // v9.0.1: AI 호출 타임아웃 축소(90s×2)로 정상 스텝은 최대 ~6분 → 10분이면 확실히 좌초
+    if (row.ai_analysis_status === 'processing' && (row.stale_minutes as number) >= 10) {
       await db.prepare(`
         UPDATE consultations SET ai_analysis_status = 'failed', analysis_step = 'failed:stalled',
           analysis_error = '분석이 중단되었습니다. 다시 분석해주세요. (녹음은 안전하게 저장되어 있습니다)', updated_at = datetime('now')
