@@ -80,17 +80,25 @@
     var wrap = document.createElement('div');
     wrap.id = id;
     wrap.className = 'fixed inset-0 bg-surface-900/60 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center';
-    wrap.innerHTML = '<div class="bg-white w-full ' + (opt.maxWidth || 'sm:max-w-md') + ' rounded-t-3xl sm:rounded-3xl p-6 animate-slide-up max-h-[85vh] overflow-y-auto">' + innerHtml + '</div>';
+    // v9.1.8 모바일: 홈바 safe-area 패딩 + dvh 기반 높이 제한
+    wrap.innerHTML = '<div class="bg-white w-full ' + (opt.maxWidth || 'sm:max-w-md') + ' rounded-t-3xl sm:rounded-3xl p-6 animate-slide-up overflow-y-auto" style="max-height:min(85vh,85dvh);padding-bottom:max(env(safe-area-inset-bottom),1.5rem)">' + innerHtml + '</div>';
     wrap.addEventListener('click', function(e) {
       if (e.target === wrap) { PT.closeSheet(id); if (opt.onClose) opt.onClose(); }
     });
     document.body.appendChild(wrap);
+    // v9.1.8: 시트 열린 동안 배경 스크롤 잠금 (중첩 시트 대비 카운터)
+    window._ptSheetCount = (window._ptSheetCount || 0) + 1;
+    document.body.style.overflow = 'hidden';
     return wrap;
   };
 
   PT.closeSheet = function(id) {
     var el = document.getElementById(id);
-    if (el) el.remove();
+    if (el) {
+      el.remove();
+      window._ptSheetCount = Math.max(0, (window._ptSheetCount || 1) - 1);
+      if (window._ptSheetCount === 0) document.body.style.overflow = '';
+    }
   };
 
   /**

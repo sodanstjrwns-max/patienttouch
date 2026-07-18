@@ -1,4 +1,25 @@
-# 페이션트 터치 (Patient Touch v9.1.7)
+# 페이션트 터치 (Patient Touch v9.1.8)
+
+## 📱 v9.1.8 모바일 최적화 (2026-07-18)
+
+### 감사 결과 → 적용한 개선
+| 영역 | 문제 | 수정 |
+|---|---|---|
+| 노치/펀치홀 | `viewport-fit=cover` 누락 — safe-area env() 값이 0으로 고정 | viewport 메타에 `viewport-fit=cover` 추가 (기존 safe-area-top/bottom 클래스가 이제 실제로 동작) |
+| CDN 지연 | 폰트/아이콘/Chart.js가 cdn.jsdelivr.net에서 로드되는데 preconnect 없음 | `<link rel="preconnect">` 추가 — DNS+TLS 핸드셰이크 선행 |
+| 스크롤 체이닝 | 바텀시트/모달 스크롤이 끝나면 배경 페이지가 딸려 움직임 | `html { overscroll-behavior-y: contain }` + 시트 열림 시 `body overflow:hidden` 잠금 (중첩 시트 카운터로 안전 해제) |
+| iOS 주소창 | `100vh`가 주소창 표시/숨김에 따라 튀는 문제 | `min-height:100dvh` (vh 폴백 유지), 시트 max-height `min(85vh,85dvh)` |
+| 바텀시트 홈바 | 시트 하단 버튼이 iPhone 홈 인디케이터에 가림 | 시트에 `padding-bottom:max(env(safe-area-inset-bottom),1.5rem)` |
+| sticky hover | 모바일에서 탭 후 카드가 hover 상태(떠오른 채)로 고정 | `@media (hover:none)`에서 card hover/tooltip/glow 무효화 |
+| 접근성/배터리 | 절전·저사양 기기에서 상시 그라데이션 애니메이션 부담 | `prefers-reduced-motion: reduce` 전체 애니메이션 정지 |
+| iOS 관성 스크롤 | 내부 스크롤 영역 뻑뻑함 | `.overflow-*`에 `-webkit-overflow-scrolling: touch` |
+
+### ✅ 검증 (실사용 시뮬레이션)
+- 로컬: 렌더된 HTML에 viewport-fit=cover + preconnect 확인, tailwind.css 번들에 6개 규칙 모두 포함 확인
+- 시트 DOM 시뮬: 열림→body 잠금, dvh 제한·safe-area 패딩 포함, 중첩 2개 열고 1개 닫음→여전히 잠김, 모두 닫음→해제 (카운터 정상)
+- 프로덕션: sw pt-v9.1.8, HTML 메타 2종 ✅, CSS 규칙 5종 ✅ (hover:none 포함), components.js 시트 개선 반영 ✅
+- 이미 잘 되어 있던 것(유지): input 16px(iOS 줌 방지), touch-action:manipulation, tap-highlight 제거, active:scale 피드백, 바텀 내비 safe-area, PWA 메타 일체
+
 
 ## 👤 v9.1.7 "녹음 파일명이 아니라 환자 이름이 나와야지" (2026-07-18)
 

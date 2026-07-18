@@ -14,6 +14,8 @@
 
   html {
     scroll-behavior: smooth;
+    /* v9.1.8: 모바일 하단 당김 시 상단 바운스로 전체 페이지 덩달림 방지 */
+    overscroll-behavior-y: contain;
   }
 
   body {
@@ -24,6 +26,14 @@
     color: #17123a;
     overflow-x: hidden;
     transition: opacity 0.2s ease-out;
+    /* v9.1.8: iOS 주소창 변화에도 안정적인 높이 (dvh 미지원 시 vh 폴백) */
+    min-height: 100vh;
+    min-height: 100dvh;
+  }
+
+  /* v9.1.8: 스크롤 영역 관성 스크롤 (iOS) */
+  .overflow-y-auto, .overflow-auto, .overflow-x-auto {
+    -webkit-overflow-scrolling: touch;
   }
 
   /* Prevent iOS zoom on input */
@@ -72,6 +82,7 @@
   /* Safe area */
   .safe-area-bottom { padding-bottom: max(env(safe-area-inset-bottom), 0.5rem); }
   .safe-area-top { padding-top: env(safe-area-inset-top); }
+  .safe-area-x { padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right); }
 
   /* Touch Feedback */
   .touch-active {
@@ -338,6 +349,27 @@
 button, a, [onclick], [role="button"], .card-premium[onclick] {
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
+}
+
+/* v9.1.8: 저사양 기기·절전 모드 배려 — 무거운 애니메이션 정지 */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* v9.1.8: 모바일에서는 hover 효과 무효화 — 탭 후 hover 상태 고정(sticky hover) 방지 */
+@media (hover: none) {
+  .card-premium:hover {
+    transform: none;
+    border-color: rgba(124, 77, 255, 0.09);
+    box-shadow: 0 1px 2px rgba(38,12,97,0.03), 0 10px 32px rgba(38,12,97,0.05);
+  }
+  .btn-glow:hover::after { opacity: 0; }
+  [data-tooltip]:hover::before { opacity: 0; }
 }
 button:active, .touch-active:active, .card-premium[onclick]:active {
   transform: scale(0.97) !important;
