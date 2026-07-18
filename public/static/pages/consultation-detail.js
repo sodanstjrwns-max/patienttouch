@@ -132,6 +132,23 @@ function renderConsultation(c) {
     '</div>' : '') +
   '</div>';
 
+  // v9.1.4: 녹음 유실 경고 배너 — 손상 세그먼트가 있으면 AI 분석이 부분 데이터 기반임을 명시
+  var ah = c.audio_health;
+  if (ah && ah.lost_segments > 0) {
+    var lostMin = ah.lost_segments; // 세그먼트당 약 1분
+    var aliveMin = ah.total_segments - ah.lost_segments;
+    html += '<div class="rounded-2xl border border-amber-200 bg-amber-50 p-4">' +
+      '<div class="flex items-start gap-3">' +
+        '<div class="w-9 h-9 rounded-xl bg-amber-100 flex items-center justify-center shrink-0"><i class="fas fa-triangle-exclamation text-amber-500 text-sm"></i></div>' +
+        '<div class="flex-1 min-w-0">' +
+          '<p class="font-bold text-sm text-amber-800">녹음 일부 유실 (' + ah.total_segments + '개 구간 중 ' + ah.lost_segments + '개 손상)</p>' +
+          '<p class="text-xs text-amber-700 mt-1 leading-relaxed">약 ' + lostMin + '분 분량의 앞부분 녹음이 손상되어 <b>살아남은 약 ' + aliveMin + '분 분량만으로</b> AI 분석·타임라인·재생이 구성되었습니다. 유실 구간의 대화 내용은 분석에 반영되지 못했습니다.</p>' +
+          '<p class="text-[11px] text-amber-600 mt-1.5"><i class="fas fa-shield-halved mr-1"></i>이 손상 원인은 v9.1.1에서 근본 수정되어, 새 녹음부터는 발생하지 않습니다.</p>' +
+        '</div>' +
+      '</div>' +
+    '</div>';
+  }
+
   // === v8.0: Audio Playback (녹음 다시듣기 — 성장의 핵심 도구) ===
   html += '<div class="card-premium p-4" id="audioPlayerCard">' +
     '<div class="flex items-center gap-3">' +

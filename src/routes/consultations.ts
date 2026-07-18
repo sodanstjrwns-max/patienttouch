@@ -250,10 +250,22 @@ consultations.get('/:id', async (c) => {
       return c.json({ success: false, error: '상담 기록을 찾을 수 없습니다.' }, 404);
     }
 
+    // v9.1.4: 녹음 유실 감지 — 손상 세그먼트(transcript='' AND confidence=0)가 있으면
+    // AI 분석/재생이 살아남은 구간만으로 이뤄졌음을 프론트에 알림
+    let audioHealth: { total_segments: number; lost_segments: number; lost_indexes: number[] } | null = null;
+    const segRows = await db.prepare(
+      "SELECT chunk_index, (transcript = '' AND confidence = 0) AS lost FROM stt_chunks WHERE consultation_id = ? AND audio_url IS NOT NULL ORDER BY chunk_index"
+    ).bind(consultId).all();
+    if (segRows.results.length > 0) {
+      const lostIdx = segRows.results.filter((r: any) => r.lost === 1).map((r: any) => r.chunk_index as number);
+      audioHealth = { total_segments: segRows.results.length, lost_segments: lostIdx.length, lost_indexes: lostIdx };
+    }
+
     return c.json({
       success: true,
       data: {
         ...consultation,
+        audio_health: audioHealth,
         patient_psychology: safeParseJSON(consultation.patient_psychology as string, {}),
         emotion_flow: safeParseJSON(consultation.emotion_flow as string, {}),
         key_quotes: safeParseJSON(consultation.key_quotes as string, []),
