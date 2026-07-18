@@ -3,6 +3,7 @@ async function loadSettings() {
     var data = await requireAuth();
     if (data.success) {
       var user = data.data;
+      window._ptMe = user; // v9.2: 팀 관리에서 본인/관리자 판별용
       var settings = user.settings || {};
       var avatarColor = PT.avatarColor(user.name); // v8.6: shared
       document.getElementById('profileSection').innerHTML =
@@ -17,8 +18,11 @@ async function loadSettings() {
         if (exportSec) exportSec.classList.remove('hidden');
         var privacySec = document.getElementById('privacySection');
         if (privacySec) { privacySec.classList.remove('hidden'); loadPrivacyPolicy(); }
-        var leadsSec = document.getElementById('leadsSection');
-        if (leadsSec) { leadsSec.classList.remove('hidden'); loadLeads(); }
+        // v9.2: 도입 문의(리드)는 플랫폼 운영 조직(서울BD치과)의 관리자에게만 노출
+        if (user.organization_id === 'org_bd_dental') {
+          var leadsSec = document.getElementById('leadsSection');
+          if (leadsSec) { leadsSec.classList.remove('hidden'); loadLeads(); }
+        }
       }
 
       document.getElementById('notificationEnabled').checked = settings.notification_enabled !== false;
@@ -131,17 +135,20 @@ document.getElementById('logoutBtn').addEventListener('click', async function() 
   window.location.href = '/login';
 });
 
-// === Feature 10: Team Management ===
+// === Feature 10: Team Management (v9.2: 상담사 여러 명 관리 강화) ===
+var _teamMembers = [];
 async function loadTeam() {
   try {
     var res = await fetch('/api/auth/team');
     var data = await res.json();
     if (!data.success) return;
+    _teamMembers = data.data;
 
+    var me = window._ptMe || {};
+    var isAdmin = me.role === 'admin' || me.role === 'owner';
     var roles = {admin:'관리자',staff:'상담사'};
     var roleColors = {admin:'bg-brand-50 text-brand-700',staff:'bg-surface-100 text-surface-600'};
-    
-    
+
     var html = '';
     data.data.forEach(function(m) {
       var ac = PT.avatarColor(m.name); // v8.6: shared
@@ -149,34 +156,121 @@ async function loadTeam() {
       html += '<div class="w-9 h-9 rounded-lg '+ac+' flex items-center justify-center font-bold text-xs shrink-0">'+esc(m.name).charAt(0)+'</div>';
       html += '<div class="flex-1 min-w-0">';
       html += '<div class="flex items-center gap-1.5"><span class="text-sm font-bold truncate">'+esc(m.name)+'</span>';
-      html += '<span class="text-[10px] px-1.5 py-0.5 rounded '+(roleColors[m.role]||roleColors.staff)+' font-semibold">'+(roles[m.role]||m.role)+'</span></div>';
+      html += '<span class="text-[10px] px-1.5 py-0.5 rounded '+(roleColors[m.role]||roleColors.staff)+' font-semibold">'+(roles[m.role]||m.role)+'</span>';
+      if(m.id === me.id) html += '<span class="text-[10px] text-surface-400">(나)</span>';
+      html += '</div>';
       html += '<p class="text-[11px] text-surface-500 truncate">'+esc(m.email)+'</p>';
       html += '</div>';
       html += '<div class="text-right shrink-0">';
       if(m.monthly_consultations) html += '<p class="text-xs font-bold text-surface-700">'+m.monthly_consultations+'건</p>';
       if(m.monthly_revenue) html += '<p class="text-[10px] text-emerald-600 font-semibold">'+fmtWon(m.monthly_revenue)+'만</p>';
-      html += '</div></div>';
+      html += '</div>';
+      if(isAdmin && m.id !== me.id) {
+        html += '<button class="team-manage-btn w-8 h-8 rounded-lg bg-white border border-surface-200 flex items-center justify-center shrink-0 hover:bg-surface-100" data-member-id="'+esc(m.id)+'" aria-label="팀원 관리"><i class="fas fa-ellipsis-vertical text-xs text-surface-500 pointer-events-none"></i></button>';
+      }
+      html += '</div>';
     });
     document.getElementById('teamList').innerHTML = html || '<p class="text-xs text-surface-500 text-center py-3">팀원이 없습니다</p>';
+
+    // 관리 버튼 바인딩
+    document.querySelectorAll('.team-manage-btn').forEach(function(btn) {
+      btn.addEventListener('click', function() { openMemberManageSheet(btn.getAttribute('data-member-id')); });
+    });
   } catch(e) { console.error('Team load error:', e); }
 }
 
-document.getElementById('addMemberBtn').addEventListener('click', function() {
-  var name = prompt('팀원 이름:');
-  if(!name) return;
-  var email = prompt('이메일:');
-  if(!email) return;
-  var password = prompt('비밀번호:');
-  if(!password) return;
-  var role = confirm('관리자 권한을 부여하시겠습니까?\\n(확인=관리자, 취소=상담사)') ? 'admin' : 'staff';
+// v9.2: 팀원 관리 시트 (역할 변경 / 삭제)
+function openMemberManageSheet(memberId) {
+  var m = _teamMembers.find(function(x){ return x.id === memberId; });
+  if (!m) return;
+  var isStaff = m.role !== 'admin';
+  var html =
+    '<div class="flex items-center gap-3 mb-5">' +
+      '<div class="w-11 h-11 rounded-xl '+PT.avatarColor(m.name)+' flex items-center justify-center font-bold">'+esc(m.name).charAt(0)+'</div>' +
+      '<div><p class="font-bold text-surface-900">'+esc(m.name)+'</p><p class="text-xs text-surface-500">'+esc(m.email)+' · '+(m.role==='admin'?'관리자':'상담사')+'</p></div>' +
+    '</div>' +
+    '<div class="space-y-2">' +
+      '<button id="memberRoleBtn" class="w-full py-3 rounded-xl bg-brand-50 text-brand-700 font-semibold text-sm"><i class="fas fa-user-gear mr-1.5"></i>'+(isStaff?'관리자로 승격':'상담사로 변경')+'</button>' +
+      '<button id="memberDeleteBtn" class="w-full py-3 rounded-xl bg-rose-50 text-rose-600 font-semibold text-sm"><i class="fas fa-user-minus mr-1.5"></i>팀에서 제외</button>' +
+      '<button id="memberCancelBtn" class="w-full py-3 rounded-xl bg-surface-100 text-surface-600 font-semibold text-sm">닫기</button>' +
+    '</div>';
+  PT.openSheet('memberManageSheet', html);
 
-  fetch('/api/auth/team', {
-    method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({name:name, email:email, password:password, role:role})
-  }).then(function(r){ return r.json(); }).then(function(d) {
-    if(d.success) { showToast(name+'님을 추가했습니다!','success'); loadTeam(); }
-    else showToast(d.error||'추가에 실패했습니다','error');
-  }).catch(function(){ showToast('오류가 발생했습니다','error'); });
+  document.getElementById('memberCancelBtn').addEventListener('click', function(){ PT.closeSheet('memberManageSheet'); });
+
+  document.getElementById('memberRoleBtn').addEventListener('click', function() {
+    var newRole = isStaff ? 'admin' : 'staff';
+    fetch('/api/auth/team/'+encodeURIComponent(m.id), {
+      method:'PUT', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({role:newRole})
+    }).then(function(r){ return r.json(); }).then(function(d) {
+      if(d.success) { showToast(m.name+'님을 '+(newRole==='admin'?'관리자':'상담사')+'로 변경했습니다','success'); PT.closeSheet('memberManageSheet'); loadTeam(); }
+      else showToast(d.error||'변경에 실패했습니다','error');
+    }).catch(function(){ showToast('오류가 발생했습니다','error'); });
+  });
+
+  document.getElementById('memberDeleteBtn').addEventListener('click', function() {
+    if(!confirm(m.name+'님을 팀에서 제외하시겠습니까?\n계정이 삭제되며 로그인할 수 없게 됩니다.\n(해당 직원이 기록한 상담/환자 데이터는 보존됩니다)')) return;
+    fetch('/api/auth/team/'+encodeURIComponent(m.id), { method:'DELETE' })
+      .then(function(r){ return r.json(); }).then(function(d) {
+        if(d.success) { showToast(m.name+'님을 팀에서 제외했습니다','success'); PT.closeSheet('memberManageSheet'); loadTeam(); }
+        else showToast(d.error||'삭제에 실패했습니다','error');
+      }).catch(function(){ showToast('오류가 발생했습니다','error'); });
+  });
+}
+
+// v9.2: prompt 3연타 → 제대로 된 바텀시트 폼
+document.getElementById('addMemberBtn').addEventListener('click', function() {
+  var me = window._ptMe || {};
+  if (me.role !== 'admin' && me.role !== 'owner') { showToast('관리자만 팀원을 추가할 수 있습니다','error'); return; }
+  var html =
+    '<h3 class="font-bold text-surface-900 mb-1">팀원 추가</h3>' +
+    '<p class="text-xs text-surface-500 mb-4">상담사 계정을 만들면 같은 병원 데이터를 함께 사용합니다</p>' +
+    '<div class="space-y-3">' +
+      '<div><label class="text-xs font-semibold text-surface-600 block mb-1">이름 *</label><input id="nmName" type="text" class="w-full px-3 py-2.5 rounded-xl border border-surface-200 text-sm" placeholder="김유진" autocomplete="off" /></div>' +
+      '<div><label class="text-xs font-semibold text-surface-600 block mb-1">이메일(로그인 ID) *</label><input id="nmEmail" type="email" class="w-full px-3 py-2.5 rounded-xl border border-surface-200 text-sm" placeholder="yujin@clinic.kr" autocomplete="off" /></div>' +
+      '<div><label class="text-xs font-semibold text-surface-600 block mb-1">비밀번호 * <span class="font-normal text-surface-400">(8자 이상)</span></label><input id="nmPassword" type="password" class="w-full px-3 py-2.5 rounded-xl border border-surface-200 text-sm" placeholder="••••••••" autocomplete="new-password" /></div>' +
+      '<div><label class="text-xs font-semibold text-surface-600 block mb-1">연락처</label><input id="nmPhone" type="tel" class="w-full px-3 py-2.5 rounded-xl border border-surface-200 text-sm" placeholder="010-0000-0000" autocomplete="off" /></div>' +
+      '<div><label class="text-xs font-semibold text-surface-600 block mb-1">역할</label>' +
+        '<div class="grid grid-cols-2 gap-2">' +
+          '<button type="button" class="nm-role-btn py-2.5 rounded-xl border-2 border-brand-500 bg-brand-50 text-brand-700 text-sm font-semibold" data-role="staff"><i class="fas fa-headset mr-1"></i>상담사</button>' +
+          '<button type="button" class="nm-role-btn py-2.5 rounded-xl border-2 border-surface-200 text-surface-500 text-sm font-semibold" data-role="admin"><i class="fas fa-user-shield mr-1"></i>관리자</button>' +
+        '</div>' +
+        '<p class="text-[11px] text-surface-400 mt-1.5">상담사: 상담/환자 관리 · 관리자: + 팀원관리·매출전체·데이터내보내기</p>' +
+      '</div>' +
+      '<button id="nmSubmit" class="w-full py-3 rounded-xl bg-brand-600 text-white font-bold text-sm mt-1"><i class="fas fa-user-plus mr-1.5"></i>팀원 추가</button>' +
+    '</div>';
+  PT.openSheet('addMemberSheet', html);
+
+  var selectedRole = 'staff';
+  document.querySelectorAll('.nm-role-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      selectedRole = btn.getAttribute('data-role');
+      document.querySelectorAll('.nm-role-btn').forEach(function(b) {
+        var on = b === btn;
+        b.className = 'nm-role-btn py-2.5 rounded-xl border-2 text-sm font-semibold ' + (on ? 'border-brand-500 bg-brand-50 text-brand-700' : 'border-surface-200 text-surface-500');
+      });
+    });
+  });
+
+  document.getElementById('nmSubmit').addEventListener('click', function() {
+    var name = document.getElementById('nmName').value.trim();
+    var email = document.getElementById('nmEmail').value.trim();
+    var password = document.getElementById('nmPassword').value;
+    var phone = document.getElementById('nmPhone').value.trim();
+    if(!name) { showToast('이름을 입력해주세요','error'); return; }
+    if(!email || email.indexOf('@') < 1) { showToast('올바른 이메일을 입력해주세요','error'); return; }
+    if(!password || password.length < 8) { showToast('비밀번호는 8자 이상이어야 합니다','error'); return; }
+    var btn = document.getElementById('nmSubmit');
+    btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1.5"></i>추가 중...';
+    fetch('/api/auth/team', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({name:name, email:email, password:password, role:selectedRole, phone:phone||null})
+    }).then(function(r){ return r.json(); }).then(function(d) {
+      if(d.success) { showToast(name+'님을 추가했습니다! 이제 '+email+'로 로그인할 수 있어요','success'); PT.closeSheet('addMemberSheet'); loadTeam(); }
+      else { showToast(d.error||'추가에 실패했습니다','error'); btn.disabled = false; btn.innerHTML = '<i class="fas fa-user-plus mr-1.5"></i>팀원 추가'; }
+    }).catch(function(){ showToast('오류가 발생했습니다','error'); btn.disabled = false; btn.innerHTML = '<i class="fas fa-user-plus mr-1.5"></i>팀원 추가'; });
+  });
 });
 
 // === Feature 11: Data Export ===

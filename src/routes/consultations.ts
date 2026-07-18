@@ -979,9 +979,14 @@ consultations.delete('/:id', async (c) => {
     const orgId = c.get('organizationId');
     const db = c.env.DB;
 
-    await db.prepare(
+    const result = await db.prepare(
       'DELETE FROM consultations WHERE id = ? AND organization_id = ?'
     ).bind(consultId, orgId).run();
+
+    // v9.2: 다른 병원 상담 ID로 호출 시 success:true가 반환되던 문제 정정 (실제 삭제 0건이면 404)
+    if (!result.meta || result.meta.changes === 0) {
+      return c.json({ success: false, error: '상담 기록을 찾을 수 없습니다.' }, 404);
+    }
 
     return c.json({ success: true });
   } catch (error) {

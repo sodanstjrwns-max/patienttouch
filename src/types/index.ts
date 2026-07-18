@@ -506,4 +506,6 @@ export interface Env {
   VAPID_PUBLIC_KEY?: string;
   VAPID_PRIVATE_KEY?: string;
   CRON_SECRET?: string;
+  // v9.2: 플랫폼 운영 조직 ID — 도입 문의(리드) 관리 접근 권한 (기본: org_bd_dental)
+  PLATFORM_ORG_ID?: string;
 }

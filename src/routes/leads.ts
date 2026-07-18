@@ -1,6 +1,6 @@
 // v8.7: 도입 문의(리드) API — /welcome 랜딩페이지
 import { Hono } from 'hono'
-import { authMiddleware, adminOnly } from '../lib/auth'
+import { authMiddleware } from '../lib/auth'
 import { rateLimit } from '../lib/middleware'
 
 type Bindings = { DB: D1Database }
@@ -71,11 +71,23 @@ leads.post('/', rateLimit(5, 60000), async (c) => {
   }
 })
 
-// ===== 이하 관리자 전용 =====
+// ===== 이하 플랫폼 운영자 전용 =====
+// v9.2: 리드(도입 문의)는 Patient Touch 플랫폼의 영업 데이터 —
+// 임의 병원의 admin이 아니라 플랫폼 운영 조직(PLATFORM_ORG_ID)의 admin만 접근 가능
 leads.use('*', authMiddleware)
 
-// 리드 목록 조회 (관리자)
-leads.get('/', adminOnly, async (c) => {
+const DEFAULT_PLATFORM_ORG = 'org_bd_dental'
+async function platformAdminOnly(c: any, next: any) {
+  const auth = c.get('auth')
+  const platformOrg = (c.env as any).PLATFORM_ORG_ID || DEFAULT_PLATFORM_ORG
+  if (auth?.role !== 'admin' || auth?.organization_id !== platformOrg) {
+    return c.json({ success: false, error: '관리자 권한이 필요합니다.' }, 403)
+  }
+  await next()
+}
+
+// 리드 목록 조회 (플랫폼 운영자)
+leads.get('/', platformAdminOnly, async (c) => {
   const status = c.req.query('status')
   const limit = Math.min(parseInt(c.req.query('limit') || '100', 10), 200)
   let sql = `SELECT * FROM leads`
@@ -87,8 +99,8 @@ leads.get('/', adminOnly, async (c) => {
   return c.json({ success: true, data: rows.results })
 })
 
-// 리드 상태 변경 (관리자)
-leads.put('/:id/status', adminOnly, async (c) => {
+// 리드 상태 변경 (플랫폼 운영자)
+leads.put('/:id/status', platformAdminOnly, async (c) => {
   const id = c.req.param('id')
   const { status } = await c.req.json()
   if (!['new', 'contacted', 'demo', 'won', 'lost'].includes(status)) {

@@ -415,6 +415,12 @@ auth.post('/team', authMiddleware, async (c) => {
     if (!name || !email || !password) {
       return c.json({ success: false, error: '이름, 이메일, 비밀번호를 입력해주세요.' }, 400);
     }
+    if (String(password).length < 8) {
+      return c.json({ success: false, error: '비밀번호는 8자 이상이어야 합니다.' }, 400);
+    }
+    if (role && !['admin', 'staff'].includes(role)) {
+      return c.json({ success: false, error: '유효하지 않은 역할입니다.' }, 400);
+    }
 
     // Check duplicate email
     const existing = await db.prepare('SELECT id FROM users WHERE email=?').bind(email).first();
@@ -448,6 +454,20 @@ auth.put('/team/:id', authMiddleware, async (c) => {
     }
 
     const { role, name, phone } = await c.req.json();
+    if (role && !['admin', 'staff'].includes(role)) {
+      return c.json({ success: false, error: '유효하지 않은 역할입니다.' }, 400);
+    }
+
+    // v9.2: 마지막 관리자 강등 방지 — 조직이 관리자 0명이 되면 팀 관리가 영구 불가능해짐
+    if (role === 'staff') {
+      const target = await db.prepare('SELECT role FROM users WHERE id=? AND organization_id=?').bind(memberId, orgId).first();
+      if (target?.role === 'admin') {
+        const adminCount = await db.prepare("SELECT COUNT(*) as n FROM users WHERE organization_id=? AND role='admin'").bind(orgId).first();
+        if ((adminCount?.n as number || 0) <= 1) {
+          return c.json({ success: false, error: '마지막 관리자는 상담사로 변경할 수 없습니다. 먼저 다른 관리자를 지정해주세요.' }, 400);
+        }
+      }
+    }
 
     await db.prepare(`
       UPDATE users SET role=COALESCE(?,role), name=COALESCE(?,name), phone=COALESCE(?,phone)
@@ -476,6 +496,18 @@ auth.delete('/team/:id', authMiddleware, async (c) => {
     // Don't allow self-deletion
     if (memberId === c.get('userId')) {
       return c.json({ success: false, error: '자신을 삭제할 수 없습니다.' }, 400);
+    }
+
+    // v9.2: 마지막 관리자 삭제 방지
+    const target = await db.prepare('SELECT role FROM users WHERE id=? AND organization_id=?').bind(memberId, orgId).first();
+    if (!target) {
+      return c.json({ success: false, error: '해당 팀원을 찾을 수 없습니다.' }, 404);
+    }
+    if (target.role === 'admin') {
+      const adminCount = await db.prepare("SELECT COUNT(*) as n FROM users WHERE organization_id=? AND role='admin'").bind(orgId).first();
+      if ((adminCount?.n as number || 0) <= 1) {
+        return c.json({ success: false, error: '마지막 관리자는 삭제할 수 없습니다.' }, 400);
+      }
     }
 
     await db.prepare('DELETE FROM users WHERE id=? AND organization_id=?').bind(memberId, orgId).run();

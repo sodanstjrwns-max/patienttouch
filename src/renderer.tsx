@@ -23,8 +23,8 @@ export const renderer = jsxRenderer(({ children, title }) => {
         <meta property="og:site_name" content="페이션트 터치" />
         <meta property="og:title" content={title || '페이션트 터치 — 치과 상담을 매출 엔진으로'} />
         <meta property="og:description" content="상담 녹음 → AI 분석 → 원장 코칭 → 미동의 환자 리콜까지. 찾는 건 기계가, 연락은 사람이. 파운더 50: 첫 50개 병원 평생 30% 할인" />
-        <meta property="og:image" content="https://patienttouch.pages.dev/static/icons/og-image.png" />
-        <meta property="og:url" content="https://patienttouch.pages.dev/welcome" />
+        <meta property="og:image" content="https://patienttouch.kr/static/icons/og-image.png" />
+        <meta property="og:url" content="https://patienttouch.kr/welcome" />
         <meta name="twitter:card" content="summary_large_image" />
         {/* v9.1.8: CDN preconnect — 폰트/아이콘/차트 로딩 지연 단축 */}
         <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
