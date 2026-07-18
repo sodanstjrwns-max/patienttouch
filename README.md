@@ -1,4 +1,22 @@
-# 페이션트 터치 (Patient Touch v9.1.5)
+# 페이션트 터치 (Patient Touch v9.1.6)
+
+## 📅 v9.1.6 일정 캘린더 "불러오지 못함" + 느림 수정 (2026-07-18)
+
+### 진단: 서버가 아니라 프론트의 자살골
+- 실측: /api/calendar/month 0.09s(로컬)/0.13~0.42s(프로덕), /day 0.03s/0.19~0.24s — 서버는 정상
+- 진짜 원인: 공용 `safeFetch`는 **이미 JSON 파싱된 객체**를 반환하는데, calendar.js가 그 위에 `res.json()`을 또 호출 → 즉시 TypeError → catch → "일정을 불러오지 못했습니다" (응답은 멀쥝히 도착했는데 파싱 단계에서 자폭). 월 요약 "-"도 같은 이유
+- 동일 버그가 home.js 3곳(환자검색/오늘의연락/리텐션위젯), today.js 1곳에도 잠복 — 함께 수정
+
+### 수정
+1. **calendar.js / home.js / today.js**: `safeFetch` 결과를 바로 사용 (이중 `.json()` 제거, 총 6곳)
+2. **일별 패널 실패 시 [다시 시도] 버튼** 추가 (영구 실패 메시지 대신 복구 경로 제공)
+3. **migrations/0020_calendar_indexes.sql**: 캘린더 4개 날짜 컬럼 복합 인덱스 (org+consultation_date / org+recommended_date / org+next_appointment / org+next_contact_date) — 로컬+리모트 적용
+
+### ✅ 검증 (실사용 시뮬레이션)
+- 로컬: month/day API 200 (0.10s/0.03s), DOM 스텁 렌더 — 월 요약 상담 6/연락 6, 그리드 31칸, 7/17 상세 총 4건 렌더, 실패 경로에서 재시도 버튼 노출 확인
+- 프로덕: 배포된 calendar.js(이중 json 0건)를 내려받아 **실제 프로덕 API 응답 데이터로 DOM 렌더 시뮬** — 월 요약 상담 3/연락 2, 7/18 상세 총 1건(오현우님 클로징 태스크) 렌더 확인. home.js/today.js도 프로덕 반영 확인(safeFetch+json 패턴 0건)
+- sw `pt-v9.1.6`, 리모트 D1 마이그레이션 0020 ✅
+
 
 ## 📄 v9.1.5 터치 리포트 "만들고 나면 볼 수 없음" 수정 (2026-07-18)
 

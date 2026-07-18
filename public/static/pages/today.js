@@ -25,9 +25,9 @@ async function loadTodayPage() {
     await fetch('/api/tasks/auto-daily', { method: 'POST' }).catch(function(){ return null; });
 
     var [cRes, rRes, doneRes] = await Promise.all([
-      safeFetch('/api/dashboard/today-contacts').then(function(r){ return r.json(); }).catch(function(){ return null; }),
-      safeFetch('/api/retention/dashboard?filter=urgent').then(function(r){ return r.json(); }).catch(function(){ return null; }),
-      safeFetch('/api/tasks?status=completed&limit=30').then(function(r){ return r.json(); }).catch(function(){ return null; })
+      safeFetch('/api/dashboard/today-contacts').catch(function(){ return null; }),
+      safeFetch('/api/retention/dashboard?filter=urgent').catch(function(){ return null; }),
+      safeFetch('/api/tasks?status=completed&limit=30').catch(function(){ return null; })
     ]);
 
     renderBriefingSummary(cRes);

@@ -85,9 +85,8 @@ function calMoveMonth(delta) {
 async function loadMonth() {
   document.getElementById('monthTitle').textContent = calState.year + '년 ' + calState.month + '월';
   try {
-    var res = await safeFetch('/api/calendar/month?year=' + calState.year + '&month=' + calState.month + '&my_only=' + calState.myOnly);
-    var data = await res.json();
-    if (data.error) { showToast(data.error, 'error'); return; }
+    var data = await safeFetch('/api/calendar/month?year=' + calState.year + '&month=' + calState.month + '&my_only=' + calState.myOnly);
+    if (!data || data.error) { showToast((data && data.error) || '캘린더를 불러오지 못했습니다', 'error'); return; }
     calState.days = data.days || {};
 
     // Summary
@@ -189,13 +188,12 @@ async function loadDayDetail(ds) {
   list.innerHTML = '<div class="card-premium p-4"><div class="shimmer h-4 rounded-lg w-2/3 mb-2"></div><div class="shimmer h-3 rounded-lg w-1/2"></div></div>';
 
   try {
-    var res = await safeFetch('/api/calendar/day?date=' + ds + '&my_only=' + calState.myOnly);
-    var data = await res.json();
-    if (data.error) { list.innerHTML = '<div class="card-premium p-4 text-center text-xs text-surface-400">' + esc(data.error) + '</div>'; return; }
+    var data = await safeFetch('/api/calendar/day?date=' + ds + '&my_only=' + calState.myOnly);
+    if (!data || data.error) { list.innerHTML = '<div class="card-premium p-4 text-center text-xs text-surface-400">' + esc((data && data.error) || '일정을 불러오지 못했습니다') + '</div>'; return; }
     renderDayDetail(data);
   } catch (e) {
     console.error('Day detail error:', e);
-    list.innerHTML = '<div class="card-premium p-4 text-center text-xs text-surface-400">일정을 불러오지 못했습니다</div>';
+    list.innerHTML = '<div class="card-premium p-4 text-center text-xs text-surface-400">일정을 불러오지 못했습니다 <button onclick="loadDayDetail(\'' + ds + '\')" class="underline font-bold text-brand-600 ml-1">다시 시도</button></div>';
   }
 }
 

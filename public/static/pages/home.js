@@ -709,8 +709,7 @@ async function saveHomeContact() {
 
   async function searchPatients(q) {
     try {
-      var res = await safeFetch('/api/patients?search=' + encodeURIComponent(q) + '&limit=8');
-      var data = await res.json();
+      var data = await safeFetch('/api/patients?search=' + encodeURIComponent(q) + '&limit=8');
       if (!data.success || !data.data || data.data.length === 0) {
         list.innerHTML =
           '<div class="p-4 text-center">' +
@@ -770,8 +769,7 @@ async function loadChecklist(td, tm, summaryData) {
     var items = [];
 
     // 1. Contacts: fetch today-contacts
-    var cRes = await safeFetch('/api/dashboard/today-contacts');
-    var cData = await cRes.json();
+    var cData = await safeFetch('/api/dashboard/today-contacts');
     if (cData.success && cData.data && cData.data.contacts) {
       cData.data.contacts.forEach(function(c) {
         items.push({
@@ -795,8 +793,7 @@ async function loadChecklist(td, tm, summaryData) {
 
     // 2. Retention urgent: fetch retention dashboard
     try {
-      var rRes = await safeFetch('/api/retention/dashboard?filter=urgent');
-      var rData = await rRes.json();
+      var rData = await safeFetch('/api/retention/dashboard?filter=urgent');
       if (rData.success && rData.data && rData.data.patients) {
         var retPatientIds = new Set(items.map(function(i){ return i.patient_id; }));
         rData.data.patients.slice(0, 5).forEach(function(p) {
