@@ -209,6 +209,18 @@ var CAL_STATUS_LABEL = {
   in_progress: ['치료중', 'bg-brand-50 text-brand-600']
 };
 
+// 빠른 녹음 임시 환자명(녹음_MMDD_HHMM) → "미지정 환자" 표시
+function calPatientLabel(name) {
+  if (/^\ub179\uc74c_\d{4}_\d{4}$/.test(name || '')) {
+    return { name: '미지정 환자', unlinked: true };
+  }
+  return { name: name || '환자', unlinked: false };
+}
+
+function calUnlinkedBadge() {
+  return '<span class="text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-amber-50 text-amber-600"><i class="fas fa-link-slash mr-0.5"></i>연결 필요</span>';
+}
+
 function calStatusBadge(status) {
   var s = CAL_STATUS_LABEL[status] || [status || '-', 'bg-surface-100 text-surface-500'];
   return '<span class="text-[9px] font-bold px-2 py-0.5 rounded-md ' + s[1] + '">' + esc(s[0]) + '</span>';
@@ -226,10 +238,11 @@ function renderDayDetail(data) {
     html += '<p class="text-[10px] font-extrabold text-brand-600 uppercase tracking-wider px-1 pt-1"><span class="inline-block w-2 h-2 rounded-full bg-brand-500 mr-1"></span>상담 기록 (' + data.consultations.length + ')</p>';
     data.consultations.forEach(function (c) {
       var time = (c.consultation_date || '').slice(11, 16);
+      var pl = calPatientLabel(c.patient_name);
       html += '<a href="/consultations/' + c.id + '" class="card-premium p-3.5 flex items-center gap-3 hover:shadow-md transition-all active:scale-[0.98] block">' +
         '<div class="w-9 h-9 bg-brand-50 rounded-xl flex items-center justify-center shrink-0"><i class="fas fa-comments text-brand-600 text-sm"></i></div>' +
         '<div class="flex-1 min-w-0">' +
-        '<div class="flex items-center gap-1.5"><p class="text-sm font-bold text-surface-900 truncate">' + esc(c.patient_name || '환자') + '</p>' + calStatusBadge(c.status) + '</div>' +
+        '<div class="flex items-center gap-1.5"><p class="text-sm font-bold ' + (pl.unlinked ? 'text-surface-500' : 'text-surface-900') + ' truncate">' + esc(pl.name) + '</p>' + (pl.unlinked ? calUnlinkedBadge() : '') + calStatusBadge(c.status) + '</div>' +
         '<p class="text-[11px] text-surface-400 truncate">' + (time ? time + ' · ' : '') + esc(c.treatment_type || '일반') + (c.amount ? ' · ' + calFmtWon(c.amount) : '') + ' · ' + esc(c.user_name || '') + '</p>' +
         '</div><i class="fas fa-chevron-right text-surface-300 text-xs"></i></a>';
     });
@@ -242,10 +255,11 @@ function renderDayDetail(data) {
     data.tasks.forEach(function (t) {
       var typeLabel = t.task_type === 'closing' ? '클로징' : '프로액티브';
       var phone = t.patient_phone ? '<a href="tel:' + esc(t.patient_phone) + '" onclick="event.stopPropagation()" class="w-8 h-8 bg-emerald-50 rounded-lg flex items-center justify-center shrink-0"><i class="fas fa-phone text-emerald-600 text-xs"></i></a>' : '';
+      var tpl = calPatientLabel(t.patient_name);
       html += '<div class="card-premium p-3.5 flex items-center gap-3">' +
         '<div class="w-9 h-9 bg-amber-50 rounded-xl flex items-center justify-center shrink-0"><i class="fas fa-phone-volume text-amber-500 text-sm"></i></div>' +
         '<div class="flex-1 min-w-0">' +
-        '<div class="flex items-center gap-1.5"><p class="text-sm font-bold text-surface-900 truncate">' + esc(t.patient_name || '환자') + '</p>' + calStatusBadge(t.status) + '</div>' +
+        '<div class="flex items-center gap-1.5"><p class="text-sm font-bold ' + (tpl.unlinked ? 'text-surface-500' : 'text-surface-900') + ' truncate">' + esc(tpl.name) + '</p>' + (tpl.unlinked ? calUnlinkedBadge() : '') + calStatusBadge(t.status) + '</div>' +
         '<p class="text-[11px] text-surface-400 truncate">' + typeLabel + (t.treatment_type ? ' · ' + esc(t.treatment_type) : '') + (t.amount ? ' · ' + calFmtWon(t.amount) : '') + '</p>' +
         '</div>' + phone + '</div>';
     });

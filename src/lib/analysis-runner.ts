@@ -405,7 +405,7 @@ export async function advanceAnalysisPipeline(
   orgId: string
 ): Promise<boolean> {
   const row: any = await db.prepare(`
-    SELECT c.id, c.user_id, c.ai_analysis_status, c.analysis_step, c.transcript, c.transcript_diarized,
+    SELECT c.id, c.user_id, c.patient_id, c.ai_analysis_status, c.analysis_step, c.transcript, c.transcript_diarized,
            c.ner_extracted, c.spin_analysis, c.audio_url,
            p.name as patient_name, p.age as patient_age, p.gender as patient_gender
     FROM consultations c LEFT JOIN patients p ON c.patient_id = p.id
@@ -512,6 +512,21 @@ export async function advanceAnalysisPipeline(
       ]);
       await db.prepare("UPDATE consultations SET ner_extracted = ?, spin_analysis = ?, analysis_step = 'reporting', analysis_claim = NULL, analysis_claim_at = NULL, updated_at = datetime('now') WHERE id = ?")
         .bind(JSON.stringify(nerData), JSON.stringify(spinAnalysis), consultId).run();
+
+      // 빠른 녹음 임시 환자명(녹음_MMDD_HHMM) 자동 교체: 상담 중 불린 실명이 추출되면 반영
+      try {
+        const extractedName = typeof nerData?.patient_name === 'string' ? nerData.patient_name.trim() : '';
+        const isPlaceholder = /^\ub179\uc74c_\d{4}_\d{4}$/.test(String(row.patient_name || ''));
+        const isValidName = /^[\uac00-\ud7a3]{2,4}$/.test(extractedName) &&
+          !['본인','부모','어머니','아버지','배우자','환자','원장','실장','선생','고객','남편','아내','자녀'].includes(extractedName);
+        if (isPlaceholder && isValidName && row.patient_id) {
+          await db.prepare("UPDATE patients SET name = ?, updated_at = datetime('now') WHERE id = ? AND organization_id = ? AND name = ?")
+            .bind(extractedName, row.patient_id, orgId, row.patient_name).run();
+          console.log('[AnalysisRunner] auto-renamed placeholder patient', row.patient_id, '→', extractedName);
+        }
+      } catch (e) {
+        console.error('[AnalysisRunner] auto-rename failed (non-fatal):', e);
+      }
       return true;
     }
 

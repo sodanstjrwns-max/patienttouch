@@ -17,6 +17,7 @@ export interface DiarizedSegment {
 }
 
 export interface NERExtracted {
+  patient_name?: string | null;
   treatment_type?: string;
   treatment_area?: string;
   mentioned_prices?: number[];
@@ -257,6 +258,7 @@ ${transcript}
 
 JSON 형식으로 추출:
 {
+  "patient_name": "환자 본인의 이름 (상담 중 '──님'으로 명시적으로 불린 경우에만. 부모님/원장님/실장님/선생님 같은 호칭은 이름이 아님. 불확실하면 반드시 null)",
   "treatment_type": "진료 항목 (임플란트, 교정, 라미네이트 등)",
   "treatment_area": "치료 부위 (#36, 상악 전치 6개 등)",
   "mentioned_prices": [언급된 금액들 (숫자 배열, 원 단위)],
