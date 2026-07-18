@@ -862,7 +862,9 @@ async function loadTouchReportStatus(c) {
     var r = mine.length ? mine[0] : null;
     renderTouchReportAction(el, r, c);
   } catch (e) {
-    el.innerHTML = '';
+    // v9.1.5: 폴링 실패(생성 중 LLM 대기로 응답 지연 등) 시 액션을 비우지 않고 재시도 유지
+    el.innerHTML = '<button onclick="loadTouchReportStatus(currentConsultation)" class="px-3.5 py-2 rounded-lg bg-surface-100 text-surface-500 text-xs font-semibold"><i class="fas fa-rotate-right mr-1 text-[10px]"></i>상태 확인</button>';
+    setTimeout(function () { loadTouchReportStatus(currentConsultation); }, 5000);
   }
 }
 
@@ -877,7 +879,8 @@ function renderTouchReportAction(el, r, c) {
     return;
   }
   var map = {
-    generating: '<span class="px-3 py-1.5 rounded-full text-[11px] font-bold bg-surface-100 text-surface-600"><i class="fas fa-spinner fa-spin mr-1"></i>생성중</span>',
+    // v9.1.5: 생성중도 클릭 가능 — 검수 화면이 직접 폴링하며 진행상황을 보여줌
+    generating: '<a href="/touch-reports/' + r.id + '/review" class="px-3.5 py-2 rounded-lg bg-surface-100 text-surface-600 text-xs font-bold hover:bg-surface-200 transition-colors"><i class="fas fa-spinner fa-spin mr-1 text-[10px]"></i>생성중 · 보기</a>',
     review: '<a href="/touch-reports/' + r.id + '/review" class="px-3.5 py-2 rounded-lg bg-amber-50 text-amber-700 text-xs font-bold hover:bg-amber-100 transition-colors"><i class="fas fa-magnifying-glass mr-1 text-[10px]"></i>검수하기</a>',
     approved: '<a href="/touch-reports/' + r.id + '/review" class="px-3.5 py-2 rounded-lg bg-brand-50 text-brand-600 text-xs font-bold hover:bg-brand-100 transition-colors"><i class="fas fa-paper-plane mr-1 text-[10px]"></i>발송하기</a>',
     sent: '<a href="/touch-reports/' + r.id + '/review" class="px-3.5 py-2 rounded-lg bg-emerald-50 text-emerald-700 text-xs font-bold hover:bg-emerald-100 transition-colors"><i class="fas fa-check mr-1 text-[10px]"></i>발송완료' + (r.open_count ? ' · 열람 ' + r.open_count : '') + '</a>',
@@ -908,6 +911,11 @@ async function generateTouchReport() {
       }
       alert(data.error || '생성 실패');
       renderTouchReportAction(el, null, currentConsultation);
+      return;
+    }
+    // v9.1.5: 생성 시작되면 바로 검수 화면으로 이동 — 거기서 진행상황 표시 + 완료 시 자동 렌더
+    if (data.data && data.data.report_id) {
+      location.href = '/touch-reports/' + data.data.report_id + '/review';
       return;
     }
     loadTouchReportStatus(currentConsultation);
