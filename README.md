@@ -1,5 +1,27 @@
 # 페이션트 터치 (Patient Touch v9.1.8)
 
+## 🌐 커스텀 도메인 연결 — patienttouch.kr (2026-07-18)
+
+### 구성
+- **공식 도메인**: https://patienttouch.kr (및 https://www.patienttouch.kr)
+- **기존 URL**: https://patienttouch.pages.dev — 계속 정상 작동 (병행 운영)
+- **레지스트라**: 가비아 (만기 2029-07-18) / **DNS·SSL**: Cloudflare
+- Cloudflare 존 ID: `ac27aaf73a6a7fc3bffb35b79d51bcdf` / 네임서버: alan.ns.cloudflare.com, samara.ns.cloudflare.com
+- DNS: CNAME `patienttouch.kr` → patienttouch.pages.dev (proxied), CNAME `www` → 동일 (proxied)
+- SSL: Google Trust Services 인증서 자동 발급·자동 갱신 (Universal SSL)
+
+### 연결 절차 기록
+1. Cloudflare 존 생성 + CNAME 2건 추가 + Pages 프로젝트에 커스텀 도메인 2건 등록 (API 자동화)
+2. 가비아에서 네임서버를 Cloudflare NS로 변경 (유일한 수동 단계 — 완료)
+3. NS 전파 (~1분 만에 완료) → 존 active → SSL 발급 → 접속 확인
+
+### ✅ 검증 (실사용 E2E)
+- `https://patienttouch.kr/` → 302 → `/welcome` HTTP 200, 타이틀 정상, 응답 0.5s
+- `https://www.patienttouch.kr/` → 동일 정상
+- SSL 인증서: CN=patienttouch.kr, Google Trust Services 발급 확인
+- sw.js 캐시버전 pt-v9.1.8 서빙 확인
+- **로그인 + 인증 API**: demo 계정 로그인 성공, `/api/calendar/month` 200 (0.26s), `/api/patients` 200 (환자 데이터 정상), `/api/dashboard/summary` 200 — CSRF Origin 체크도 새 도메인에서 통과
+
 ## 📱 v9.1.8 모바일 최적화 (2026-07-18)
 
 ### 감사 결과 → 적용한 개선
@@ -515,7 +537,7 @@ AI 기반 의료기관 상담 CRM + 실시간 STT + 환자용 치료 제안서 +
 ## 현재 상태
 
 - **버전**: 7.6.0 (Build Pipeline + Per-Staff K-Factor + Retraining Dashboard + SW Precaching)
-- **프로덕션 URL**: https://patienttouch.pages.dev
+- **프로덕션 URL**: https://patienttouch.kr (커스텀 도메인) / https://patienttouch.pages.dev
 - **기술 스택**: Hono + TypeScript + Cloudflare Pages + D1 Database + R2 Storage + OpenAI GPT-5 hybrid + D3.js + PWA (Service Worker + Manifest + Precaching)
 - **디자인 시스템**: 글래스모피즘 + Indigo 브랜드 컬러 + 프리미엄 애니메이션 + Chart.js + D3 force-directed graph + Tailwind PostCSS 정적 번들 (CDN 제거)
 
@@ -824,7 +846,7 @@ pm2 start ecosystem.config.cjs
 ## 배포 정보
 - **플랫폼**: Cloudflare Pages
 - **프로젝트명**: `patienttouch`
-- **프로덕션 URL**: https://patienttouch.pages.dev
+- **프로덕션 URL**: https://patienttouch.kr (커스텀 도메인) / https://patienttouch.pages.dev
 - **D1 데이터베이스**: `patient-touch-db` (id: `b3918de1-1d51-426d-ab33-0062e18a0de2`)
 - **R2 버킷**: `patient-touch-audio`
 - **마이그레이션**: 0001~0008 모두 적용 완료 (로컬+프로덕션)
