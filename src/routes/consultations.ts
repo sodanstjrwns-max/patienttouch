@@ -646,8 +646,9 @@ consultations.get('/:id/audio', async (c) => {
     }
 
     // 세그먼트 목록 반환 (프론트가 순차 재생)
+    // v9.1.3: 손상 세그먼트(4xx 영구실패 = transcript='' AND confidence=0)는 재생 목록에서 제외
     const chunks = await db.prepare(
-      'SELECT chunk_index FROM stt_chunks WHERE consultation_id = ? AND audio_url IS NOT NULL ORDER BY chunk_index ASC'
+      "SELECT chunk_index FROM stt_chunks WHERE consultation_id = ? AND audio_url IS NOT NULL AND NOT (transcript = '' AND confidence = 0) ORDER BY chunk_index ASC"
     ).bind(consultId).all();
     if (chunks.results.length > 0) {
       return c.json({ success: true, data: { type: 'segments', segments: chunks.results.map((r: any) => r.chunk_index) } });

@@ -235,8 +235,9 @@ function renderConsultation(c) {
     var emoPoints = (emotionFlow.timeline && emotionFlow.timeline.length > 0) ? emotionFlow.timeline
                   : (emotionFlow.phases && emotionFlow.phases.length > 0) ? emotionFlow.phases : null;
     if (emoPoints) {
+      // v9.1.3: maintainAspectRatio:false 차트는 반드시 고정 높이 래퍼 필요 — 없으면 세로로 무한 증식
       html += '<div class="mb-3"><p class="text-[10px] font-bold text-surface-500 uppercase tracking-wider mb-2">감정 변화 흐름</p>' +
-        '<canvas id="emotionFlowChart" height="120"></canvas></div>';
+        '<div style="position:relative;height:130px"><canvas id="emotionFlowChart"></canvas></div></div>';
       // 하이라이트 순간 메모
       var hls = emoPoints.filter(function(p){ return p.highlight && p.note; }).slice(0, 3);
       if (hls.length > 0) {
@@ -806,6 +807,16 @@ function renderSegmentAudio(body) {
   var audio = document.getElementById('segAudio');
   audio.addEventListener('ended', function () {
     if (_currentSegIdx < total - 1) playSegment(_currentSegIdx + 1, true);
+  });
+  // v9.1.3: 손상/미지원 코덱 세그먼트 — 에러 시 안내 후 다음 구간 자동 스킵
+  audio.addEventListener('error', function () {
+    var label = document.getElementById('segLabel');
+    if (label) label.textContent = '구간 ' + (_currentSegIdx + 1) + ' 재생 불가 (손상된 녹음)';
+    if (_currentSegIdx < total - 1) {
+      setTimeout(function () { playSegment(_currentSegIdx + 1, true); }, 800);
+    } else {
+      showToast('재생 가능한 구간이 없습니다. 녹음 파일이 손상되었거나 이 기기에서 지원하지 않는 형식입니다.', 'error');
+    }
   });
   playSegment(0);
 }
