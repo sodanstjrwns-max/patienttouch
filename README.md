@@ -1,4 +1,19 @@
-# 페이션트 터치 (Patient Touch v9.1.8)
+# 페이션트 터치 (Patient Touch v9.2.1)
+
+## 🔒 v9.2.1 멀티테넌트 격리 감사 + 보안 수정 (2026-07-18)
+
+### 감사 결과 — 이미 잘 되어 있던 것 (구조 건전)
+- **테넌트 모델**: `organizations`(병원) → `users`(실장/상담사, admin/staff 역할) → 모든 데이터 테이블(`patients`, `consultations`, `contact_tasks`, `contact_logs`, `touch_reports` 등)에 `organization_id` 스코프. JWT에 org_id 포함, 모든 인증 요청이 자동 org 필터
+- **상담사 여러 명**: 회원가입 시 원장=admin 자동 생성 → 설정 화면 [팀 관리]에서 상담사(staff) 무제한 추가/역할변경/삭제. `my_only=true` 필터로 내 상담만/팀 전체 전환. staff는 동료 매출·개인실적 비공개(admin 전용), 팀원 추가·삭제·리드·데이터내보내기 admin 전용. 마지막 admin 강등/삭제 방지 가드 존재
+- **실전 침투 테스트 통과** (병원 2개 + 상담사 3명 시뮬레이션): 타 병원 환자 ID 직접조회 404 ✅ / 환자검색 교차노출 0건 ✅ / 상담목록·대시보드 격리 ✅ / 타 병원 환자에 카톡발송 차단 ✅ / staff의 팀원추가 403 ✅ / 카카오 API키·브랜딩·개인정보정책 org별 분리 ✅ / org 스코프 복합 인덱스(0015, 0016, 0020) 완비 ✅
+
+### 발견 → 수정한 2건
+1. **`/api/leads`(도입 문의) 과다 노출**: 아무 병원이나 admin이면 플랫폼 영업 리드(타 병원 문의 연락처)를 조회 가능했음 → **플랫폼 운영 조직(`org_bd_dental`, env `PLATFORM_ORG_ID`로 변경 가능)의 admin만** 접근하도록 `platformAdminOnly` 미들웨어 신설. 설정 화면 리드 패널도 동일 조건으로 숨김
+2. **교차 org DELETE 오탐**: 타 병원 상담 ID로 DELETE 호출 시 (실제 삭제는 0건이지만) `success:true` 반환 → `meta.changes===0`이면 404 반환으로 정정
+
+### ✅ 검증
+- 로컬: 일반 병원 admin의 leads 접근 403, 타 병원 상담 DELETE 404 + 본인 삭제 200, 기존 격리 시나리오 전부 재통과, 테스트 데이터 정리 완료
+- 프로덕션: demo(admin, org_demo) 계정으로 leads 403 확인, 정상 API(캘린더) 200, sw `pt-v9.2.1`
 
 ## 🌐 커스텀 도메인 연결 — patienttouch.kr (2026-07-18)
 
