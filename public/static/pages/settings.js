@@ -23,6 +23,9 @@ async function loadSettings() {
           var leadsSec = document.getElementById('leadsSection');
           if (leadsSec) { leadsSec.classList.remove('hidden'); loadLeads(); }
         }
+        // v9.3: AI 사용량 (admin 전용)
+        var usageSec = document.getElementById('usageSection');
+        if (usageSec) { usageSec.classList.remove('hidden'); loadUsage(); }
       }
 
       document.getElementById('notificationEnabled').checked = settings.notification_enabled !== false;
@@ -43,7 +46,8 @@ async function loadSettings() {
         (user.subscription_status === 'active' ? 'text-emerald-600' : user.subscription_status === 'trial' ? 'text-amber-600' : 'text-rose-600') + '">' +
         '<span class="w-1.5 h-1.5 rounded-full ' +
         (user.subscription_status === 'active' ? 'bg-emerald-500' : user.subscription_status === 'trial' ? 'bg-amber-500' : 'bg-rose-500') + '"></span>' +
-        (statusNames[user.subscription_status] || user.subscription_status) + '</span>';
+        (statusNames[user.subscription_status] || user.subscription_status) +
+        (user.subscription_status === 'trial' && typeof user.trial_days_left === 'number' ? ' (D-' + user.trial_days_left + ')' : '') + '</span>';
     }
   } catch (err) { console.error('Failed to load settings:', err); }
 }
@@ -507,3 +511,30 @@ document.getElementById('leadsStatusFilter') && document.getElementById('leadsSt
 
 loadSettings();
 loadTeam();
+
+// === v9.3: AI 사용량 패널 (admin 전용) ===
+async function loadUsage() {
+  var body = document.getElementById('usageBody');
+  var monthEl = document.getElementById('usageMonth');
+  if (!body) return;
+  try {
+    var data = await safeFetch('/api/dashboard/usage');
+    var d = data.data;
+    if (monthEl) monthEl.textContent = d.month;
+    var u = d.usage, cost = d.estimated_cost;
+    var fmt = function(n){ return (n||0).toLocaleString('ko-KR'); };
+    body.innerHTML =
+      '<div class="grid grid-cols-3 gap-2 mb-3">' +
+        '<div class="bg-surface-50 rounded-xl p-3 text-center"><p class="text-lg font-extrabold text-surface-900">' + fmt(u.consultations_analyzed) + '</p><p class="text-[10px] text-surface-500 font-semibold mt-0.5">AI 분석 상담</p></div>' +
+        '<div class="bg-surface-50 rounded-xl p-3 text-center"><p class="text-lg font-extrabold text-surface-900">' + fmt(u.recorded_minutes) + '<span class="text-xs font-bold">분</span></p><p class="text-[10px] text-surface-500 font-semibold mt-0.5">녹음 처리</p></div>' +
+        '<div class="bg-surface-50 rounded-xl p-3 text-center"><p class="text-lg font-extrabold text-surface-900">' + fmt(u.touch_reports) + '</p><p class="text-[10px] text-surface-500 font-semibold mt-0.5">터치 리포트</p></div>' +
+      '</div>' +
+      '<div class="flex items-center justify-between px-3 py-2.5 bg-violet-50 rounded-xl">' +
+        '<span class="text-xs font-semibold text-violet-700"><i class="fas fa-coins mr-1"></i>이번 달 예상 AI 원가</span>' +
+        '<span class="text-sm font-extrabold text-violet-700">약 ' + fmt(cost.total) + '원</span>' +
+      '</div>' +
+      '<p class="text-[10px] text-surface-400 mt-2 leading-relaxed">STT ' + fmt(cost.breakdown.stt) + '원 · 분석 ' + fmt(cost.breakdown.analysis) + '원 · 리포트 ' + fmt(cost.breakdown.touch_report) + '원 · 이탈예측 ' + fmt(cost.breakdown.churn) + '원 (작업 단위 추정치)</p>';
+  } catch (e) {
+    body.innerHTML = '<p class="text-xs text-surface-400 text-center py-3">사용량을 불러오지 못했습니다</p>';
+  }
+}

@@ -43,7 +43,47 @@ export async function authMiddleware(c: Context, next: Next) {
     return c.json({ success: false, error: '데모 계정에서는 이 작업을 할 수 없습니다. 무료 가입 후 이용해주세요! 🙂' }, 403);
   }
 
+  // v9.3: 구독 만료 게이트 — 만료된 조직은 "읽기 전용 모드"
+  // 쓰기 요청(POST/PUT/PATCH/DELETE)만 검사해 GET 성능에 영향 없음.
+  // 계정 관리(/api/auth/*)는 만료 후에도 허용 (로그아웃/설정/팀 확인)
+  const method = c.req.method;
+  if (method !== 'GET' && method !== 'HEAD' && method !== 'OPTIONS' && !c.req.path.startsWith('/api/auth/')) {
+    const expired = await isSubscriptionExpired(c, auth.organization_id);
+    if (expired) {
+      return c.json({
+        success: false,
+        error: '무료 체험이 종료되었습니다. 구독 후 계속 이용하실 수 있어요. 기존 데이터는 안전하게 보관됩니다.',
+        code: 'SUBSCRIPTION_EXPIRED'
+      }, 402);
+    }
+  }
+
   await next();
+}
+
+// 구독 만료 판정 (쓰기 요청에서만 호출 — PK 단건 조회라 ~1ms)
+// 정책: status='expired'면 즉시 차단. status='trial'이면 end_date 경과 시 차단.
+//       status='active'는 end_date와 무관하게 허용 (수동 결제 관리 유예).
+async function isSubscriptionExpired(c: Context, orgId: string): Promise<boolean> {
+  try {
+    const db = (c.env as Env).DB;
+    const org = await db.prepare(
+      'SELECT subscription_status, subscription_end_date FROM organizations WHERE id = ?'
+    ).bind(orgId).first<{ subscription_status: string; subscription_end_date: string | null }>();
+    if (!org) return false;
+    if (org.subscription_status === 'expired') return true;
+    if (org.subscription_status === 'trial' && org.subscription_end_date) {
+      // SQLite datetime('now')는 "YYYY-MM-DD HH:MM:SS" (UTC, 공백 구분) — ISO로 정규화
+      const raw = org.subscription_end_date.trim();
+      const iso = raw.length <= 10 ? raw + 'T23:59:59Z' : raw.replace(' ', 'T') + (raw.endsWith('Z') ? '' : 'Z');
+      const end = new Date(iso);
+      if (isNaN(end.getTime())) return false; // 파싱 실패 시 차단하지 않음
+      return end < new Date();
+    }
+    return false;
+  } catch {
+    return false; // 판정 실패 시 차단하지 않음 (가용성 우선)
+  }
 }
 
 // 데모 조직에서 차단할 요청 (팀 관리 / 데이터 파기 / 정책 변경 / 삭제류)

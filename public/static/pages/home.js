@@ -98,6 +98,9 @@ async function loadHomePage() {
   try {
     var authData = await requireAuth();
 
+    // v9.3: 체험판 D-day / 만료 배너
+    if (typeof renderTrialBanner === 'function') renderTrialBanner(authData.data);
+
     var h = new Date().getHours();
     var gr = h<12 ? '좋은 아침이에요' : h<18 ? '좋은 오후예요' : '좋은 저녁이에요';
     var em = h<12 ? '☀️' : h<18 ? '🌤️' : '🌙';

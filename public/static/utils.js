@@ -129,6 +129,7 @@ function safeFetch(url, options, retryCount) {
     .then(function(res) {
       if (!res.ok) {
         if (res.status === 401) { window.location.href = '/login'; return Promise.reject('auth'); }
+        if (res.status === 402) { showToast('무료 체험이 종료되었습니다. 구독 후 계속 이용하실 수 있어요. (기존 데이터는 안전하게 보관 중)', 'warning'); return Promise.reject('subscription_expired'); }
         if (res.status === 429) { showToast('요청이 너무 많습니다. 잠시 후 다시 시도해주세요.', 'warning'); return Promise.reject('rate_limited'); }
         if (res.status >= 500 && retryCount < maxRetries) {
           return new Promise(function(resolve){ setTimeout(resolve, 1000 * (retryCount + 1)); })
@@ -509,4 +510,40 @@ function closeTranscriptViewer() {
   if (sheet) sheet.style.transform = 'translateY(100%)';
   document.body.style.overflow = '';
   setTimeout(function(){ modal.remove(); }, 320);
+}
+
+// === v9.3: 체험판/구독 상태 배너 ===
+// requireAuth() 응답의 user 객체를 넘기면 홈 상단에 D-day 배너를 렌더한다.
+// - trial 7일 이하: 노란 배너 (곧 종료)
+// - trial 0일 / expired: 빨간 배너 (읽기 전용 안내)
+function renderTrialBanner(user) {
+  try {
+    if (!user) return;
+    var existing = document.getElementById('trialBanner');
+    if (existing) existing.remove();
+
+    var html = '';
+    var isExpired = user.subscription_status === 'expired' ||
+      (user.subscription_status === 'trial' && user.trial_days_left === 0);
+
+    if (isExpired) {
+      html = '<div id="trialBanner" class="mx-4 mt-3 px-4 py-3 rounded-xl bg-rose-50 border border-rose-200 flex items-center gap-3">' +
+        '<i class="fas fa-lock text-rose-500"></i>' +
+        '<div class="flex-1 min-w-0"><p class="text-sm font-bold text-rose-700">무료 체험이 종료되었습니다</p>' +
+        '<p class="text-xs text-rose-500 mt-0.5">조회는 가능하지만 새 상담 기록은 구독 후 이용할 수 있어요. 데이터는 안전하게 보관 중입니다.</p></div>' +
+        '</div>';
+    } else if (user.subscription_status === 'trial' && typeof user.trial_days_left === 'number' && user.trial_days_left <= 7) {
+      html = '<div id="trialBanner" class="mx-4 mt-3 px-4 py-3 rounded-xl bg-amber-50 border border-amber-200 flex items-center gap-3">' +
+        '<i class="fas fa-hourglass-half text-amber-500"></i>' +
+        '<div class="flex-1 min-w-0"><p class="text-sm font-bold text-amber-700">무료 체험 종료까지 D-' + user.trial_days_left + '</p>' +
+        '<p class="text-xs text-amber-600 mt-0.5">체험 종료 후에도 데이터는 사라지지 않아요.</p></div>' +
+        '</div>';
+    }
+    if (!html) return;
+
+    var main = document.querySelector('main') || document.body;
+    var tmp = document.createElement('div');
+    tmp.innerHTML = html;
+    main.insertBefore(tmp.firstChild, main.firstChild);
+  } catch (e) { /* 배너 실패는 치명적이지 않음 */ }
 }

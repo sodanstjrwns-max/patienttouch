@@ -1958,4 +1958,93 @@ dashboard.get('/onboarding-status', async (c) => {
   }
 });
 
+// ============================================================
+// v9.3: GET /api/dashboard/usage - 병원별 AI 사용량/예상 원가 (admin 전용)
+// 과금·플랜 설계의 근거 데이터. 토큰 단위 실측 대신 작업 단위 추정치 사용:
+//  - STT: 녹음 분당 $0.006 (gpt-4o-transcribe)
+//  - 상담 분석 파이프라인(화자분리+NER+SPIN+리포트): 건당 ~$0.25
+//  - 터치 리포트(생성+검증 2패스): 건당 ~$0.08
+//  - 이탈 예측: 건당 ~$0.01 (mini)
+// ============================================================
+dashboard.get('/usage', adminOnly, async (c) => {
+  try {
+    const orgId = c.get('organizationId');
+    const db = c.env.DB;
+    const month = (c.req.query('month') || new Date().toISOString().slice(0, 7)); // YYYY-MM
+    if (!/^\d{4}-\d{2}$/.test(month)) {
+      return c.json({ success: false, error: '월 형식이 올바르지 않습니다 (YYYY-MM).' }, 400);
+    }
+    const monthStart = month + '-01';
+    const monthEnd = month + '-31';
+
+    const [consultRes, touchRes, churnRes, kakaoRes] = await Promise.all([
+      db.prepare(`
+        SELECT COUNT(*) as total,
+               SUM(CASE WHEN ai_analysis_status = 'completed' THEN 1 ELSE 0 END) as analyzed,
+               SUM(CASE WHEN ai_analysis_status = 'completed' THEN COALESCE(duration, 30) ELSE 0 END) as analyzed_minutes
+        FROM consultations
+        WHERE organization_id = ? AND consultation_date >= ? AND consultation_date <= ?
+      `).bind(orgId, monthStart, monthEnd).first(),
+      db.prepare(`
+        SELECT COUNT(*) as cnt FROM touch_reports
+        WHERE organization_id = ? AND created_at >= ? AND created_at <= ? AND status != 'failed'
+      `).bind(orgId, monthStart, monthEnd + ' 23:59:59').first().catch(() => ({ cnt: 0 })),
+      db.prepare(`
+        SELECT COUNT(*) as cnt FROM churn_predictions
+        WHERE organization_id = ? AND predicted_at >= ? AND predicted_at <= ?
+      `).bind(orgId, monthStart, monthEnd + ' 23:59:59').first().catch(() => ({ cnt: 0 })),
+      db.prepare(`
+        SELECT COUNT(*) as cnt FROM notification_logs
+        WHERE org_id = ? AND created_at >= ? AND created_at <= ?
+      `).bind(orgId, monthStart, monthEnd + ' 23:59:59').first().catch(() => ({ cnt: 0 }))
+    ]);
+
+    const analyzed = (consultRes?.analyzed as number) || 0;
+    const minutes = (consultRes?.analyzed_minutes as number) || 0;
+    const touchReports = (touchRes?.cnt as number) || 0;
+    const churnPredictions = (churnRes?.cnt as number) || 0;
+    const kakaoSends = (kakaoRes?.cnt as number) || 0;
+
+    // 원가 추정 (USD) → KRW 환산 (보수적으로 1,450원 적용)
+    const FX = 1450;
+    const costUSD = {
+      stt: minutes * 0.006,
+      analysis: analyzed * 0.25,
+      touch_report: touchReports * 0.08,
+      churn: churnPredictions * 0.01
+    };
+    const totalUSD = costUSD.stt + costUSD.analysis + costUSD.touch_report + costUSD.churn;
+
+    return c.json({
+      success: true,
+      data: {
+        month,
+        usage: {
+          consultations_total: (consultRes?.total as number) || 0,
+          consultations_analyzed: analyzed,
+          recorded_minutes: minutes,
+          touch_reports: touchReports,
+          churn_predictions: churnPredictions,
+          kakao_sends: kakaoSends
+        },
+        estimated_cost: {
+          currency: 'KRW',
+          fx_rate: FX,
+          breakdown: {
+            stt: Math.round(costUSD.stt * FX),
+            analysis: Math.round(costUSD.analysis * FX),
+            touch_report: Math.round(costUSD.touch_report * FX),
+            churn: Math.round(costUSD.churn * FX)
+          },
+          total: Math.round(totalUSD * FX),
+          note: '작업 단위 추정치 (STT 분당 $0.006 + 분석 건당 $0.25 + 리포트 $0.08 + 예측 $0.01, 환율 1450원)'
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Usage stats error:', error);
+    return c.json({ success: false, error: '사용량 조회에 실패했습니다.' }, 500);
+  }
+});
+
 export default dashboard;

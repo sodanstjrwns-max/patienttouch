@@ -95,6 +95,20 @@ export const SettingsPage: FC = () => {
           </div>
         </div>
 
+        {/* v9.3: AI Usage (admin only) */}
+        <section id="usageSection" class="card-premium p-5 hidden">
+          <div class="flex items-center justify-between mb-4">
+            <div class="flex items-center gap-2">
+              <div class="w-7 h-7 rounded-lg bg-violet-50 flex items-center justify-center"><i class="fas fa-gauge-high text-xs text-violet-600"></i></div>
+              <h3 class="font-bold text-sm text-surface-900">이번 달 AI 사용량</h3>
+            </div>
+            <span id="usageMonth" class="text-xs text-surface-400 font-semibold"></span>
+          </div>
+          <div id="usageBody">
+            <div class="shimmer h-16 rounded-lg w-full"></div>
+          </div>
+        </section>
+
         {/* Feature 10: Team Management */}
         <div class="card-premium p-5">
           <div class="flex items-center justify-between mb-4">

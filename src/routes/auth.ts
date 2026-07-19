@@ -306,7 +306,7 @@ auth.get('/me', authMiddleware, async (c) => {
 
     const user = await db.prepare(`
       SELECT u.id, u.name, u.email, u.role, u.phone, u.goals, u.settings, u.organization_id,
-             o.name as organization_name, o.plan_type, o.subscription_status
+             o.name as organization_name, o.plan_type, o.subscription_status, o.subscription_end_date
       FROM users u
       JOIN organizations o ON u.organization_id = o.id
       WHERE u.id = ?
@@ -316,10 +316,22 @@ auth.get('/me', authMiddleware, async (c) => {
       return c.json({ success: false, error: 'User not found' }, 404);
     }
 
+    // v9.3: trial 잔여일 계산 (프론트 배너용)
+    let trialDaysLeft: number | null = null;
+    if (user.subscription_status === 'trial' && user.subscription_end_date) {
+      const raw = String(user.subscription_end_date).trim();
+      const iso = raw.length <= 10 ? raw + 'T23:59:59Z' : raw.replace(' ', 'T') + (raw.endsWith('Z') ? '' : 'Z');
+      const end = new Date(iso);
+      if (!isNaN(end.getTime())) {
+        trialDaysLeft = Math.max(0, Math.ceil((end.getTime() - Date.now()) / 86400000));
+      }
+    }
+
     return c.json({
       success: true,
       data: {
         ...user,
+        trial_days_left: trialDaysLeft,
         goals: safeParseJSON(user.goals as string, {}),
         settings: safeParseJSON(user.settings as string, {})
       }
