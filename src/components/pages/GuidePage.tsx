@@ -85,7 +85,7 @@ export const GuidePage: FC = () => {
               <a href="#g-calendar" class="toc-link">8. 일정 캘린더</a>
               <a href="#g-touchreport" class="toc-link">9. 터치 리포트 — 환자용 보고서</a>
               <a href="#g-proposal" class="toc-link">10. 치료 제안서</a>
-              <a href="#g-retention" class="toc-link">11. 리텐션 — 미동의 환자 리콜</a>
+              <a href="#g-retention" class="toc-link">11. 리텐션 — 미전환 환자 리콜</a>
               <a href="#g-churn" class="toc-link">12. AI 이탈 예측</a>
               <a href="#g-growth" class="toc-link">13. 성장 추적 & 소개 네트워크</a>
               <a href="#g-report" class="toc-link">14. 성과 리포트 & 목표</a>
@@ -129,12 +129,12 @@ export const GuidePage: FC = () => {
             <SectionTitle id="g-onboarding" icon="fa-flag-checkered" badge="STEP 2" title="첫 화면과 온보딩 6단계"
               desc="가입 직후 홈 화면에 '시작 가이드' 체크리스트가 뜹니다. 하나씩 완료하면 자동으로 체크됩니다." />
             <div class="rounded-2xl bg-white/5 border border-white/10 p-5 space-y-3 text-sm">
-              <div class="guide-check"><i class="fas fa-check-circle text-emerald-400"></i><span class="text-surface-300"><b class="text-white">① 첫 환자 등록</b> — 환자 탭에서 이름·연락처만 넣으면 끝</span></div>
-              <div class="guide-check"><i class="fas fa-check-circle text-emerald-400"></i><span class="text-surface-300"><b class="text-white">② 첫 상담 녹음</b> — 녹음 버튼 한 번이면 AI가 알아서 분석</span></div>
-              <div class="guide-check"><i class="fas fa-check-circle text-emerald-400"></i><span class="text-surface-300"><b class="text-white">③ AI 분석 리포트 확인</b> — 코칭 점수와 환자 심리 확인</span></div>
-              <div class="guide-check"><i class="fas fa-check-circle text-emerald-400"></i><span class="text-surface-300"><b class="text-white">④ 팀원 초대</b> — 실장님 계정 추가</span></div>
-              <div class="guide-check"><i class="fas fa-check-circle text-emerald-400"></i><span class="text-surface-300"><b class="text-white">⑤ 목표 설정</b> — 전환율·연락 수행률 목표 입력</span></div>
-              <div class="guide-check"><i class="fas fa-check-circle text-emerald-400"></i><span class="text-surface-300"><b class="text-white">⑥ 아침 브리핑 알림 켜기</b> — 매일 오늘 할 일을 푸시로</span></div>
+              <div class="guide-check"><i class="fas fa-check-circle text-emerald-400"></i><span class="text-surface-300"><b class="text-white">① 개인정보 보관정책 설정</b> — 설정에서 녹음·데이터 보관 기간 확인/설정</span></div>
+              <div class="guide-check"><i class="fas fa-check-circle text-emerald-400"></i><span class="text-surface-300"><b class="text-white">② 직원 초대</b> — 실장님 계정 추가</span></div>
+              <div class="guide-check"><i class="fas fa-check-circle text-emerald-400"></i><span class="text-surface-300"><b class="text-white">③ 첫 환자 등록</b> — 환자 탭에서 이름·연락처만 넣으면 끝</span></div>
+              <div class="guide-check"><i class="fas fa-check-circle text-emerald-400"></i><span class="text-surface-300"><b class="text-white">④ 첫 상담 녹음</b> — 녹음 버튼 한 번이면 AI가 알아서 분석</span></div>
+              <div class="guide-check"><i class="fas fa-check-circle text-emerald-400"></i><span class="text-surface-300"><b class="text-white">⑤ 첫 AI 분석 확인</b> — 코칭 점수와 환자 심리 확인</span></div>
+              <div class="guide-check"><i class="fas fa-check-circle text-emerald-400"></i><span class="text-surface-300"><b class="text-white">⑥ 첫 리콜 액션</b> — 리텐션 탭에서 첫 연락 기록</span></div>
             </div>
             <p class="text-surface-400 text-sm mt-4 leading-relaxed">
               하단 내비게이션은 <b class="text-surface-200">홈 · 오늘 · 상담 · 환자 · 리텐션 · 리포트</b> 6개 탭입니다. 어디에 있든 한 번의 탭으로 이동합니다.
@@ -205,7 +205,7 @@ export const GuidePage: FC = () => {
             <SectionTitle id="g-analysis" icon="fa-brain" badge="STEP 6" title="AI 상담 분석 읽는 법"
               desc="상담 탭 → 상담 선택 → 상세 화면. 상담 한 건이 아래 정보로 해부됩니다." />
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div class="feature-card"><i class="fas fa-gauge-high text-brand-400"></i><div><p class="text-white font-bold text-sm">코칭 점수 (100점)</p><p class="text-surface-400 text-xs mt-1">상담 스킬 종합 점수. 라포·니즈파악·가치전달·클로징 항목별 세부 점수와 개선 코멘트 제공</p></div></div>
+              <div class="feature-card"><i class="fas fa-gauge-high text-brand-400"></i><div><p class="text-white font-bold text-sm">코칭 점수 (100점)</p><p class="text-surface-400 text-xs mt-1">상담 스킬 종합 점수. 니즈파악·가치전달·이의처리·클로징 항목별 세부 점수와 개선 코멘트 제공</p></div></div>
               <div class="feature-card"><i class="fas fa-signal text-emerald-400"></i><div><p class="text-white font-bold text-sm">결정 신호 (10점)</p><p class="text-surface-400 text-xs mt-1">환자가 치료를 결정할 가능성. 7점 이상이면 클로징 콜 타이밍</p></div></div>
               <div class="feature-card"><i class="fas fa-heart-pulse text-rose-400"></i><div><p class="text-white font-bold text-sm">환자 심리 분석</p><p class="text-surface-400 text-xs mt-1">망설임의 진짜 이유(비용/두려움/불신/타이밍)와 대응 전략</p></div></div>
               <div class="feature-card"><i class="fas fa-chart-line text-amber-400"></i><div><p class="text-white font-bold text-sm">감정 흐름 차트</p><p class="text-surface-400 text-xs mt-1">상담 중 환자 감정이 언제 올라가고 언제 식었는지 시각화</p></div></div>
@@ -247,7 +247,7 @@ export const GuidePage: FC = () => {
             <SectionTitle id="g-calendar" icon="fa-calendar-days" badge="STEP 8" title="일정 캘린더"
               desc="상담 · 연락 예정 · 예약이 월간 달력 하나에 모입니다." />
             <p class="text-surface-400 text-sm leading-relaxed">
-              상담 탭 상단의 <b class="text-surface-200">캘린더</b> 아이콘 (또는 <code class="code-chip">/calendar</code>). 날짜를 탭하면 그날의 상담 목록·연락 예정 환자·예약이 나오고, 각 항목을 누르면 바로 해당 상담/환자 화면으로 이동합니다. 월 이동은 좌우 화살표 또는 스와이프.
+              상담 탭 상단의 <b class="text-surface-200">캘린더</b> 아이콘 (또는 <code class="code-chip">/calendar</code>). 날짜를 탭하면 그날의 상담 목록·연락 예정 환자·예약이 나오고, 각 항목을 누르면 바로 해당 상담/환자 화면으로 이동합니다. 월 이동은 좌우 화살표 버튼으로 합니다.
             </p>
           </section>
 
@@ -260,7 +260,7 @@ export const GuidePage: FC = () => {
                 리포트를 카카오톡/링크로 받는 것에 대한 <b class="text-surface-200">환자 동의</b>가 먼저입니다. 환자 상세 또는 리포트 생성 화면에서 동의를 기록하세요. 동의 없이는 생성 버튼이 눌리지 않습니다 — 개인정보 보호를 위한 설계입니다.
               </Step>
               <Step n="2" title="② 생성 (약 20초)">
-                분석 완료된 상담에서 <b class="text-surface-200">터치 리포트 만들기</b>를 누르면 AI가 환자 눈높이 보고서를 작성합니다: 상담 요약 · 제안된 치료와 이유 · 비용 안내 · 자주 하는 질문 답변.
+                분석 완료된 상담에서 <b class="text-surface-200">터치 리포트 만들기</b>를 누르면 AI가 환자 눈높이 보고서를 작성합니다: 상담 요약 · 구강 상태 · 치료 옵션(비용·장점·고려사항) · 상담 중 나눈 질문과 답변 · 다음 단계.
               </Step>
               <Step n="3" title="③ 검수 — AI를 그냥 믿지 않습니다">
                 생성된 리포트에는 <b class="text-surface-200">검증 플래그</b>가 붙습니다 (금액·치료명·날짜 등 사실 확인이 필요한 부분). 실장님이 하나씩 확인·수정해서 플래그를 전부 해소해야 다음 단계로 갑니다. <b class="text-surface-200">틀린 정보가 환자에게 나가는 것을 구조적으로 차단</b>합니다.
@@ -280,17 +280,17 @@ export const GuidePage: FC = () => {
             <SectionTitle id="g-proposal" icon="fa-file-signature" badge="STEP 10" title="치료 제안서"
               desc="상담에서 제안한 치료 계획을 프리미엄 디자인의 웹 제안서로 만들어 보냅니다." />
             <p class="text-surface-400 text-sm leading-relaxed">
-              상담 상세에서 <b class="text-surface-200">제안서 생성</b> → 치료 항목·금액·유효기간 확인 → 링크 발송. 환자가 열어보면 <b class="text-surface-200">열람·버튼 클릭이 추적</b>되어 원장 대시보드의 "제안서 현황"(발송/열람/전환)에 집계됩니다. 열람율이 곧 상담 품질의 바로미터입니다.
+              상담 상세에서 <b class="text-surface-200">제안서 생성</b> → 치료 항목·금액 확인 → 링크 발송. 환자가 열어보면 <b class="text-surface-200">열람·버튼 클릭이 추적</b>되어 원장 대시보드의 "제안서 현황"(발송/열람/전환)에 집계됩니다. 열람율이 곧 상담 품질의 바로미터입니다.
             </p>
           </section>
 
           {/* ============ 11. 리텐션 ============ */}
           <section>
             <SectionTitle id="g-retention" icon="fa-rotate" badge="STEP 11" title="리텐션 — '생각해볼게요' 환자를 되살리는 엔진"
-              desc="미동의 환자는 사라진 게 아니라 아직 결정을 못 한 것뿐입니다. 리텐션 탭이 그들을 찾아서 줄 세워줍니다." />
+              desc="상담 후 결정을 미룬 환자는 사라진 게 아니라 아직 결정을 못 한 것뿐입니다. 리텐션 탭이 그들을 찾아서 줄 세워줍니다." />
             <div class="space-y-5">
               <Step n="1" title="자동 분류">
-                상담 결과에 따라 환자가 <b class="text-surface-200">미동의 · 부분동의 · 치료중 · 완료 · 이탈위험</b>으로 자동 분류됩니다. 손으로 엑셀 정리할 필요가 없습니다.
+                상담 결과와 경과일에 따라 환자가 <b class="text-surface-200">상담 미전환 · 이탈 위험 · 치료중 · 완료 · 정상 · 6/12개월 리콜 대상 · 미예약 주의/긴급</b>으로 자동 분류됩니다. 손으로 엑셀 정리할 필요가 없습니다.
               </Step>
               <Step n="2" title="우선순위 리스트">
                 상담 금액 · 결정 신호 · 경과일을 종합해 <b class="text-surface-200">지금 연락하면 살아날 확률이 높은 순서</b>로 정렬됩니다.
@@ -322,7 +322,7 @@ export const GuidePage: FC = () => {
               desc="실장님 개인의 성장과, 환자가 환자를 데려오는 바이럴을 눈으로 확인합니다." />
             <div class="space-y-5">
               <Step n="1" title="상담 성장 추적 (/growth)">
-                내 코칭 점수가 주 단위로 어떻게 변했는지, 어떤 항목(라포/니즈/가치/클로징)이 늘고 어떤 항목이 정체인지 그래프로 봅니다. <b class="text-surface-200">"내 상담 실력의 변화를 확인하세요"</b> — 코칭의 근거가 됩니다.
+                내 코칭 점수가 주 단위로 어떻게 변했는지, 어떤 영역(라포/질문기법/이의처리/가격제시/클로징/상담구조 — 6영역)이 늘고 어떤 영역이 정체인지 그래프로 봅니다. <b class="text-surface-200">"내 상담 실력의 변화를 확인하세요"</b> — 코칭의 근거가 됩니다.
               </Step>
               <Step n="2" title="환자 소개 네트워크 (/network)">
                 누가 누구를 소개했는지 <b class="text-surface-200">소개 트리</b>로 시각화됩니다. 최고 인플루언서(가장 많은 환자를 데려온 팬) · 소개로 만든 매출 · 최대 소개 깊이를 확인하세요. <b class="text-surface-200">팬을 만들면 환자가 환자를 데려옵니다.</b>
@@ -348,7 +348,7 @@ export const GuidePage: FC = () => {
               <div class="feature-card"><i class="fas fa-arrow-trend-up text-emerald-400"></i><div><p class="text-white font-bold text-sm">매출 트렌드</p><p class="text-surface-400 text-xs mt-1">이번 주 vs 지난 주, 목표 달성률</p></div></div>
               <div class="feature-card"><i class="fas fa-triangle-exclamation text-amber-400"></i><div><p class="text-white font-bold text-sm">저점수 상담 자동 표시</p><p class="text-surface-400 text-xs mt-1">70점 미만 상담 리스트 → 코칭 대상을 데이터로 선정</p></div></div>
               <div class="feature-card"><i class="fas fa-viruses text-cyan-400"></i><div><p class="text-white font-bold text-sm">소개 바이럴 지수 (K-factor)</p><p class="text-surface-400 text-xs mt-1">상담사별 바이럴 기여도 — 누가 팬을 만들고 있는가</p></div></div>
-              <div class="feature-card"><i class="fas fa-clock text-violet-400"></i><div><p class="text-white font-bold text-sm">시간대별 상담 분포</p><p class="text-surface-400 text-xs mt-1">상담이 몰리는 시간대 파악 → 인력 배치 근거</p></div></div>
+              <div class="feature-card"><i class="fas fa-clock text-violet-400"></i><div><p class="text-white font-bold text-sm">시간대별 상담 분포</p><p class="text-surface-400 text-xs mt-1">상담 분포 참고 차트 (현재 추정치 기반 — 정밀 집계는 업데이트 예정)</p></div></div>
               <div class="feature-card"><i class="fas fa-envelope-open-text text-rose-400"></i><div><p class="text-white font-bold text-sm">제안서 현황</p><p class="text-surface-400 text-xs mt-1">발송 → 열람 → 전환 퍼널, 점수↔매출 상관 분석</p></div></div>
             </div>
           </section>
@@ -358,7 +358,7 @@ export const GuidePage: FC = () => {
             <SectionTitle id="g-kakao" icon="fa-comment" badge="STEP 16" title="카카오 알림톡 연동 (선택)"
               desc="터치 리포트·제안서·리콜 안내를 카카오톡으로 자동 발송하려면 알림톡을 연동하세요." />
             <p class="text-surface-400 text-sm leading-relaxed">
-              설정에서 알림톡 API 정보(솔라피 등)와 템플릿을 등록하면 <b class="text-surface-200">개별 발송 · 일괄 발송 · 발송 로그 확인</b>이 가능합니다. 연동 전에도 모든 기능은 <b class="text-surface-200">링크 복사 방식</b>으로 쓸 수 있으니, 처음엔 링크로 시작하고 나중에 연동해도 됩니다.
+              알림톡(솔라피) 연동은 현재 <b class="text-surface-200">서버 측 설정 방식</b>입니다 — 연동을 원하시면 문의처로 연락 주세요. API 키·템플릿 등록이 완료되면 터치 리포트·제안서·리콜 안내가 알림톡으로 개별·일괄 발송됩니다. 연동 전에도 모든 기능은 <b class="text-surface-200">링크 복사 방식</b>으로 쓸 수 있으니, 처음엔 링크로 시작하고 나중에 연동해도 됩니다.
             </p>
           </section>
 
@@ -379,7 +379,6 @@ export const GuidePage: FC = () => {
                   <tr><td class="table-td font-bold text-white">개인정보 보호 <span class="badge-admin">원장</span></td><td class="table-td">상담 원문 보존 기간 설정 → 기간 경과 시 원문·녹음 자동 파기(통계는 유지) · 감사 로그(열람/검색/파기/삭제 이력)</td></tr>
                   <tr><td class="table-td font-bold text-white">데이터 내보내기 <span class="badge-admin">원장</span></td><td class="table-td">전체 환자 CSV · 최근 30일 상담 CSV · 이탈 위험 환자 CSV</td></tr>
                   <tr><td class="table-td font-bold text-white">중복 환자 관리</td><td class="table-td">중복 검사 → 병합</td></tr>
-                  <tr><td class="table-td font-bold text-white">목표 설정</td><td class="table-td">전환율·연락수행률·재상담 목표 (리포트 탭과 연동)</td></tr>
                   <tr><td class="table-td font-bold text-white">앱 정보</td><td class="table-td">버전 · 문의처 · 이용약관 · 개인정보처리방침</td></tr>
                 </tbody>
               </table>
@@ -456,7 +455,7 @@ export const GuidePage: FC = () => {
             <div class="space-y-3">
               <details class="faq-item"><summary class="faq-q">녹음하다 앱이 꺼지면 다 날아가나요?</summary><p class="faq-a">아닙니다. 녹음은 60초 단위로 실시간 업로드되어, 꺼진 시점까지의 내용은 안전하게 저장·분석됩니다. 유실된 구간이 있으면 어디가 빠졌는지 화면에 투명하게 표시됩니다.</p></details>
               <details class="faq-item"><summary class="faq-q">AI 분석이 얼마나 걸리나요?</summary><p class="faq-a">보통 상담 길이에 따라 수 분 내외입니다. 진행률이 실시간 표시되고, 화면을 닫아도 분석은 서버에서 계속 진행됩니다.</p></details>
-              <details class="faq-item"><summary class="faq-q">실장이 여러 명인데 각자 자기 상담만 보나요?</summary><p class="faq-a">기본은 병원 전체 상담을 함께 보되, 상담 목록의 '내 상담만' 필터로 자기 것만 볼 수 있습니다. 성장 추적(/growth)은 본인 점수 기준입니다.</p></details>
+              <details class="faq-item"><summary class="faq-q">실장이 여러 명인데 각자 자기 상담만 보나요?</summary><p class="faq-a">기본은 병원 전체 상담을 함께 봅니다. 캘린더에서 '내 일정만' 보기로 자기 것만 추려낼 수 있고, 성장 추적(/growth)은 본인 점수 기준입니다.</p></details>
               <details class="faq-item"><summary class="faq-q">환자 녹음 동의는 어떻게 받아야 하나요?</summary><p class="faq-a">녹음 시작 전 화면에 동의 안내 문구가 뜨며, 환자에게 고지 후 진행하는 절차가 내장되어 있습니다. 문구는 설정에서 병원 상황에 맞게 수정하세요.</p></details>
               <details class="faq-item"><summary class="faq-q">터치 리포트에 잘못된 금액이 나가면 어쩌죠?</summary><p class="faq-a">그래서 검수 단계가 필수입니다. AI가 생성한 리포트의 금액·치료명·날짜에는 검증 플래그가 붙고, 실장님이 전부 확인·해소해야만 발송 버튼이 활성화됩니다.</p></details>
               <details class="faq-item"><summary class="faq-q">체험 끝나면 데이터가 사라지나요?</summary><p class="faq-a">아니요. 읽기 전용 모드로 전환될 뿐 데이터는 안전하게 보관됩니다. 언제든 다시 구독하면 그대로 이어서 쓸 수 있습니다.</p></details>

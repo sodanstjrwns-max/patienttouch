@@ -300,7 +300,7 @@ export const SettingsPage: FC = () => {
           <div class="space-y-2 text-sm">
             <div class="flex justify-between items-center p-2 bg-surface-50 rounded-lg">
               <span class="text-surface-500 text-xs">버전</span>
-              <span class="font-bold text-surface-800 text-xs">v6.0.0</span>
+              <span class="font-bold text-surface-800 text-xs">v9.3.2</span>
             </div>
             <div class="flex justify-between items-center p-2 bg-surface-50 rounded-lg">
               <span class="text-surface-500 text-xs">AI 엔진</span>
@@ -313,6 +313,14 @@ export const SettingsPage: FC = () => {
             <a href="/guide" target="_blank" class="flex justify-between items-center p-2 bg-surface-50 rounded-lg hover:bg-surface-100 transition-colors">
               <span class="text-surface-500 text-xs"><i class="fas fa-book-open mr-1.5 text-brand-500"></i>사용 설명서</span>
               <span class="text-brand-600 font-semibold text-xs">전체 기능 안내 <i class="fas fa-arrow-up-right-from-square text-[10px]"></i></span>
+            </a>
+            <a href="/terms" target="_blank" class="flex justify-between items-center p-2 bg-surface-50 rounded-lg hover:bg-surface-100 transition-colors">
+              <span class="text-surface-500 text-xs"><i class="fas fa-file-contract mr-1.5 text-surface-400"></i>이용약관</span>
+              <span class="text-surface-400 text-xs"><i class="fas fa-arrow-up-right-from-square text-[10px]"></i></span>
+            </a>
+            <a href="/privacy-policy" target="_blank" class="flex justify-between items-center p-2 bg-surface-50 rounded-lg hover:bg-surface-100 transition-colors">
+              <span class="text-surface-500 text-xs"><i class="fas fa-shield-halved mr-1.5 text-surface-400"></i>개인정보처리방침</span>
+              <span class="text-surface-400 text-xs"><i class="fas fa-arrow-up-right-from-square text-[10px]"></i></span>
             </a>
           </div>
         </div>
