@@ -29,6 +29,7 @@ export const WelcomePage: FC = () => {
               <a href="#roi-section" class="hover:text-white transition-colors">ROI</a>
               <a href="#pricing-section" class="hover:text-white transition-colors">요금제</a>
               <a href="#faq-section" class="hover:text-white transition-colors">FAQ</a>
+              <a href="/guide" class="hover:text-white transition-colors">사용 설명서</a>
             </div>
             <div class="flex items-center gap-2.5">
               <a href="/login" class="px-4 py-2 rounded-xl text-sm font-semibold text-surface-300 hover:text-white border border-white/10 hover:border-white/25 bg-white/5 transition-all">로그인</a>
@@ -422,6 +423,8 @@ export const WelcomePage: FC = () => {
             <a href="#pricing-section" class="hover:text-surface-400 transition-colors">요금제</a>
             <span>·</span>
             <a href="#faq-section" class="hover:text-surface-400 transition-colors">FAQ</a>
+            <span>·</span>
+            <a href="/guide" class="hover:text-surface-400 transition-colors">사용 설명서</a>
             <span>·</span>
             <a href="/terms" class="hover:text-surface-400 transition-colors">이용약관</a>
             <span>·</span>

@@ -113,6 +113,9 @@ export const LoginPage: FC = () => {
                   무료로 시작하기
                 </a>
               </p>
+              <p class="text-surface-600 text-xs mt-2">
+                처음이신가요? <a href="/guide" class="text-surface-400 hover:text-surface-300 underline transition-colors">사용 설명서 보기</a>
+              </p>
             </div>
           </div>
 

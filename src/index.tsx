@@ -19,6 +19,7 @@ import leadRoutes from './routes/leads'
 import calendarRoutes from './routes/calendar'
 import touchReportRoutes from './routes/touch-report'
 import { WelcomePage } from './components/pages/WelcomePage'
+import { GuidePage } from './components/pages/GuidePage'
 import { PrivacyPolicyPage, TermsPage } from './components/pages/LegalPage'
 
 // Import pages
@@ -93,6 +94,7 @@ app.route('/api/touch-report', touchReportRoutes)
 
 // Page Routes
 app.get('/welcome', (c) => c.render(<WelcomePage />, { title: '페이션트 터치 — 치과 상담을 매출 엔진으로' }))
+app.get('/guide', (c) => c.render(<GuidePage />, { title: '사용 설명서 - 페이션트 터치' }))
 app.get('/privacy-policy', (c) => c.render(<PrivacyPolicyPage />, { title: '개인정보처리방침 - 페이션트 터치' }))
 app.get('/terms', (c) => c.render(<TermsPage />, { title: '이용약관 - 페이션트 터치' }))
 app.get('/login', (c) => c.render(<LoginPage />, { title: '로그인 - 페이션트 터치' }))

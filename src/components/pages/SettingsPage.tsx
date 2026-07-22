@@ -310,6 +310,10 @@ export const SettingsPage: FC = () => {
               <span class="text-surface-500 text-xs">문의</span>
               <a href="mailto:support@patienttouch.com" class="text-brand-600 font-semibold text-xs hover:text-brand-700 transition-colors">support@patienttouch.com</a>
             </div>
+            <a href="/guide" target="_blank" class="flex justify-between items-center p-2 bg-surface-50 rounded-lg hover:bg-surface-100 transition-colors">
+              <span class="text-surface-500 text-xs"><i class="fas fa-book-open mr-1.5 text-brand-500"></i>사용 설명서</span>
+              <span class="text-brand-600 font-semibold text-xs">전체 기능 안내 <i class="fas fa-arrow-up-right-from-square text-[10px]"></i></span>
+            </a>
           </div>
         </div>
 
